@@ -45,7 +45,9 @@ export function isAvailableTransportOption(
   );
 }
 
-export const WALKING_DISPLAY_THRESHOLD_METERS = 3_000;
+// This recommendation is applied after itinerary planning, so the optimizer can
+// keep using one consistent routing profile for schedule feasibility.
+export const WALKING_DISPLAY_THRESHOLD_METERS = 1_500;
 
 export function isWalkingMode(mode: string): boolean {
   const normalized = mode.toLowerCase();

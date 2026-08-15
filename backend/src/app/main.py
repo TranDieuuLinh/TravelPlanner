@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -17,14 +18,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
+        auth_service = application.state.auth_service
+        trip_repository = application.state.trip_chat_repository
+        # Warm auth opportunistically so the first /me is normally hot. A
+        # temporarily unavailable external database must not prevent the API
+        # process (or isolated API tests) from starting.
+        await asyncio.gather(auth_service.ensure_ready(), return_exceptions=True)
         try:
             yield
         finally:
+            closers = []
+            auth_close = getattr(auth_service.repository, "close", None)
+            if auth_close is not None:
+                closers.append(auth_close())
+            trip_close = getattr(trip_repository, "close", None)
+            if trip_close is not None:
+                closers.append(trip_close())
             memory_service = getattr(application.state, "conversation_memory_service", None)
             repository = getattr(memory_service, "repository", None)
             close = getattr(repository, "close", None)
             if close is not None:
-                await close()
+                closers.append(close())
+            if closers:
+                await asyncio.gather(*closers)
 
     application = FastAPI(
         title="Travel Planner Agents",

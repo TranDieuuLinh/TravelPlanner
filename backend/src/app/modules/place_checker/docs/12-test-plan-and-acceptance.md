@@ -48,6 +48,26 @@ external adapter và downstream planning.
 30. Trả partial output sau provider timeout.
 31. Reject day/route field khỏi PlaceChecker output.
 32. Chỉ project planner-ready và conditional place xuống downstream.
+33. Travel pool phải có ít nhất 14 candidate mỗi ngày; food pool phải unique
+    match được mọi slot `day × breakfast/lunch/dinner`; thiếu hard slot phải
+    block trước Planner dù tổng số Restaurant đã bằng `days * 3`.
+33a. Travel reserve đủ dữ liệu phải giữ coverage mềm tối thiểu 6/14
+     `Special_Experience` và 4/14 popular; thiếu bucket phải fallback đủ pool.
+34. TravelPlace thiếu Restaurant `special_near` không block nếu general food
+    pool đã qua eligibility filter vẫn đủ hard minimum.
+35. Restaurant đã có trong food pool vẫn được tính paired theo anchor
+    relationship dù priority hiện tại không phải `special_near`.
+36. Food candidate được dedup và kiểm tra tọa độ, duration, giá, opening/meal
+    window trước selection; candidate không đủ dữ liệu không được báo selected.
+37. Query gần dùng khoảng cách tọa độ tối đa 5 km; cạnh `Special_Near` chỉ là
+    evidence và OfferItem/SpecialExperience được đọc độc lập.
+38. Restaurant xuất hiện cạnh nhiều anchor chỉ tạo một food candidate, nhưng
+    giữ toàn bộ anchor relationships và provenance.
+39. General ADM chỉ được query khi hard hoặc reserve unique matching còn thiếu,
+    chỉ nhận meal type thiếu và loại Restaurant ID đã thấy.
+40. Matching chạy lại sau general fallback; reserve matching không được dùng
+    Restaurant đã nằm trong hard matching và compact output phải gửi cả hai
+    assignment cùng missing slots sang Planner.
 
 ## Tiêu chí nghiệm thu
 
@@ -57,7 +77,8 @@ external adapter và downstream planning.
 - Place resolution và item resolution là hai flow riêng.
 - Special experience tham chiếu Place nhưng không phải chính Place entity.
 - Budget tách mandatory/optional và known/estimated/unknown cost.
-- Gap analysis đa chiều, không dùng fixed places-per-day rule.
+- Gap analysis vẫn đa chiều; boundary Planner áp hard pool quota riêng theo số
+  ngày sau verification và metadata filtering.
 - KG đứng trước internal và external retrieval.
 - Một external source không thể tạo planner eligibility.
 - Promotion chạy async và idempotent.

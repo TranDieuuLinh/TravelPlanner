@@ -30,11 +30,22 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
   const output = {
     destination: "Hà Nội",
     timezone: "Asia/Ho_Chi_Minh",
+    accommodation: {
+      placeId: "hotel-old-quarter",
+      name: "Khách sạn Phố Cổ",
+      coordinates: { latitude: 21.035, longitude: 105.852 },
+      address: "Hoàn Kiếm, Hà Nội",
+      rating: 4.5,
+      reviewCount: 320,
+      pricePerNight: { cost: 800_000, currency: "VND" },
+    },
+    accommodationNights: 1,
     days: [{
       day: 1,
       date: "2026-08-15",
       stops: [
         {
+          itemId: "planner:1:place-ho-guom",
           placeId: "place-ho-guom",
           name: "Hồ Hoàn Kiếm",
           kind: "place",
@@ -45,6 +56,17 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
           coordinates: { latitude: 21.0285, longitude: 105.8542 },
           tags: ["culture"],
           imageUrls: ["https://example.test/ho-guom.jpg"],
+          rating: 4.7,
+          reviewCount: 1234,
+          openingHours: {
+            "1": [{ startMinute: 480, endMinute: 1020 }],
+          },
+          notes: {
+            text: "Nên đến trước 8 giờ",
+            sourceType: "url",
+            sourceUrl: "https://example.test/video",
+          },
+          personalNotes: "Nhớ mang ô",
           costPerPerson: 0,
         },
         {
@@ -60,15 +82,35 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
           costPerPerson: 60_000,
         },
       ],
-      legs: [{
-        fromPlaceId: "place-ho-guom",
-        toPlaceId: "restaurant-pho",
-        durationMinutes: 15,
-        distanceMeters: 1200,
-        encodedPolyline: encodePolyline([[21.0285, 105.8542], [21.034, 105.848]]),
-        provider: "valhalla",
-        geometryAvailable: true,
-      }],
+      legs: [
+        {
+          fromPlaceId: "hotel-old-quarter",
+          toPlaceId: "place-ho-guom",
+          durationMinutes: 8,
+          distanceMeters: 700,
+          encodedPolyline: encodePolyline([[21.035, 105.852], [21.0285, 105.8542]]),
+          provider: "valhalla",
+          geometryAvailable: true,
+        },
+        {
+          fromPlaceId: "place-ho-guom",
+          toPlaceId: "restaurant-pho",
+          durationMinutes: 15,
+          distanceMeters: 1200,
+          encodedPolyline: encodePolyline([[21.0285, 105.8542], [21.034, 105.848]]),
+          provider: "valhalla",
+          geometryAvailable: true,
+        },
+        {
+          fromPlaceId: "restaurant-pho",
+          toPlaceId: "hotel-old-quarter",
+          durationMinutes: 10,
+          distanceMeters: 900,
+          encodedPolyline: encodePolyline([[21.034, 105.848], [21.035, 105.852]]),
+          provider: "valhalla",
+          geometryAvailable: true,
+        },
+      ],
       activityMinutes: 120,
       travelMinutes: 15,
       costPerPerson: 60_000,
@@ -97,9 +139,36 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
   assert.deepEqual(plan.days[0].items[0].imageUrls, [
     "https://example.test/ho-guom.jpg",
   ]);
-  assert.equal(plan.days[0].transportLegs[0].fromPlace, "Hồ Hoàn Kiếm");
-  assert.equal(plan.days[0].transportLegs[0].verified, true);
-  assert.deepEqual(plan.days[0].transportLegs[0].geometryCoordinates[0], [21.0285, 105.8542]);
+  assert.equal(plan.days[0].items[0].rating, 4.7);
+  assert.equal(plan.days[0].items[0].reviewCount, 1234);
+  assert.equal(plan.days[0].items[0].itemId, "planner:1:place-ho-guom");
+  assert.equal(plan.days[0].items[0].notes.sourceType, "url");
+  assert.equal(plan.days[0].items[0].personalNotes, "Nhớ mang ô");
+  assert.deepEqual(plan.days[0].items[0].openingHours, [{
+    dayOfWeek: 6,
+    is24Hours: false,
+    rawTimeSlots: "08:00–17:00",
+  }]);
+  assert.equal(plan.days[0].transportLegs[0].fromPlace, "Khách sạn Phố Cổ");
+  assert.equal(plan.days[0].transportLegs[2].toPlace, "Khách sạn Phố Cổ");
+  assert.equal(plan.days[0].transportLegs[0].mode, "walk");
+  assert.equal(plan.days[0].transportLegs[0].estimatedDurationMinutes, 9);
+  assert.equal(plan.days[0].transportLegs[0].verified, false);
+  assert.equal(plan.days[0].transportLegs[0].alternatives[0].mode, "car");
+  assert.equal(plan.days[0].transportLegs[0].alternatives[0].verified, true);
+  assert.deepEqual(plan.days[0].transportLegs[0].geometryCoordinates[0], [21.035, 105.852]);
+  assert.deepEqual(plan.accommodation, {
+    placeId: "hotel-old-quarter",
+    name: "Khách sạn Phố Cổ",
+    address: "Hoàn Kiếm, Hà Nội",
+    latitude: 21.035,
+    longitude: 105.852,
+    rating: 4.5,
+    reviewCount: 320,
+    pricePerNight: 800_000,
+    currency: "VND",
+    nights: 1,
+  });
   assert.equal(plan.unscheduledPlaces[0].reasonCode, "not_selected_by_optimizer");
 });
 

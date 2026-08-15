@@ -48,6 +48,11 @@ class PostgresUserRepository:
                     await asyncio.sleep(0.5 * (2**attempt))
         return self._pool
 
+    async def close(self) -> None:
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
+
     async def by_email(self, email: str) -> UserRecord | None:
         pool = await self._get_pool()
         async with pool.acquire() as connection:

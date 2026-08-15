@@ -153,8 +153,6 @@ class RootNodes:
         if memory:
             dest = getattr(memory, "destination", None) or (memory.get("destination") if isinstance(memory, dict) else None)
             dur = getattr(memory, "duration_days", None) or (memory.get("duration_days") or memory.get("durationDays") if isinstance(memory, dict) else None)
-            places = getattr(memory, "mentioned_places", None) or (memory.get("mentioned_places") or memory.get("mentionedPlaces") if isinstance(memory, dict) else None)
-
             if dest:
                 output.input_adm = dest
             if dur:
@@ -238,20 +236,12 @@ class RootNodes:
             )
             output = graph_result["result"]
             projection = PlaceCheckerPlanningProjector().project(output)
-            compact = PlaceCheckerPlannerOutputBuilder().build(
-                output,
-                start_date=explorer.start_date.isoformat(),
-                timezone=explorer.timezone,
-            )
-            planner_input = ItineraryPlannerInput.model_validate(
-                compact.model_dump(mode="json", by_alias=True)
-            )
             update = {
                 "place_output": output,
-                "planner_input": planner_input,
                 "warnings": [
                     *state.get("warnings", []),
                     *projection.warnings,
+                    *output.warnings,
                 ],
             }
             if output.status.value == "blocked":
@@ -263,6 +253,15 @@ class RootNodes:
                         ),
                         "response": "PlaceChecker cần làm rõ dữ liệu trước khi lập lịch.",
                     }
+                )
+            else:
+                compact = PlaceCheckerPlannerOutputBuilder().build(
+                    output,
+                    start_date=explorer.start_date.isoformat(),
+                    timezone=explorer.timezone,
+                )
+                update["planner_input"] = ItineraryPlannerInput.model_validate(
+                    compact.model_dump(mode="json", by_alias=True)
                 )
             return update
 
@@ -332,10 +331,13 @@ class RootNodes:
 
         result = await self.itinerary_planner.ainvoke({"input": planner_input})
         if error := result.get("error"):
-            return {
+            update = {
                 "warnings": [*state.get("warnings", []), error],
                 "response": f"Itinerary planning stopped: {error}",
             }
+            if failure := result.get("preflight_failure"):
+                update["planner_preflight_failure"] = failure
+            return update
         output = ItineraryPlannerOutput.model_validate(result["output"])
         expected_days = set(range(1, planner_input.trip.days + 1))
         scheduled_days = {day.day for day in output.days if day.stops}

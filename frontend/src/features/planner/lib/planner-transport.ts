@@ -5,11 +5,12 @@ import type {
 import {
   isAvailableTransportOption,
   isCarMode,
-  isPublicTransitMode,
   isWalkingMode,
   transportOptionSelectionKey,
 } from "@/features/planner/lib/transport-options";
-import { planPlaceNamesMatch } from "@/features/planner/utils/transportSelection";
+import { transportLegAfterItem } from "@/features/planner/lib/planner-transport-leg";
+
+export { transportLegAfterItem };
 
 export function transportModeLabel(mode: string): string {
   const normalized = mode.toLowerCase();
@@ -29,26 +30,6 @@ export function transportModeLabel(mode: string): string {
   if (normalized.includes("mixed")) return "Phương tiện chưa xác định";
   if (normalized.includes("unknown")) return "Chưa xác định";
   return mode;
-}
-
-export function transportLegAfterItem(
-  day: TravelPlan["days"][number],
-  item: TravelPlan["days"][number]["items"][number],
-  itemIndex: number
-) {
-  const nextItem = day.items[itemIndex + 1];
-  const exactLeg = day.transportLegs.find((leg) => {
-    const startsAtItem =
-      item.itemId && leg.fromItemId
-        ? item.itemId === leg.fromItemId
-        : planPlaceNamesMatch(item.name, leg.fromPlace);
-    if (!startsAtItem || !nextItem) return false;
-    return nextItem.itemId && leg.toItemId
-      ? nextItem.itemId === leg.toItemId
-      : planPlaceNamesMatch(nextItem.name, leg.toPlace);
-  });
-
-  return exactLeg ?? null;
 }
 
 export function planTransportRouteMapKey(

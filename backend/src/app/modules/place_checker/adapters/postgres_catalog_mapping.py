@@ -7,6 +7,7 @@ from app.modules.place_checker.enums import CostTier, OperationalStatus
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.shared.contracts.place import Coordinates
+from app.shared.contracts.source_note import SourceNote
 from app.shared.tools.search_places import AdministrativeArea, PlaceProviderCandidate
 from app.shared.tools.search_places.normalization import normalize_text
 
@@ -131,6 +132,7 @@ class PostgresCatalogMappingMixin:
             image_urls=cls._image_urls(values),
             rating=cls._number(values.get("rating")),
             review_count=cls._integer(values.get("review_count")),
+            source_note=cls._source_note(values),
             minimum_duration_minutes=max(15, duration - 30) if duration else None,
             typical_duration_minutes=duration,
             maximum_duration_minutes=min(1440, duration + 30) if duration else None,
@@ -148,6 +150,24 @@ class PostgresCatalogMappingMixin:
             source="knowledge_graph_postgres",
             fetched_at=fetched_at,
             relationships=relationships,
+        )
+
+    @staticmethod
+    def _source_note(values: dict[str, Any]) -> SourceNote | None:
+        description = values.get("description")
+        text = str(description).strip() if description not in (None, "") else ""
+        if not text:
+            return None
+        source_url_value = values.get("url_google_map")
+        source_url = (
+            str(source_url_value).strip()
+            if source_url_value not in (None, "")
+            else None
+        )
+        return SourceNote(
+            text=text,
+            source_type="google_maps" if source_url else "knowledge_graph",
+            source_url=source_url,
         )
 
     @staticmethod

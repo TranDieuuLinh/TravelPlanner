@@ -20,7 +20,7 @@ const categories = [
 
 export default function NewListingPage() {
   const router = useRouter();
-  const { loading: authLoading, user } = useAuth();
+  const { loading: authLoading, sessionUnavailable, user } = useAuth();
 
   const [plans, setPlans] = useState<PublishablePlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState("");
@@ -35,14 +35,14 @@ export default function NewListingPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!authLoading && (!user || user.role !== "creator")) {
+    if (!authLoading && !sessionUnavailable && (!user || user.role !== "creator")) {
       router.replace("/profile");
       return;
     }
     if (user && user.role === "creator") {
       fetchPlans();
     }
-  }, [authLoading, router, user]);
+  }, [authLoading, router, sessionUnavailable, user]);
 
   async function fetchPlans() {
     setLoading(true);

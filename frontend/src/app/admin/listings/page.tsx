@@ -11,7 +11,7 @@ import type { PendingListingVersion } from "@/features/marketplace/types";
 
 export default function AdminListingsPage() {
   const router = useRouter();
-  const { loading: authLoading, user } = useAuth();
+  const { loading: authLoading, sessionUnavailable, user } = useAuth();
 
   const [pendingListings, setPendingListings] = useState<PendingListingVersion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,14 +23,14 @@ export default function AdminListingsPage() {
   const [reviewing, setReviewing] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && (!user || user.role !== "admin")) {
+    if (!authLoading && !sessionUnavailable && (!user || user.role !== "admin")) {
       router.replace("/");
       return;
     }
     if (user && user.role === "admin") {
       fetchPending();
     }
-  }, [authLoading, router, user]);
+  }, [authLoading, router, sessionUnavailable, user]);
 
   async function fetchPending() {
     setLoading(true);

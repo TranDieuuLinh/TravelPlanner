@@ -11,6 +11,7 @@ from app.modules.explorer.contract import (
     ExplorerOutput,
 )
 from app.modules.explorer.completeness import build_completeness
+from app.modules.explorer.adm_reconciliation import reconcile_adm_candidates
 from app.modules.explorer.draft_key import explorer_draft_cache_key
 from app.modules.explorer.errors import ExplorerOperationError
 from app.modules.explorer.intake_policy import normalize_intake_items
@@ -280,20 +281,10 @@ class ExplorerService:
         })
 
     def reconcile_adm(self, draft: ExplorerDraft) -> tuple[str | None, bool]:
-        candidates = [item for item in draft.adm_candidates if item.confidence >= 0.7]
-        if not candidates and draft.input_adm:
-            return draft.input_adm.strip(), False
-        groups: dict[str, list] = {}
-        for candidate in candidates:
-            groups.setdefault(self._adm_key(candidate.value), []).append(candidate)
-        if len(groups) > 1:
-            strong = [key for key, values in groups.items() if max(v.confidence for v in values) >= 0.9]
-            if len(strong) > 1:
-                return None, True
-        if not groups:
-            return None, False
-        best = max(groups.values(), key=lambda values: (max(v.confidence for v in values), len(values)))
-        return max(best, key=lambda item: item.confidence).value.strip(), False
+        return reconcile_adm_candidates(
+            draft,
+            normalize_key=lambda value: self._key(value).replace(" ", ""),
+        )
 
     def finalize(
         self,
@@ -388,7 +379,3 @@ class ExplorerService:
         value = unicodedata.normalize("NFD", value.casefold())
         value = "".join(char for char in value if unicodedata.category(char) != "Mn")
         return " ".join(value.replace("đ", "d").split())
-
-    @classmethod
-    def _adm_key(cls, value: str) -> str:
-        return cls._key(value).replace(" ", "")

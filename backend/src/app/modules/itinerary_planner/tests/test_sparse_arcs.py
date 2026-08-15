@@ -1,6 +1,10 @@
 from app.modules.itinerary_planner.contract import ItineraryPlannerInput
 from app.modules.itinerary_planner.preprocessing import prepare_planning_problem
-from app.modules.itinerary_planner.routing import build_sparse_arcs, feasible_arc_days
+from app.modules.itinerary_planner.routing import (
+    DEFAULT_NEIGHBOR_LIMIT,
+    build_sparse_arcs,
+    feasible_arc_days,
+)
 from app.modules.itinerary_planner.routing_models import SafeTravel
 from app.modules.itinerary_planner.tests.factories import candidate, payload
 
@@ -19,6 +23,10 @@ def make_problem():
     return prepare_planning_problem(
         ItineraryPlannerInput.model_validate(payload(places=places))
     )
+
+
+def test_default_neighbor_limit_is_ten() -> None:
+    assert DEFAULT_NEIGHBOR_LIMIT == 10
 
 
 def test_sparse_arcs_keep_relationship_outside_nearest_k() -> None:

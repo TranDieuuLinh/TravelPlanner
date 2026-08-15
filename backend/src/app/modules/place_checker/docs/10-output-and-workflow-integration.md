@@ -21,6 +21,7 @@ Task 01-09.
 Top-level contract hiện tại đúng theo file mẫu:
 `schema_version`, `status`, `trip_context`, `checked_places`,
 `planner_eligible_place_ids`, `resolved_items`, `special_experiences`,
+`food_restaurant_selections`, `food_meal_coverage`,
 `budget_analysis`, `capacity_analysis`, `coverage_analysis`,
 `geographic_analysis`, `gap_analysis`, `unresolved_entities`,
 `planner_constraints`, `warnings` và `metadata`.
@@ -30,6 +31,11 @@ Mẫu planner-facing minh họa nằm tại
 khóa bởi `output_contract.py` và contract test; file JSON giúp đọc nhanh một
 trường hợp một địa điểm. Luồng Python nội bộ dùng snake_case; HTTP projection
 sau này mới đổi alias sang camelCase.
+
+Compact output gửi `foodCoverage` với hard unique assignment cho mọi slot
+`day × breakfast/lunch/dinner`, reserve assignment dùng tập Restaurant thứ hai,
+và danh sách slot còn thiếu của từng lớp. Đây là feasibility/provenance; việc
+đặt bữa vào timeline cuối vẫn thuộc Planner.
 
 Mỗi checked place gồm canonical identity, tọa độ, destination, source tier,
 mandatory/removable policy, priority, category/experience, duration, cost,
@@ -111,6 +117,24 @@ Contract gọn dùng camelCase và gồm `trip.timezone`, `startDate`, tách
 `supportedMeals` cho food. `priority` phân biệt `user_input`,
 `special_experience`, `special_near`; `relationships` chứa canonical place ID
 liên quan thay vì tên tag.
+
+Trước boundary Planner, builder đếm đúng candidate sau toàn bộ filter. Travel
+pool phải đạt target `days * 14` (tối đa 420 cho contract 30 ngày); food pool chỉ hard-require
+`days * 3` candidate meal-capable để tương ứng ba meal slot mỗi ngày. Thiếu
+hard minimum làm `PlaceCheckerResult.status=blocked`; orchestration không tạo
+hoặc chuyển `planner_input` xuống FinalItineraryPlanner.
+
+Scoring tạo TravelPlace reserve bằng coverage mềm: ưu tiên candidate có evidence
+`Special_Experience`, sau đó một phần popular theo Bayesian quality kết hợp
+`log(reviewCount)`, rồi fill bằng ranking diversity. Candidate chỉ được chọn một
+lần và bucket thiếu tự fallback; Planner vẫn sở hữu geographic/day selection.
+
+`special_near` là ưu tiên, không phải hard gate. Coverage dựa trên relationship
+thực tế, không dựa riêng vào `priority`: restaurant đã tồn tại trong food pool
+có thể giữ priority mạnh hơn như `user_input` nhưng vẫn được tính là paired sau
+khi merge anchor relationship. TravelPlace không có pairing dùng general food
+pool đã qua eligibility filter làm fallback để Planner tối ưu theo route và
+meal window.
 User input hoặc URL candidate không đủ điều kiện planner không bị mất âm thầm;
 builder đưa chúng vào `excludedCandidates` với `reasonCode` và message.
 
@@ -137,20 +161,22 @@ sẵn sàng trong root state dưới `planner_input`.
 `places`. Mỗi phần tử có tọa độ, địa chỉ, rating, review count, thời lượng,
 giờ mở cửa, quan hệ và `price`.
 
-Food được chọn từ nhánh món đặc trưng có `priority=special_near`, tag
-`food-item:<id>`/`food:<name>` và `relationships` chứa TravelPlace anchor.
-Rich result giữ FoodItem, Bayesian rating, distance và selection reason để
-audit. Nếu restaurant đã có trong food pool, compact builder chỉ gộp anchor và
-tag thay vì tạo place ID trùng; candidate thiếu giá, tọa độ hoặc duration vẫn
-không vượt qua boundary Planner.
+Food query lấy một batch trong bán kính tính từ tọa độ tối đa 5 km. Cạnh
+`Special_Near` được giữ làm provenance nhưng không còn là điều kiện bắt buộc.
+`Restaurant -> Special_Experience -> FoodItem` và
+`Restaurant -> Offer_Item -> FoodItem` được đọc song song, không chờ nhánh này
+fail mới chạy nhánh kia; `Has_Style` nằm trong metadata relationship evidence.
 
-Food pairing ưu tiên giao nhau theo đúng FoodItem ID giữa
-`ADM -> Special_Experience -> FoodItem` và
-`Restaurant -> Special_Experience -> FoodItem`; adapter không nối theo tên.
-Kết quả primary có `foodMatchType=direct_id`. Nếu một anchor không có primary
-pair, adapter lấy FoodItem trực tiếp từ `Restaurant -> Offer_Item` và đặt
-`foodMatchType=offer_item_fallback`. Fallback không được diễn giải thành món
-đặc trưng và không merge entity hoặc tự ghi lại cạnh KG.
+Sau mỗi query, service dedup `(anchor, restaurant)`, gộp tiếp về một Restaurant,
+giữ mọi anchor/evidence, rồi loại candidate thiếu tọa độ, duration, giá hoặc
+meal window. Hard coverage cần ít nhất `days * 3` Restaurant duy nhất và ít
+nhất `days` candidate hỗ trợ từng loại breakfast/lunch/dinner. Pool ưu tiên
+reserve gấp đôi: tối đa `days * 6` Restaurant duy nhất và `days * 2` candidate
+cho từng breakfast/lunch/dinner. Khi pool gần 5 km chưa đạt reserve này,
+service query general ADM đúng một lần, loại ID đã thấy và chỉ lấy theo deficit
+tính từ candidate hợp lệ sau dedup/metadata validation. Pool cuối vẫn bị chặn ở
+soft target nên fallback không làm số candidate tăng không giới hạn.
+PlaceChecker không phân bổ quán vào ngày; Planner vẫn quyết định meal cuối.
 
 PlaceChecker loại mọi place/food không tính được giá trước boundary sang
 FinalItineraryPlanner. Giá `price.cost` được tính theo thứ tự:

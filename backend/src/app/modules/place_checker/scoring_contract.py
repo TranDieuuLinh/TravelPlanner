@@ -36,4 +36,4 @@ class CandidateRankingBatch(ContractModel):
     ranked: list[ScoredCandidate] = Field(default_factory=list)
     excluded: list[ScoredCandidate] = Field(default_factory=list)
     reserve_limit_per_gap: int = Field(default=10, ge=1, le=60)
-    pool_target: int = Field(default=20, ge=1, le=125)
+    pool_target: int = Field(default=20, ge=1, le=1000)

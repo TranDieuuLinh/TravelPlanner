@@ -418,3 +418,36 @@
 
 .eyebrow { display: block; margin-bottom: 8px; color: var(--brand); font-size: 0.68rem; font-weight: 900; letter-spacing: 0.13em; text-transform: uppercase; }
 .eyebrow.light { color: #365f5a; }
+/* Compact planner rules used by the lazily loaded global assistant. */
+.plannerChat.plannerChat--compact:not(.is-collapsed) .plannerEntryComposer .urlImportDock { padding: 5px 8px; }
+.plannerChat.plannerChat--compact:not(.is-collapsed) .urlImportControlIcon { width: 38px; height: 38px; }
+.plannerChat.plannerChat--compact:not(.is-collapsed) .urlImportControl textarea { max-height: 62px; padding-block: 6px; }
+.plannerChat.plannerChat--compact:not(.is-collapsed) .urlImportControl button { width: 40px; height: 40px; border-radius: 15px; }
+.plannerChat.plannerChat--compact:not(.is-collapsed) .composerBox textarea { min-height: 62px; padding-top: 10px; }
+.plannerChat.plannerChat--compact:not(.is-collapsed) .composerToolbar { min-height: 44px; padding-bottom: 5px; }
+.plannerChat.plannerChat--compact:not(.is-collapsed) .sendButton { width: 40px; min-width: 40px; height: 40px; }
+.globalPlannerAssistant .explorePlannerChat {
+  position: relative;
+  inset: auto;
+  display: flex;
+  width: min(410px, calc(100vw - 40px));
+  min-width: 340px;
+  max-width: calc(100vw - 40px);
+  height: min(610px, calc(100dvh - 104px));
+  min-height: 420px;
+  max-height: calc(100dvh - 40px);
+  flex-direction: column;
+  resize: both;
+}
+.globalPlannerAssistant .explorePlannerChat .plannerChatContent { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.globalPlannerAssistant .explorePlannerResizeHint { pointer-events: none; }
+@media (max-width: 520px) {
+  .globalPlannerAssistant .explorePlannerChat {
+    width: calc(100vw - 24px);
+    min-width: 0;
+    max-width: calc(100vw - 24px);
+    height: min(610px, calc(100dvh - 24px));
+    max-height: calc(100dvh - 24px);
+    resize: none;
+  }
+}

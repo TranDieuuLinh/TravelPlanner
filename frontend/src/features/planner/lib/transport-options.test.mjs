@@ -62,24 +62,24 @@ const walking = {
   ...route,
   mode: "walk",
   source: "valhalla",
-  distanceMeters: 2900
+  distanceMeters: 1400
 };
 const car = {
   ...route,
   mode: "ride_hailing",
   source: "valhalla",
-  distanceMeters: 2700
+  distanceMeters: 1400
 };
 
-test("always shows car and also shows walking for a leg under 3 km", () => {
+test("recommends walking first for a leg under 1.5 km", () => {
   assert.deepEqual(
-    visibleTransportOptions([car, walking, route], 2999),
+    visibleTransportOptions([car, walking, route], 1499),
     [walking, car, route]
   );
 });
 
-test("shows car but not walking for a leg at or above 3 km", () => {
-  assert.deepEqual(visibleTransportOptions([walking, route, car], 3000), [car, route]);
+test("starts with car and omits walking at or above 1.5 km", () => {
+  assert.deepEqual(visibleTransportOptions([walking, route, car], 1500), [car, route]);
   assert.deepEqual(visibleTransportOptions([walking, route, car], 4500), [car, route]);
 });
 

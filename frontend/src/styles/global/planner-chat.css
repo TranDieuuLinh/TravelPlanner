@@ -1885,7 +1885,7 @@
 /* Initial planning state: keep the same chat-left and discovery-right entry
    layout while the itinerary is prepared in the background. */
 /* Canonical processing state — strictly preserves layout, position, and dimensions */
-.plannerChat[style*="--floating-chat-x"] {
+.plannerLayout:not(.is-new-chat) > .plannerChat[style*="--floating-chat-x"] {
   position: fixed !important;
   left: var(--floating-chat-x) !important;
   top: var(--floating-chat-y) !important;

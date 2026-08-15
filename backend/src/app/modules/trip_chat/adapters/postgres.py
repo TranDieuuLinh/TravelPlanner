@@ -1,9 +1,16 @@
 import json
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from app.modules.trip_chat.contract import TripChat, TripChatMessage, TripChatSummary
+from app.modules.trip_chat.contract import (
+    PlanNoteUpdateStatus,
+    TripChat,
+    TripChatMessage,
+    TripChatSummary,
+)
+from app.modules.trip_chat.plan_snapshot import update_stop_personal_notes
 
 
 def _json(value: Any) -> Any:
@@ -34,6 +41,11 @@ class PostgresTripChatRepository:
             )
         return self._pool
 
+    async def close(self) -> None:
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
+
     async def create_chat(self, user_id: int, title: str | None) -> TripChat:
         chat_id, thread_id = str(uuid4()), str(uuid4())
         pool = await self._get_pool()
@@ -48,15 +60,23 @@ class PostgresTripChatRepository:
             )
         return await self.get_chat(user_id, chat_id)  # type: ignore[return-value]
 
-    async def list_chats(self, user_id: int) -> list[TripChatSummary]:
+    async def list_chats(
+        self, user_id: int, *, limit: int = 30, offset: int = 0
+    ) -> list[TripChatSummary]:
         pool = await self._get_pool()
         async with pool.acquire() as connection:
             rows = await connection.fetch(
-                """SELECT id, title, revision, current_itinerary,
-                          current_planner_output,
+                """SELECT id, title, revision,
+                          (current_itinerary IS NOT NULL OR
+                           current_planner_output IS NOT NULL) AS has_itinerary,
                           created_at, updated_at
-                   FROM agent_trip_chats WHERE user_id=$1 ORDER BY updated_at DESC""",
+                   FROM agent_trip_chats
+                   WHERE user_id=$1
+                   ORDER BY updated_at DESC
+                   LIMIT $2 OFFSET $3""",
                 user_id,
+                limit,
+                offset,
             )
         return [self._summary(row) for row in rows]
 
@@ -152,7 +172,52 @@ class PostgresTripChatRepository:
                 chat_id,
                 user_id,
             )
-        return result.endswith("1")
+            return result.endswith("1")
+
+    async def update_personal_notes(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        day: int,
+        item_id: str,
+        personal_notes: str | None,
+    ) -> PlanNoteUpdateStatus:
+        pool = await self._get_pool()
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                row = await connection.fetchrow(
+                    """SELECT revision, current_planner_output
+                       FROM agent_trip_chats
+                       WHERE id=$1 AND user_id=$2 FOR UPDATE""",
+                    chat_id,
+                    user_id,
+                )
+                if row is None:
+                    return "chat_not_found"
+                if row["revision"] != expected_revision:
+                    return "revision_conflict"
+                output = deepcopy(_json(row["current_planner_output"]))
+                if not update_stop_personal_notes(
+                    output,
+                    day=day,
+                    item_id=item_id,
+                    personal_notes=personal_notes,
+                ):
+                    return "item_not_found"
+                await connection.execute(
+                    """UPDATE agent_trip_chats
+                       SET revision=revision+1,
+                           current_planner_output=$1::jsonb,
+                           updated_at=$2
+                       WHERE id=$3 AND user_id=$4""",
+                    json.dumps(output),
+                    datetime.now(timezone.utc),
+                    chat_id,
+                    user_id,
+                )
+        return "updated"
 
     async def delete_all_chats(self, user_id: int) -> None:
         pool = await self._get_pool()
@@ -161,14 +226,19 @@ class PostgresTripChatRepository:
 
     @staticmethod
     def _summary_values(row) -> dict[str, Any]:
+        has_itinerary = (
+            row["has_itinerary"]
+            if "has_itinerary" in row.keys()
+            else (
+                row["current_itinerary"] is not None
+                or row["current_planner_output"] is not None
+            )
+        )
         return {
             "id": row["id"],
             "title": row["title"],
             "revision": row["revision"],
-            "has_itinerary": (
-                row["current_itinerary"] is not None
-                or row["current_planner_output"] is not None
-            ),
+            "has_itinerary": has_itinerary,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }

@@ -33,6 +33,9 @@ class FakeRepository:
     async def get_chat(self, user_id: int, chat_id: str):
         return self.chat
 
+    async def list_chats(self, user_id: int, *, limit: int = 30, offset: int = 0):
+        return [self.chat][offset : offset + limit]
+
     async def append_exchange(self, *args):
         self.appended = args
         return self.chat
@@ -68,6 +71,17 @@ import unittest
 
 
 class TestTripChatService(unittest.TestCase):
+    def test_bootstrap_returns_recent_summaries_and_selected_chat(self) -> None:
+        repository = FakeRepository()
+        result = asyncio.run(
+            TripChatService(repository, FakeGraph({})).bootstrap(
+                7, chat_id="chat-1", limit=10
+            )
+        )
+
+        self.assertEqual([chat.id for chat in result.chats], ["chat-1"])
+        self.assertIs(result.active_chat, repository.chat)
+
     def test_send_persists_planner_output_without_overwriting_legacy_contract(self) -> None:
         planner_output = {"destination": "Hà Nội", "days": [{"day": 1, "stops": []}]}
         repository = FakeRepository()

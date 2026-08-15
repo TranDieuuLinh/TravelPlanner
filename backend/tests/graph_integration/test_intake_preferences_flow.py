@@ -5,7 +5,7 @@ from app.modules.place_checker.tests.test_pipeline_output import pipeline
 from app.orchestration.nodes import RootNodes
 
 
-def test_prompt_preferences_and_input_item_reach_planner_contract() -> None:
+def test_prompt_preferences_reach_place_checker_before_pool_gate() -> None:
     explorer = asyncio.run(
         build_explorer_graph().ainvoke(
             {
@@ -29,7 +29,9 @@ def test_prompt_preferences_and_input_item_reach_planner_contract() -> None:
         )
     )
 
-    planner_input = update["planner_input"]
-    pho = next(item for item in planner_input.food if item.place_id == "kg:pho")
-    assert planner_input.trip.preferences == ["culture"]
-    assert pho.priority.value == "user_input"
+    output = update["place_output"]
+    pho = next(item for item in output.resolved_items if item.selected)
+    assert output.trip_context.preferences == ["culture"]
+    assert pho.selected.place_id == "kg:pho"
+    assert output.status.value == "blocked"
+    assert "planner_input" not in update

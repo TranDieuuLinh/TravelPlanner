@@ -12,6 +12,7 @@ import { authLoadFailureAction } from "@/features/auth/lib/session-recovery";
 import { APIError, apiFetch } from "@/shared/api/client";
 
 const SESSION_RETRY_DELAY_MS = 3_000;
+const SESSION_REQUEST_TIMEOUT_MS = 5_000;
 
 export type UserRole = "traveler" | "host" | "creator" | "admin";
 export type UserStatus = "active" | "inactive" | "banned";
@@ -41,6 +42,7 @@ type ProfileInput = {
 type AuthContextValue = {
   user: CurrentUser | null;
   loading: boolean;
+  sessionUnavailable: boolean;
   login: (email: string, password: string) => Promise<CurrentUser>;
   register: (fullName: string, email: string, password: string) => Promise<CurrentUser>;
   logout: () => Promise<void>;
@@ -53,10 +55,12 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionUnavailable, setSessionUnavailable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let requestController: AbortController | undefined;
 
     const scheduleRetry = () => {
       if (cancelled || retryTimer) return;
@@ -67,10 +71,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const loadUser = async () => {
+      requestController?.abort();
+      const controller = new AbortController();
+      requestController = controller;
+      const timeout = setTimeout(
+        () => controller.abort(),
+        SESSION_REQUEST_TIMEOUT_MS
+      );
       try {
-        const currentUser = await apiFetch<CurrentUser>("/me");
+        const currentUser = await apiFetch<CurrentUser>("/me", {
+          signal: controller.signal,
+        });
         if (cancelled) return;
         setUser(currentUser);
+        setSessionUnavailable(false);
         setLoading(false);
       } catch (error) {
         if (cancelled) return;
@@ -78,16 +92,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           error instanceof APIError ? error.status : undefined
         );
         if (action === "retry") {
+          setSessionUnavailable(true);
+          setLoading(false);
           scheduleRetry();
           return;
         }
         if (action === "clear-session") {
           setUser(null);
+          setSessionUnavailable(false);
           setLoading(false);
           return;
         }
         setLoading(false);
         throw error;
+      } finally {
+        clearTimeout(timeout);
+        if (requestController === controller) requestController = undefined;
       }
     };
 
@@ -104,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      requestController?.abort();
       if (retryTimer) clearTimeout(retryTimer);
       window.removeEventListener("online", retryNow);
     };
@@ -112,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(() => ({
     user,
     loading,
+    sessionUnavailable,
     async login(email, password) {
       const response = await apiFetch<{ user: CurrentUser }>("/auth/login", {
         method: "POST",
@@ -151,7 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(updated);
       return updated;
     }
-  }), [loading, user]);
+  }), [loading, sessionUnavailable, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

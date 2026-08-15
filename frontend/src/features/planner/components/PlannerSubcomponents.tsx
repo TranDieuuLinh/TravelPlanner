@@ -1,8 +1,21 @@
 "use client";
 
-import type { UnscheduledPlace } from "@/features/planner/api/plans";
+import type {
+  TransportLeg,
+  TravelPlan,
+  UnscheduledPlace,
+} from "@/features/planner/api/plans";
 import type { PlaceReviewsModalPlace } from "@/features/planner/components/PlaceReviewsModal";
+import {
+  MapPinIcon,
+  TransportModeIcon,
+} from "@/features/planner/components/PlannerIcons";
 import { formatSourceNoteForDisplay } from "@/features/planner/lib/plan-note";
+import {
+  formatDistance,
+  formatDuration,
+  transportModeLabel,
+} from "@/features/planner/lib/planner-transport";
 import {
   categoryFromPlaceType,
   formatCompactCount,
@@ -12,6 +25,178 @@ import {
 } from "@/features/planner/lib/planner-formatters";
 
 const ITINERARY_NO_IMAGE_SRC = "/images/penguin-no-image.png";
+
+type Accommodation = NonNullable<TravelPlan["accommodation"]>;
+
+function formatAccommodationPrice(amount: number, currency: string): string {
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+export function AccommodationItineraryCard({
+  accommodation,
+  mapKey,
+  onFocusMap,
+  onZoomMap,
+  onOpenReviews,
+  selected,
+}: {
+  accommodation: Accommodation;
+  mapKey: string;
+  onFocusMap: (mapKey: string) => void;
+  onZoomMap: (mapKey: string) => void;
+  onOpenReviews?: (place: PlaceReviewsModalPlace) => void;
+  selected: boolean;
+}) {
+  return (
+    <article className="itineraryStop itineraryStop--accommodation">
+      <div
+        aria-label={`Hiển thị nơi lưu trú ${accommodation.name} trên bản đồ`}
+        className={`itineraryPlaceCard itineraryPlaceCard--withImage itineraryPlaceCard--mapInteractive ${
+          selected ? "is-map-place-selected" : ""
+        }`}
+        data-map-place-key={mapKey}
+        onClick={() => onFocusMap(mapKey)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          onFocusMap(mapKey);
+        }}
+        role="button"
+        tabIndex={0}
+      >
+        <div className="itineraryPlaceMedia">
+          <div className="itineraryPlaceImage itineraryPlaceImage--fallback">
+            <img
+              alt={`Chưa có ảnh cho ${accommodation.name}`}
+              draggable={false}
+              src={ITINERARY_NO_IMAGE_SRC}
+            />
+          </div>
+        </div>
+        <div className="itineraryPlaceContent">
+          <header>
+            <div className="itineraryPlaceMain">
+              <div className="itineraryPlaceTitle">
+                <button
+                  aria-label={`Hiển thị ${accommodation.name} trên bản đồ`}
+                  className="placeMapButton"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onFocusMap(mapKey);
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    onZoomMap(mapKey);
+                  }}
+                  title={`Nhấp đúp để phóng to ${accommodation.name} trên bản đồ`}
+                  type="button"
+                >
+                  <strong>{accommodation.name}</strong>
+                </button>
+              </div>
+              {accommodation.rating != null ? (
+                <ItineraryReviewRating
+                  onOpen={onOpenReviews}
+                  place={{
+                    placeId: accommodation.placeId,
+                    name: accommodation.name,
+                    address: accommodation.address,
+                    rating: accommodation.rating,
+                    reviewCount: accommodation.reviewCount,
+                  }}
+                />
+              ) : null}
+              <div className="itineraryScheduleBadge">
+                <span>
+                  {formatAccommodationPrice(
+                    accommodation.pricePerNight,
+                    accommodation.currency,
+                  )}{" "}
+                  / đêm
+                </span>
+              </div>
+            </div>
+          </header>
+          <div className="itineraryPlaceQuickActions">
+            <span
+              aria-label="Nơi lưu trú"
+              className="itineraryTypeIcon"
+              role="img"
+              title="Nơi lưu trú"
+            >
+              <svg viewBox="0 0 24 24">
+                <path d="M4 19V8M20 19v-7a3 3 0 0 0-3-3H9a3 3 0 0 0-3 3v7M4 15h16M8 9V6h5a3 3 0 0 1 3 3" />
+              </svg>
+            </span>
+          </div>
+          <div className="itineraryAccommodationDetails">
+            <span>{accommodation.address ?? "Chưa có địa chỉ"}</span>
+            <small>{accommodation.nights} đêm</small>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+export function AccommodationRouteStrip({
+  leg,
+  onToggle,
+  routeKey,
+  selected,
+}: {
+  leg: TransportLeg;
+  onToggle: (routeKey: string) => void;
+  routeKey: string | null;
+  selected: boolean;
+}) {
+  return (
+    <div
+      aria-label={`${transportModeLabel(leg.mode)}, từ ${leg.fromPlace} đến ${leg.toPlace}, khoảng ${formatDuration(leg.estimatedDurationMinutes)}`}
+      className={`itineraryRoute ${routeKey ? "has-map-route-link" : ""} ${
+        selected ? "is-map-route-selected" : ""
+      }`}
+      data-map-route-key={routeKey ?? undefined}
+      role="group"
+    >
+      <div className="itineraryRouteToolbar">
+        <div className="itineraryRouteLink">
+          <span className="itineraryRouteIcon" aria-hidden="true">
+            <TransportModeIcon mode={leg.mode} />
+          </span>
+          <span className="itineraryRouteCopy">
+            <small>
+              {formatDuration(leg.estimatedDurationMinutes)} · {formatDistance(leg.distanceMeters)}
+            </small>
+          </span>
+        </div>
+        {routeKey ? (
+          <button
+            aria-label={
+              selected
+                ? `Huỷ làm nổi bật tuyến từ ${leg.fromPlace} đến ${leg.toPlace}`
+                : `Làm nổi bật tuyến từ ${leg.fromPlace} đến ${leg.toPlace} trên bản đồ`
+            }
+            aria-pressed={selected}
+            className="itineraryRouteMapButton"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggle(routeKey);
+            }}
+            type="button"
+          >
+            <span aria-hidden="true"><MapPinIcon /></span>
+            <span>{selected ? "Huỷ" : "Route"}</span>
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 export function ItineraryReviewRating({
   onOpen,

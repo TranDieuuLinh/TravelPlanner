@@ -1,19 +1,45 @@
 # Phase 4: CP-SAT model và solving
 
-Trạng thái: đã triển khai OR-Tools CP-SAT với schedule variables, optional
+Trạng thái: đã triển khai hybrid planner, dùng geographic day-domain,
+greedy shortlist, 2-opt/swap và OR-Tools CP-SAT repair theo từng ngày.
+CP-SAT repair giữ schedule variables, optional
 intervals, opening windows, `AddNoOverlap`, `AddCircuit`, travel precedence,
 ba bữa/ngày, budget/người gồm Xanh SM night surcharge, nghỉ liên ngày 9 giờ,
-ba pass lexicographic, integer utility và result/component extraction. Graph đã
-có node `optimize_itinerary`; route enrichment/final public output thuộc Phase
-5 nên chưa thực hiện ở đây.
+hai pass lexicographic, integer utility và result/component extraction.
 
 ## Mục tiêu
 
-CP-SAT nhận prepared candidates, sparse arcs và matrix, sau đó quyết định
-toàn bộ itinerary cùng lúc. OR-Tools được pin `>=9.11,<10`, tương thích
-Python 3.11.
+Runtime chính không còn đưa toàn bộ candidate-day vào một search tree global.
+OR-Tools được pin `>=9.11,<10`, tương thích Python 3.11.
 
-Planner không chọn top place rồi chèn tuần tự. Solver tìm:
+Pipeline chính:
+
+```text
+prepared candidates
+-> geographic day-domain (mỗi optional candidate tối đa 1-2 ngày gần nhất)
+-> greedy activity cluster từng ngày
+-> tạo placeholder breakfast/lunch/dinner quanh activity skeleton
+-> chọn food theo corridor activity trước/sau meal
+-> 2-opt + swap cải thiện thứ tự activity
+-> CP-SAT repair hai pass trên từng ngày
+-> ghép ngày, chọn accommodation, kiểm tra budget/rest/transfers
+```
+
+Greedy không loại candidate theo tổng `durationMinutes`; nó giữ toàn bộ priority
+candidate và lấy optional có điểm tổng hợp cao nhất đến ngưỡng 16 activity.
+Điểm này dùng evidence `sourceKind` thật, preference, Bayesian popularity,
+quality, relationship và travel-to-current-cluster. Duration,
+opening hours và thời gian di chuyển được CP-SAT
+kiểm tra khi dựng timeline thật.
+Điểm quality của shortlist dùng cùng Bayesian review quality với CP-SAT, gồm
+rating, review count và prior của candidate pool; popularity bổ sung
+`log(reviewCount)` để nhận diện landmark phổ biến mà không cho raw count lấn át.
+Skeleton mặc định đặt breakfast trước activity buổi sáng, lunch giữa hai cụm và
+dinner sau activity cuối ngày. Không chủ động hint thêm activity sau dinner để
+giữ biên nghỉ đêm/transfer accommodation khả thi; CP-SAT vẫn có quyền sửa nếu
+opening window hoặc user-input bắt buộc yêu cầu lịch tối.
+
+CP-SAT theo ngày quyết định:
 
 ```text
 chọn candidate nào
@@ -35,11 +61,16 @@ optimizer/
 ├── objective.py
 ├── solver.py
 └── result.py
+hybrid/
+├── heuristic.py
+├── projection.py
+├── optimizer.py
+└── assembly.py
 ```
 
-LangGraph node gọi optimizer qua worker thread để việc solve CPU-bound không
-chặn event loop. `solver.py` điều phối ba pass; công thức CP-SAT chi tiết nằm
-trong các file optimizer chuyên trách.
+LangGraph node gọi hybrid optimizer qua worker thread để việc solve CPU-bound
+không chặn event loop. `solver.py` vẫn là CP-SAT engine thấp tầng: hybrid gọi nó
+cho từng ngày, còn affected-day route repair dùng model global cùng repair locks.
 
 ## Biến quyết định
 
@@ -135,8 +166,11 @@ Breakfast bị chặn cứng tại 10:00. Trong cùng ngày, lunch phải bắt 
 180 phút sau breakfast và dinner ít nhất 300 phút sau lunch.
 
 Route cấm food-to-food arc, nên mỗi ngày phải có activity giữa breakfast/lunch
-và lunch/dinner. Mỗi selected arc còn có `waiting <= 15` ngoài safe-travel
-buffer; pool/opening window không đủ thì trả `INFEASIBLE` thay vì ngày chỉ có meal.
+và lunch/dinner. Strict solve đặt hard maximum `waiting <= 150` phút ngoài
+safe-travel buffer. Mốc 15 phút là ideal threshold trong objective, không còn là
+hard gate làm lịch hợp lệ 20-60 phút chờ bị `INFEASIBLE`. Nếu cả shortlist và
+full-day strict solve đều vô nghiệm, hybrid retry full-day một lần không hard
+wait cap; progressive penalty bên dưới vẫn tối thiểu hóa khoảng trống.
 
 ### Accommodation
 
@@ -192,38 +226,47 @@ Ví dụ kết thúc 03:00 (`1620`) thì ngày sau bắt đầu sớm nhất 12:
 Breakfast window được phép trễ đến 12:00 trên recovery day; target 08:00 vẫn
 giữ ngày bình thường bắt đầu sớm.
 
-## Lexicographic solving
+Trong hybrid assembly, `08:00` là giờ bắt đầu stop đầu chứ không phải giờ sớm
+nhất được rời accommodation. Transfer có thể bắt đầu trước 08:00; validation
+nghỉ đêm vẫn trừ cả thời gian quay về accommodation ngày trước và thời gian đi
+tới stop đầu ngày sau trước khi kiểm tra minimum 9 giờ.
 
-Dựng model/hard constraints một lần, solve ba lượt.
+## Lexicographic solving theo ngày
 
-### Pass 1: user input
+Dựng model/hard constraints cho từng ngày, solve hai lượt. Vì priority được khóa
+trong từng daily repair, metadata không tuyên bố optimality global cho cả chuyến;
+`objectivePolicyVersion=hybrid-activity-corridor-v2` và
+`optimalityProven=false`.
+Mỗi lượt mặc định giữ một CP-SAT search worker. Benchmark local cho thấy hai và
+bốn workers đều làm fixture graph nhỏ vượt 90 giây, trong khi single-worker
+hoàn tất nhanh; không tăng mặc định nếu chưa có benchmark production theo cỡ
+pool. Các hard constraint và thứ tự ưu tiên lexicographic không đổi.
+Hai pass mặc định không đặt `max_time_in_seconds`; solver chạy tới khi chứng minh
+optimal/infeasible hoặc gặp lỗi bên ngoài. `SolverConfig` vẫn nhận timeout cụ
+thể cho benchmark, test hoặc runtime deployment cần latency cap.
+Pass priority yêu cầu exact optimum để khóa số `user_input` và URL. Pass utility
+dùng `relative_gap_limit=0.05`, nên có thể dừng khi utility nằm trong 5% bound;
+metadata giữ `optimalityProven=false` khi dùng tolerance này, kể cả OR-Tools
+trả status `OPTIMAL` theo tolerance.
+
+### Pass 1: priority
 
 ```text
-maximize sum(selected[i] where priority=user_input)
+maximize userInputCount * (urlCandidateCount + 1) + urlCount
 ```
 
-Nếu optimum là `U`, thêm:
+Multiplier bảo đảm một `user_input` luôn giá trị hơn toàn bộ URL cộng lại. Nếu
+optimum trả `U` user input và `R` URL, khóa riêng cả hai count:
 
 ```text
 sum(selected[user_input]) = U
-```
-
-Khóa count, không khóa ID cụ thể. Pass sau có thể đổi tổ hợp user input
-nếu vẫn giữ count `U` và tạo itinerary tốt hơn.
-
-### Pass 2: URL
-
-```text
-maximize sum(selected[i] where priority=url)
-```
-
-Giữ constraint user input. Nếu optimum là `R`, thêm:
-
-```text
 sum(selected[url]) = R
 ```
 
-### Pass 3: plan utility
+Khóa count, không khóa ID cụ thể. Pass sau vẫn có thể đổi tổ hợp candidate nếu
+giữ đúng `U`, `R` và tạo itinerary tốt hơn.
+
+### Pass 2: plan utility
 
 Giữ cả `U` và `R`, sau đó:
 
@@ -277,17 +320,7 @@ với floor 0,70 để candidate ít review không bị loại nhưng không vư
 có rating gần tương đương và lượng review đáng tin. Implementation dùng chung
 với PlaceChecker tại `shared/tools/bayesian_rating.py`.
 
-### Time fit
-
-Tạo match variable khi selected interval overlap preferred window. Bản đầu có
-thể dùng ba mức integer để model gọn:
-
-```text
-full overlap    -> full value
-partial overlap -> partial value
-no overlap      -> 0
-```
-
+Time fit dùng ba mức integer: full overlap, partial overlap và no overlap.
 Opening hours vẫn là hard constraint; preferred window chỉ là objective.
 
 ### Same-day relationship
@@ -323,22 +356,14 @@ waiting = start[j,d] - end[i,d] - safeTravel[i,j]
 mealDeviation = abs(mealStart[d,m] - targetStart[m])
 ```
 
-Waiting chỉ active khi arc được chọn, bị chặn cứng tối đa 15 phút; objective vẫn
-giữ component waiting để audit.
+Waiting chỉ active khi arc được chọn. Strict pass chặn tối đa 150 phút;
+relaxed fallback bỏ cap này. Objective luôn phạt lũy tiến: 16-30 phút nhẹ,
+31-60 phút mạnh và trên 60 phút rất mạnh; vì vậy solver vẫn ưu tiên fill
+activity thay vì để lịch trống, kể cả trong fallback.
 
-### Fatigue và day balance
-
-Fatigue có thể gồm:
-
-```text
-stop count vượt comfortable threshold
-active minutes vượt comfortable threshold
-minutes kết thúc sau 23:00
-chuỗi activity dài không có rest/meal
-```
-
-Day imbalance dùng chênh lệch activity minutes hoặc stop count giữa ngày dày
-nhất và ngày nhẹ nhất. Không tính meal duration vào activity diversity.
+Fatigue gồm stop/active-minute threshold và phần lịch sau 23:00. Day imbalance
+dùng chênh lệch activity minutes hoặc stop count; meal duration không tham gia
+activity diversity.
 
 ## Solver configuration
 
@@ -346,30 +371,22 @@ Config phải inject, không hard-code trong model builder:
 
 ```text
 num_search_workers
-pass1_timeout_seconds = 30
-pass2_timeout_seconds = 30
-pass3_timeout_seconds = 30
+priority_timeout_seconds = 2
+utility_timeout_seconds = 5
+utility_relative_gap_limit = 0.05
 random_seed
 log_search_progress
+max_inter_stop_wait_minutes = 150  # None chỉ dùng cho relaxed fallback
 ```
 
 Dùng solution pass trước làm hint cho pass sau; hint không thay constraint lock.
 Composition runtime đọc `ITINERARY_LOG_SEARCH_PROGRESS`, mặc định `true`, và
 truyền thành `SolverConfig(log_search_progress=True)` để OR-Tools phát progress
-log. Unit test có thể inject config `false` để giữ output gọn.
+log. Mỗi CP-SAT pass có deadline mặc định để một bài toán khó không giữ worker
+hoặc chặn Uvicorn reload vô hạn. Unit test có thể inject config khác khi cần.
 
-Status:
-
-```text
-OPTIMAL    -> optimum đã được chứng minh
-FEASIBLE   -> có schedule, chưa chứng minh tối ưu
-INFEASIBLE -> không có schedule theo model hiện tại
-UNKNOWN    -> timeout/error trước khi có schedule
-```
-
-Nếu pass priority chỉ `FEASIBLE`, có thể khóa incumbent count để tiếp tục nhưng
-output phải `optimalityProven=false`; không tuyên bố count là tối đa đã
-chứng minh.
+Status gồm `OPTIMAL`, `FEASIBLE`, `INFEASIBLE`, `UNKNOWN`. Nếu priority pass chỉ
+`FEASIBLE`, output không được tuyên bố count tối đa hay `optimalityProven=true`.
 
 ## Result extraction
 
@@ -392,7 +409,8 @@ number không thể audit.
 ## Acceptance criteria
 
 - Solver không vi phạm duration/opening/travel/budget/meal constraints.
-- Không có food-to-food arc; waiting giữa hai stop liên tiếp không vượt 15 phút.
+- Không có food-to-food arc; strict solve giữ waiting không vượt 150 phút và
+  relaxed fallback vẫn ghi nhận progressive waiting cost.
 - User/URL count không giảm sau pass tương ứng; cost tính per-person.
 - Special-near không có selection bonus riêng.
 - Relationship một chiều không bị chấm hai lần.

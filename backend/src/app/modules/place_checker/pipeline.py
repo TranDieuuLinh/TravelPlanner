@@ -10,13 +10,15 @@ from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
 from app.modules.place_checker.evidence import EvidenceEnrichmentService
 from app.modules.place_checker.item_resolution import InputItemResolutionService
 from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
-from app.modules.place_checker.food_selection_contract import FoodSelectionAnchor
+from app.modules.place_checker.food_anchor_policy import select_food_anchors
 from app.modules.place_checker.output import PlaceCheckerOutputAssembler
 from app.modules.place_checker.output_contract import (
     PlaceCheckerExecutionMetadata,
     PlaceCheckerResult,
     ToolCallSummary,
 )
+from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
+from app.modules.place_checker.enums import GapType, PlaceCheckerStatus
 from app.modules.place_checker.ports import PlaceCheckerMetricsSink
 from app.modules.place_checker.resolution import EntityResolutionService
 from app.modules.place_checker.retrieval import TargetedRetrievalService
@@ -107,6 +109,11 @@ class PlaceCheckerPipeline:
                     for place in enriched.places
                     if place.place_id
                 ],
+                excluded_gap_types=(
+                    {GapType.food_coverage}
+                    if self.food_selection is not None
+                    else set()
+                ),
             )
             ranking = self.scoring.rank(retrieval, context, evaluated)
             optional_places, verification_by_id, ranking_by_id = (
@@ -118,20 +125,7 @@ class PlaceCheckerPipeline:
             phase["retrieval_and_ranking"] = self._elapsed(retrieval_started)
 
         food_selection = None
-        food_anchors = [
-            FoodSelectionAnchor(
-                place_id=evaluation.place.place_id,
-                name=(
-                    evaluation.place.canonical_name
-                    or evaluation.place.original_names[0]
-                ),
-            )
-            for evaluation in evaluated.places
-            if evaluation.planner_eligible
-            and evaluation.place.place_id
-            and evaluation.place.metadata
-            and evaluation.place.metadata.category == "travel_place"
-        ]
+        food_anchors = select_food_anchors(evaluated, days=context.days)
         if (
             self.food_selection is not None
             and context.destination.status == AdmResolutionStatus.resolved
@@ -189,6 +183,38 @@ class PlaceCheckerPipeline:
             extra_warnings=[*identities.warnings, *enriched.warnings],
             food_selection=food_selection,
         )
+        planner_output_builder = PlaceCheckerPlannerOutputBuilder()
+        travel_target, food_target, missing_places, missing_food = (
+            planner_output_builder.pool_shortfall(result)
+        )
+        unpaired_place_ids = planner_output_builder.unpaired_travel_place_ids(result)
+        pool_warnings = []
+        if unpaired_place_ids:
+            pool_warnings.append(
+                f"Special-near coverage is partial: {len(unpaired_place_ids)} travel "
+                "places will use the eligible general food pool as fallback."
+            )
+        if missing_places or missing_food:
+            warning = (
+                "Planner candidate pools are incomplete: "
+                f"require {travel_target} travel places and {food_target} meal-capable "
+                f"food candidates; missing {missing_places} travel places and "
+                f"{missing_food} food candidates."
+            )
+            result = result.model_copy(
+                update={
+                    "status": PlaceCheckerStatus.blocked,
+                    "warnings": list(
+                        dict.fromkeys([*result.warnings, *pool_warnings, warning])
+                    ),
+                }
+            )
+        elif pool_warnings:
+            result = result.model_copy(
+                update={
+                    "warnings": list(dict.fromkeys([*result.warnings, *pool_warnings]))
+                }
+            )
         await self._record_metrics(result)
         return result
 

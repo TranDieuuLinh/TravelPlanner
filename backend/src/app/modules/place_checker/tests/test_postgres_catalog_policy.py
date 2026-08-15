@@ -56,13 +56,10 @@ def test_special_food_query_traverses_adm_food_restaurant_and_anchor() -> None:
         in SPECIAL_FOOD_RESTAURANT_SQL
     )
     assert "food.entity_type = 'FoodItem'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "near_edge.relationship_type = 'Special_Near'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "relation.relationship_type = 'Special_Near'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "relation.relationship_type = 'Special_Experience'" in SPECIAL_FOOD_RESTAURANT_SQL
     assert (
-        "restaurant_special.relationship_type = 'Special_Experience'"
-        in SPECIAL_FOOD_RESTAURANT_SQL
-    )
-    assert (
-        "food.food_item_id = restaurant_special.to_entity_id"
+        "special_food.food_item_id = relation.to_entity_id"
         in SPECIAL_FOOD_RESTAURANT_SQL
     )
     assert "offer.relationship_type = 'Offer_Item'" in SPECIAL_FOOD_RESTAURANT_SQL
@@ -75,19 +72,20 @@ def test_special_food_query_does_not_match_food_by_name() -> None:
     assert "food_item_tokens" not in SPECIAL_FOOD_RESTAURANT_SQL
 
 
-def test_special_food_query_uses_offered_item_only_for_unmatched_anchor() -> None:
-    assert "), special_pairs AS (" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "), fallback_pairs AS (" in SPECIAL_FOOD_RESTAURANT_SQL
+def test_special_food_query_reads_offer_and_special_evidence_independently() -> None:
+    assert "), food_evidence AS (" in SPECIAL_FOOD_RESTAURANT_SQL
     assert (
-        "'offer_item_fallback'::text AS food_match_type" in SPECIAL_FOOD_RESTAURANT_SQL
+        "'offer_item_fallback'::text" in SPECIAL_FOOD_RESTAURANT_SQL
     )
-    assert "FROM special_pairs special" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert (
-        "special.anchor_place_id = offered.anchor_place_id"
-        in SPECIAL_FOOD_RESTAURANT_SQL
-    )
-    assert "SELECT * FROM special_pairs" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "UNION ALL\n    SELECT * FROM fallback_pairs" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "relation.relationship_type = 'Special_Experience'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "offer.relationship_type = 'Offer_Item'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "FROM special_pairs special" not in SPECIAL_FOOD_RESTAURANT_SQL
+
+
+def test_food_query_uses_computed_five_km_radius_and_general_mode() -> None:
+    assert "pair.distance_km <= $3" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "WHEN $3::double precision IS NULL THEN 'general_adm'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "proximity_rank <= $4" in SPECIAL_FOOD_RESTAURANT_SQL
 
 
 def test_style_time_properties_only_fill_missing_place_metadata() -> None:
@@ -301,6 +299,24 @@ def test_special_near_score_decreases_with_distance() -> None:
     )
 
     assert near["score"] > far["score"]
+
+
+def test_google_description_and_map_url_become_provider_note() -> None:
+    metadata = PostgresCatalogMappingMixin._metadata(
+        "place:1",
+        "TravelPlace",
+        {
+            "description": "Không gian ngắm hoàng hôn.",
+            "url_google_map": "https://google.com/maps/place/example",
+        },
+        [],
+        None,
+    )
+
+    assert metadata.source_note is not None
+    assert metadata.source_note.text == "Không gian ngắm hoàng hôn."
+    assert metadata.source_note.source_type == "google_maps"
+    assert metadata.source_note.source_url == "https://google.com/maps/place/example"
 
 
 def test_concurrent_catalog_calls_create_only_one_pool(monkeypatch) -> None:

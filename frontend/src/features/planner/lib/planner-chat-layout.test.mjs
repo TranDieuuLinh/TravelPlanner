@@ -138,6 +138,22 @@ test("Collapsed Chat: Class preservation during loading without position jumps",
   assert.equal(classesAfter.includes("is-collapsed"), true);
 });
 
+test("Real CSS Inspection: floating coordinates never override the new-chat grid", () => {
+  const cssPath = path.resolve(process.cwd(), "src/styles/global/planner-chat.css");
+  const cssContent = fs.readFileSync(cssPath, "utf-8");
+
+  assert.ok(
+    cssContent.includes(
+      '.plannerLayout:not(.is-new-chat) > .plannerChat[style*="--floating-chat-x"]'
+    )
+  );
+  assert.equal(
+    /(?:^|\n)\.plannerChat\[style\*="--floating-chat-x"\]\s*\{/.test(cssContent),
+    false,
+    "floating chat coordinates must be scoped to completed Planner layouts"
+  );
+});
+
 test("Mobile Layout: getDOMFloatingChatRect handles null / zero size bounds gracefully", () => {
   const hiddenMobileElement = mockDOMElement({ left: 0, top: 0, width: 0, height: 0 });
   const rect = getDOMFloatingChatRect(hiddenMobileElement);

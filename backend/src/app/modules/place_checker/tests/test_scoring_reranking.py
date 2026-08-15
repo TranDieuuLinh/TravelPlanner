@@ -97,7 +97,8 @@ def candidate(
         tags=tags or [category],
         metadata=metadata,
         verification_status=status,
-        planner_eligible=status in {
+        planner_eligible=status
+        in {
             VerificationStatus.verified_kg,
             VerificationStatus.verified_external,
         },
@@ -132,15 +133,18 @@ def empty_places():
 
 
 def test_component_arithmetic_uses_documented_weights() -> None:
-    result = CandidateScoringService(now=NOW).rank(
-        retrieval(candidate("one")),
-        analysis_context(),
-        empty_places(),
-    ).ranked[0]
+    result = (
+        CandidateScoringService(now=NOW)
+        .rank(
+            retrieval(candidate("one")),
+            analysis_context(),
+            empty_places(),
+        )
+        .ranked[0]
+    )
 
     expected = sum(
-        WEIGHTS[name] * value
-        for name, value in result.components.model_dump().items()
+        WEIGHTS[name] * value for name, value in result.components.model_dump().items()
     )
     assert result.base_score == round(expected, 6)
 
@@ -190,11 +194,15 @@ def test_retrieved_alcohol_candidate_is_hard_filtered_via_alias() -> None:
 def test_keyword_fallback_receives_real_ranking_penalty() -> None:
     fallback = candidate("fallback", tags=["museum", "retrieval:keyword_fallback"])
 
-    result = CandidateScoringService(now=NOW).rank(
-        retrieval(fallback),
-        analysis_context(),
-        empty_places(),
-    ).ranked[0]
+    result = (
+        CandidateScoringService(now=NOW)
+        .rank(
+            retrieval(fallback),
+            analysis_context(),
+            empty_places(),
+        )
+        .ranked[0]
+    )
 
     assert result.penalties["keyword_fallback"] == 0.08
 
@@ -279,18 +287,25 @@ def test_diversity_reranking_moves_different_category_forward() -> None:
 def test_same_geographic_cluster_is_kept_without_a_penalty() -> None:
     result = CandidateScoringService(now=NOW).rank(
         retrieval(
-            candidate("near_a", coordinates=Coordinates(latitude=21.03, longitude=105.84)),
-            candidate("near_b", coordinates=Coordinates(latitude=21.031, longitude=105.841)),
+            candidate(
+                "near_a", coordinates=Coordinates(latitude=21.03, longitude=105.84)
+            ),
+            candidate(
+                "near_b", coordinates=Coordinates(latitude=21.031, longitude=105.841)
+            ),
         ),
         analysis_context(),
         empty_places(),
     )
 
     assert "same_geographic_cluster" in result.ranked[1].rerank_reasons
-    assert round(
-        result.ranked[1].final_score - result.ranked[1].rerank_score,
-        6,
-    ) == 0.08
+    assert (
+        round(
+            result.ranked[1].final_score - result.ranked[1].rerank_score,
+            6,
+        )
+        == 0.08
+    )
 
 
 def test_distant_geographic_cluster_is_penalized() -> None:
@@ -361,7 +376,7 @@ def test_default_reserve_grows_with_trip_days() -> None:
     )
 
     assert result.reserve_limit_per_gap == 60
-    assert result.pool_target == 69
+    assert result.pool_target == 101
     assert len(result.ranked) == 8
 
 
@@ -397,9 +412,18 @@ def test_global_ranking_can_exceed_per_gap_limit() -> None:
 
 def test_pool_category_balancing_keeps_discovery_groups_in_pool() -> None:
     groups = [
-        "food", "drink", "culture", "nature", "shopping", "nightlife",
-        "workshop", "performance", "outdoor", "family",
-        "special_experience", "local_activity",
+        "food",
+        "drink",
+        "culture",
+        "nature",
+        "shopping",
+        "nightlife",
+        "workshop",
+        "performance",
+        "outdoor",
+        "family",
+        "special_experience",
+        "local_activity",
     ]
     result = CandidateScoringService().rank(
         retrieval(
@@ -419,9 +443,6 @@ def test_pool_category_balancing_keeps_discovery_groups_in_pool() -> None:
         max_total_candidates=12,
     )
 
-    selected_groups = {
-        item.candidate.pool_category
-        for item in result.ranked
-    }
+    selected_groups = {item.candidate.pool_category for item in result.ranked}
     assert len(result.ranked) == 12
     assert selected_groups == set(groups)

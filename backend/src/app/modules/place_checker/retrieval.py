@@ -11,7 +11,10 @@ from app.modules.place_checker.enums import (
     RetrievalSourceKind,
     VerificationStatus,
 )
-from app.modules.place_checker.errors import CandidateSourceError, CandidateSourceTimeout
+from app.modules.place_checker.errors import (
+    CandidateSourceError,
+    CandidateSourceTimeout,
+)
 from app.modules.place_checker.item_contract import ItemResolutionBatch
 from app.modules.place_checker.ports import (
     GapCandidateSource,
@@ -29,9 +32,9 @@ from app.modules.place_checker.retrieval_contract import (
     TargetedRetrievalQuery,
 )
 from app.modules.place_checker.pool_policy import (
+    activity_pool_target_for_days,
     per_gap_pool_target,
     pool_query_limit_for_days,
-    pool_target_for_days,
 )
 from app.shared.tools.search_places.normalization import normalize_text
 from app.shared.tools.search_places.scoring import distance_km, text_similarity
@@ -73,16 +76,56 @@ INTENT_BY_GAP = {
 POOL_QUERY_SPECS = {
     "pool:food_alternatives": (GapType.food_coverage, "restaurant", "restaurant"),
     "pool:drink_alternatives": (GapType.food_coverage, "cafe", "cafe"),
-    "pool:culture_alternatives": (GapType.experience_coverage, "culture museum heritage", "travel place"),
-    "pool:nature_alternatives": (GapType.experience_coverage, "nature lake garden", "travel place"),
-    "pool:shopping_alternatives": (GapType.experience_coverage, "shopping market craft", "travel place"),
-    "pool:nightlife_alternatives": (GapType.time_of_day, "nightlife evening entertainment", "travel place"),
-    "pool:workshop_alternatives": (GapType.experience_coverage, "workshop class hands-on", "travel place"),
-    "pool:performance_alternatives": (GapType.experience_coverage, "performance theater show", "travel place"),
-    "pool:outdoor_alternatives": (GapType.experience_coverage, "outdoor walking cycling", "travel place"),
-    "pool:family_alternatives": (GapType.people_accessibility, "family children entertainment", "travel place"),
-    "pool:special_experience_alternatives": (GapType.experience_coverage, "special experience local culture", "travel place"),
-    "pool:local_activity_alternatives": (GapType.experience_coverage, "local activity authentic experience", "travel place"),
+    "pool:culture_alternatives": (
+        GapType.experience_coverage,
+        "culture museum heritage",
+        "travel place",
+    ),
+    "pool:nature_alternatives": (
+        GapType.experience_coverage,
+        "nature lake garden",
+        "travel place",
+    ),
+    "pool:shopping_alternatives": (
+        GapType.experience_coverage,
+        "shopping market craft",
+        "travel place",
+    ),
+    "pool:nightlife_alternatives": (
+        GapType.time_of_day,
+        "nightlife evening entertainment",
+        "travel place",
+    ),
+    "pool:workshop_alternatives": (
+        GapType.experience_coverage,
+        "workshop class hands-on",
+        "travel place",
+    ),
+    "pool:performance_alternatives": (
+        GapType.experience_coverage,
+        "performance theater show",
+        "travel place",
+    ),
+    "pool:outdoor_alternatives": (
+        GapType.experience_coverage,
+        "outdoor walking cycling",
+        "travel place",
+    ),
+    "pool:family_alternatives": (
+        GapType.people_accessibility,
+        "family children entertainment",
+        "travel place",
+    ),
+    "pool:special_experience_alternatives": (
+        GapType.experience_coverage,
+        "special experience local culture",
+        "travel place",
+    ),
+    "pool:local_activity_alternatives": (
+        GapType.experience_coverage,
+        "local activity authentic experience",
+        "travel place",
+    ),
 }
 
 CORE_POOL_QUERY_SPECS = {
@@ -90,11 +133,6 @@ CORE_POOL_QUERY_SPECS = {
         GapType.experience_coverage,
         "travel place",
         "travel place",
-    ),
-    "pool:restaurant_candidates": (
-        GapType.food_coverage,
-        "restaurant",
-        "restaurant",
     ),
     "pool:accommodation_candidates": (
         GapType.budget,
@@ -106,24 +144,59 @@ CORE_POOL_QUERY_SPECS = {
         "culture museum heritage",
         "travel place",
     ),
-    "pool:restaurant_reserve": (
-        GapType.food_coverage,
-        "ăn sáng",
-        "restaurant",
-    ),
 }
 
 POOL_RELATION_TERMS = {
     "pool:culture_alternatives": ["văn hóa", "tham quan", "heritage", "museum"],
-    "pool:nature_alternatives": ["ngoài trời", "đi dạo", "cắm trại", "nature", "garden", "lake"],
-    "pool:shopping_alternatives": ["mua sắm", "khám phá", "hoạt động mua bán địa phương", "market", "craft"],
-    "pool:nightlife_alternatives": ["cuộc sống về đêm", "nightlife", "ăn nhậu", "karaoke"],
+    "pool:nature_alternatives": [
+        "ngoài trời",
+        "đi dạo",
+        "cắm trại",
+        "nature",
+        "garden",
+        "lake",
+    ],
+    "pool:shopping_alternatives": [
+        "mua sắm",
+        "khám phá",
+        "hoạt động mua bán địa phương",
+        "market",
+        "craft",
+    ],
+    "pool:nightlife_alternatives": [
+        "cuộc sống về đêm",
+        "nightlife",
+        "ăn nhậu",
+        "karaoke",
+    ],
     "pool:workshop_alternatives": ["làm đồ thủ công", "workshop", "pottery", "class"],
-    "pool:performance_alternatives": ["văn hóa & giải trí", "vui chơi & giải trí", "performance", "theater", "show"],
-    "pool:outdoor_alternatives": ["ngoài trời", "đi dạo", "cắm trại", "cưỡi ngựa", "climbing"],
+    "pool:performance_alternatives": [
+        "văn hóa & giải trí",
+        "vui chơi & giải trí",
+        "performance",
+        "theater",
+        "show",
+    ],
+    "pool:outdoor_alternatives": [
+        "ngoài trời",
+        "đi dạo",
+        "cắm trại",
+        "cưỡi ngựa",
+        "climbing",
+    ],
     "pool:family_alternatives": ["vui chơi & giải trí", "trẻ em", "family", "children"],
-    "pool:special_experience_alternatives": ["trải nghiệm", "văn hóa", "làm đồ thủ công", "đi dạo"],
-    "pool:local_activity_alternatives": ["hoạt động mua bán địa phương", "làm đồ thủ công", "local", "craft"],
+    "pool:special_experience_alternatives": [
+        "trải nghiệm",
+        "văn hóa",
+        "làm đồ thủ công",
+        "đi dạo",
+    ],
+    "pool:local_activity_alternatives": [
+        "hoạt động mua bán địa phương",
+        "làm đồ thủ công",
+        "local",
+        "craft",
+    ],
 }
 
 
@@ -155,6 +228,7 @@ class TargetedRetrievalService:
         context: TripEvaluationContext,
         items: ItemResolutionBatch | None = None,
         anchor_place_ids: list[str] | None = None,
+        excluded_gap_types: set[GapType] | None = None,
     ) -> RetrievalBatch:
         results: list[GapRetrievalResult] = []
         event_ids: list[str] = []
@@ -192,7 +266,8 @@ class TargetedRetrievalService:
                                 and item.item.item_type == "drink"
                             )
                         ]
-                        if gap_id in {
+                        if gap_id
+                        in {
                             "pool:food_alternatives",
                             "pool:drink_alternatives",
                         }
@@ -209,6 +284,8 @@ class TargetedRetrievalService:
         for gap in retrieval_gaps:
             if gap.status != GapStatus.open:
                 continue
+            if gap.gap_type in (excluded_gap_types or set()):
+                continue
             query = self._query(
                 gap,
                 context,
@@ -221,7 +298,9 @@ class TargetedRetrievalService:
                     GapRetrievalResult(
                         gap_id=gap.gap_id,
                         query=query,
-                        warnings=["Gap này cần xác minh/làm giàu, không thêm place mới."],
+                        warnings=[
+                            "Gap này cần xác minh/làm giàu, không thêm place mới."
+                        ],
                     )
                 )
                 continue
@@ -251,7 +330,9 @@ class TargetedRetrievalService:
                 break
         if self._verified_count(self._verify(evidence, query)) < verified_target:
             for source in self.external_sources:
-                evidence.extend(await self._call_source(source, query, attempts, warnings))
+                evidence.extend(
+                    await self._call_source(source, query, attempts, warnings)
+                )
                 candidates = self._verify(evidence, query)
                 if self._verified_count(candidates) >= verified_target:
                     break
@@ -373,7 +454,9 @@ class TargetedRetrievalService:
         query: TargetedRetrievalQuery,
     ) -> RetrievedCandidate:
         representative = max(evidence, key=lambda item: item.confidence)
-        linked_entity = next((item.entity_id for item in evidence if item.entity_id), None)
+        linked_entity = next(
+            (item.entity_id for item in evidence if item.entity_id), None
+        )
         has_verified_kg_link = any(
             item.entity_id is not None
             and item.source_kind == RetrievalSourceKind.knowledge_graph
@@ -435,7 +518,8 @@ class TargetedRetrievalService:
                 }.values()
             ),
             verification_status=status,
-            planner_eligible=status in {
+            planner_eligible=status
+            in {
                 VerificationStatus.verified_kg,
                 VerificationStatus.verified_external,
             },
@@ -451,16 +535,20 @@ class TargetedRetrievalService:
     def _same_place(left: RetrievalEvidence, right: RetrievalEvidence) -> bool:
         if left.entity_id and left.entity_id == right.entity_id:
             return True
-        if left.provider == right.provider and left.provider_id and (
-            left.provider_id == right.provider_id
+        if (
+            left.provider == right.provider
+            and left.provider_id
+            and (left.provider_id == right.provider_id)
         ):
             return True
         if text_similarity(left.name, right.name) < 0.88:
             return False
         if left.adm_id and right.adm_id and left.adm_id != right.adm_id:
             return False
-        if left.category and right.category and (
-            normalize_text(left.category) != normalize_text(right.category)
+        if (
+            left.category
+            and right.category
+            and (normalize_text(left.category) != normalize_text(right.category))
         ):
             return False
         if left.coordinates and right.coordinates:
@@ -481,7 +569,9 @@ class TargetedRetrievalService:
             for right in representatives[index + 1 :]:
                 if normalize_text(left.name) != normalize_text(right.name):
                     continue
-                same_adm = not left.adm_id or not right.adm_id or left.adm_id == right.adm_id
+                same_adm = (
+                    not left.adm_id or not right.adm_id or left.adm_id == right.adm_id
+                )
                 if same_adm:
                     conflicts.add(normalize_text(left.name))
         return conflicts
@@ -497,9 +587,12 @@ class TargetedRetrievalService:
         for candidate in candidates:
             if candidate.verification_status != VerificationStatus.verified_external:
                 continue
-            event_id = "place-promotion:" + hashlib.sha256(
-                candidate.candidate_key.encode("utf-8")
-            ).hexdigest()[:24]
+            event_id = (
+                "place-promotion:"
+                + hashlib.sha256(candidate.candidate_key.encode("utf-8")).hexdigest()[
+                    :24
+                ]
+            )
             try:
                 await self.promotion_outbox.enqueue(
                     PromotionEvent(event_id=event_id, candidate=candidate)
@@ -563,7 +656,10 @@ class TargetedRetrievalService:
         elif gap.gap_type == GapType.food_coverage:
             query_limit = max(query_limit, min(60, context.days * 3))
         elif category == "travel_place" and query_text == "travel place":
-            query_limit = max(query_limit, pool_target_for_days(context.days))
+            query_limit = max(
+                query_limit,
+                min(60, activity_pool_target_for_days(context.days)),
+            )
         return TargetedRetrievalQuery(
             gap_id=gap.gap_id,
             gap_type=gap.gap_type,

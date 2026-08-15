@@ -14,11 +14,31 @@ from app.shared.contracts.place import Coordinates
 class FakeFoodSource:
     def __init__(self, candidates: list[FoodRestaurantCandidate]) -> None:
         self.candidates = candidates
-        self.calls: list[tuple[str, list[str]]] = []
+        self.calls: list[dict] = []
 
-    async def find_food_restaurants(self, *, adm_id, anchor_place_ids):
-        self.calls.append((adm_id, anchor_place_ids))
-        return self.candidates
+    async def find_food_restaurants(
+        self,
+        *,
+        adm_id,
+        anchor_place_ids,
+        radius_km=5.0,
+        per_anchor_limit=8,
+        excluded_restaurant_ids=None,
+        required_meals=None,
+    ):
+        self.calls.append(
+            {
+                "adm_id": adm_id,
+                "anchor_place_ids": anchor_place_ids,
+                "radius_km": radius_km,
+                "per_anchor_limit": per_anchor_limit,
+                "required_meals": required_meals or [],
+            }
+        )
+        excluded = set(excluded_restaurant_ids or [])
+        return [
+            item for item in self.candidates if item.restaurant_id not in excluded
+        ]
 
 
 def candidate(
@@ -106,6 +126,8 @@ def test_one_restaurant_is_selected_for_each_anchor() -> None:
     )
     assert all(item.food_match_type == "direct_id" for item in result.selections)
     assert all(item.food_match_confidence == 1 for item in result.selections)
+    assert source.calls[0]["radius_km"] == 5.0
+    assert source.calls[1]["radius_km"] is None
 
 
 def test_reliable_restaurant_beats_five_star_candidate_with_one_review() -> None:
@@ -206,3 +228,155 @@ def test_offer_item_fallback_is_preserved_in_selection_provenance() -> None:
 
     assert result.selections[0].food_match_type == "offer_item_fallback"
     assert result.selections[0].offered_food_item_id == "food:pho"
+
+
+def test_deduplicates_same_restaurant_per_anchor_before_selection() -> None:
+    source = FakeFoodSource(
+        [
+            candidate(
+                "place:lake",
+                "restaurant:shared",
+                priority=0.35,
+                match_type="offer_item_fallback",
+            ),
+            candidate("place:lake", "restaurant:shared", priority=0.9),
+        ]
+    )
+
+    result = asyncio.run(
+        FoodRestaurantSelectionService(source).select(
+            analysis_context(),
+            [FoodSelectionAnchor(place_id="place:lake", name="Hồ Gươm")],
+        )
+    )
+
+    assert len(result.selections) == 1
+    assert result.selections[0].food_match_type == "direct_id"
+
+
+def test_merges_relationships_when_restaurant_is_near_multiple_anchors() -> None:
+    source = FakeFoodSource(
+        [
+            candidate("place:lake", "restaurant:shared", distance=0.4),
+            candidate("place:temple", "restaurant:shared", distance=1.2),
+        ]
+    )
+
+    result = asyncio.run(
+        FoodRestaurantSelectionService(source).select(
+            analysis_context(days=1),
+            [
+                FoodSelectionAnchor(place_id="place:lake", name="Hồ Gươm"),
+                FoodSelectionAnchor(place_id="place:temple", name="Văn Miếu"),
+            ],
+        )
+    )
+
+    assert len(result.selections) == 1
+    assert result.selections[0].related_anchor_place_ids == [
+        "place:lake",
+        "place:temple",
+    ]
+
+
+def test_general_adm_is_not_queried_when_soft_reserve_is_complete() -> None:
+    source = FakeFoodSource(
+        [candidate("place:lake", f"restaurant:{index}") for index in range(12)]
+    )
+
+    asyncio.run(
+        FoodRestaurantSelectionService(source).select(
+            analysis_context(days=2),
+            [FoodSelectionAnchor(place_id="place:lake", name="Hồ Gươm")],
+        )
+    )
+
+    assert [call["radius_km"] for call in source.calls] == [5.0]
+
+
+def test_general_adm_fills_only_the_soft_reserve_deficit() -> None:
+    near = [candidate("place:lake", f"restaurant:near:{index}") for index in range(7)]
+    general = [
+        candidate("place:lake", f"restaurant:general:{index}").model_copy(
+            update={"proximity_source": "general_adm", "distance_km": None}
+        )
+        for index in range(5)
+    ]
+
+    class ReserveFoodSource(FakeFoodSource):
+        async def find_food_restaurants(self, **kwargs):
+            self.calls.append(kwargs)
+            return near if kwargs["radius_km"] is not None else general
+
+    source = ReserveFoodSource([])
+    result = asyncio.run(
+        FoodRestaurantSelectionService(source).select(
+            analysis_context(days=2),
+            [FoodSelectionAnchor(place_id="place:lake", name="Hồ Gươm")],
+        )
+    )
+
+    assert len(result.selections) == 12
+    assert sum(
+        item.proximity_source == "general_adm" for item in result.selections
+    ) == 5
+    assert [call["radius_km"] for call in source.calls] == [5.0, None]
+    assert source.calls[1]["per_anchor_limit"] == 7
+    assert set(source.calls[1]["required_meals"]) == {
+        "breakfast",
+        "lunch",
+        "dinner",
+    }
+
+
+def test_filters_incomplete_restaurant_before_selection() -> None:
+    incomplete = candidate("place:lake", "restaurant:incomplete", priority=0.99)
+    incomplete = incomplete.model_copy(
+        update={
+            "metadata": incomplete.metadata.model_copy(
+                update={"typical_duration_minutes": None}
+            )
+        }
+    )
+    complete = candidate("place:lake", "restaurant:complete", priority=0.8)
+    source = FakeFoodSource([incomplete, complete])
+
+    result = asyncio.run(
+        FoodRestaurantSelectionService(source).select(
+            analysis_context(),
+            [FoodSelectionAnchor(place_id="place:lake", name="Hồ Gươm")],
+        )
+    )
+
+    assert result.selections[0].restaurant_id == "restaurant:complete"
+    assert result.warnings == [
+        "Đã loại candidate quán không đủ dữ liệu trước selection: missing_duration=1.",
+        "Food meal matching không đủ hard coverage: "
+        "hard_missing=5, reserve_missing=6.",
+    ]
+
+
+def test_incomplete_restaurant_leaves_anchor_unmatched() -> None:
+    incomplete = candidate("place:lake", "restaurant:incomplete")
+    incomplete = incomplete.model_copy(
+        update={
+            "metadata": incomplete.metadata.model_copy(update={"opening_hours": None})
+        }
+    )
+
+    result = asyncio.run(
+        FoodRestaurantSelectionService(FakeFoodSource([incomplete])).select(
+            analysis_context(),
+            [FoodSelectionAnchor(place_id="place:lake", name="Hồ Gươm")],
+        )
+    )
+
+    assert result.selections == []
+    assert result.unmatched_anchor_place_ids == ["place:lake"]
+    assert result.warnings == [
+        "Không tìm thấy quán phù hợp gần 1 điểm tham quan.",
+        "Đã loại candidate quán không đủ dữ liệu trước selection: "
+        "missing_meal_window=1.",
+        "Food meal matching không đủ hard coverage: "
+        "hard_missing=6, reserve_missing=6.",
+    ]

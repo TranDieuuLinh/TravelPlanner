@@ -1,6 +1,6 @@
 # Cấu trúc codebase hiện tại
 
-Cập nhật lần cuối: 2026-08-14.
+Cập nhật lần cuối: 2026-08-16.
 
 ## Các ứng dụng cấp cao nhất
 
@@ -73,12 +73,19 @@ adapter.
 
 Module `conversation_memory` đã hoàn thành Phase 01–06. Module sở hữu public contract (`contract.py`), interfaces (`ports.py`), PostgreSQL asyncpg adapter (`adapters/postgres.py`), migration `009_conversation_memory.sql`, user-preference APIs, bounded rolling summary (`summary.py`), rule-based extractor (`extractor.py`), reference resolver (`resolver.py`), merge policy evaluator (`merge_policy.py`) và `ConversationMemoryService` (`service.py`). Root graph dùng lazy PostgreSQL checkpointer ở `shared/persistence/postgres_checkpointer.py` khi dependency/configuration đã sẵn sàng; development vẫn có fallback InMemory rõ ràng. Trip Chat phát structured memory metrics và có feature flag rollback.
 
+`shared/contracts/source_note.py` là contract dùng chung cho source note vì
+Place Checker tạo note, Itinerary Planner truyền note và Trip Chat lưu snapshot.
+Rule URL ưu tiên Google/KG thuộc Place Checker; Trip Chat chỉ mutation trường
+`personalNotes` do người dùng sở hữu.
+
 
 FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của
 module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla matrix,
 fallback đường chim bay khi Valhalla unavailable, và
 sparse arcs trên contract `trip + places + food + accommodations + excludedCandidates`, sau đó chạy Phase 4 OR-Tools
-CP-SAT ba pass để giữ tối đa `user_input`, tiếp đến URL rồi tối ưu utility.
+hybrid planner gồm geographic day-domain, greedy shortlist, 2-opt/swap và
+CP-SAT hai pass theo từng ngày: pass priority exact giữ thứ tự
+`user_input > URL`, sau đó pass utility tối ưu chất lượng lịch.
 Runtime composition đặt `ITINERARY_LOG_SEARCH_PROGRESS=true` để OR-Tools phát
 search progress; test graph vẫn có thể truyền `SolverConfig` tắt log để tránh
 output nhiễu.
@@ -121,6 +128,8 @@ Backend hiện chỉ expose:
 - `GET /health`
 - `POST /v1/agent/invoke`
 - `GET/POST/DELETE /v1/trip-chats` và các endpoint message theo chat có auth
+- `GET /v1/trip-chats/bootstrap` trả tối đa 30 summary gần nhất cùng full chat
+  đang mở để frontend không phải tải danh sách rồi mới tải chi tiết tuần tự
 
 Endpoint agent nhận thread id, prompt tùy chọn, tối đa 20 URL, tối đa 20 ảnh,
 `forceRefresh` tùy chọn,
@@ -199,11 +208,16 @@ Explorer chỉ trích xuất và giữ provenance, không resolve place. Root
 orchestration chỉ chuyển output `ready` sang public input của PlaceChecker.
 Explorer output mang `days`, `startDate` và `timezone`; mặc định duration là 3
 ngày và ngày bắt đầu là ngày mai khi prompt không chỉ định.
+Khi một nguồn có destination chính cùng một điểm day-trip, Explorer ưu tiên
+`input_adm` nếu evidence của destination chính mạnh hơn; chỉ yêu cầu làm rõ khi
+nhiều destination mạnh ngang nhau hoặc không xác định được destination chính.
+Nếu confidence bằng nhau, số mention độc lập được dùng làm tie-break; evidence
+trùng hệt nhau không được tính lặp.
 
 Với rich PlaceChecker pipeline, root giữ `PlaceCheckerResult` cho diagnostic,
 đồng thời dùng compact builder tạo `trip + places + food` và validate bằng
 `ItineraryPlannerInput`. Payload nằm trong state `planner_input`; Planner runtime
-tiêu thụ payload qua preprocessing, routing matrix, CP-SAT, route enrichment và
+tiêu thụ payload qua preprocessing, routing matrix, hybrid daily repair, route enrichment và
 finalization.
 Compact builder chỉ chuyển place/food có giá dùng được; `typical_cost` được lấy
 từ trung bình khoảng min/max, một đầu mút có sẵn, hoặc `0` cho tier `free`.
@@ -302,12 +316,26 @@ nổi tiếng trong objective sau các hard feasibility constraints.
 Planner cấm food-to-food arc để mỗi cặp bữa liên tiếp có ít nhất một activity,
 đồng thời giới hạn waiting giữa hai stop ở 15 phút ngoài safe-travel buffer.
 Sparse-arc policy giữ meal-access theo từng ngày và hai chiều để pruning không
-làm mất đường activity vào/ra meal.
-Retrieval ngoài gap phân tích còn mở hai core pool có quota độc lập theo chuyến:
-`8 TravelPlace/ngày` và `8 Restaurant/ngày`, tối thiểu 12 và tối đa 60 mỗi loại. Core query
-over-fetch có giới hạn để bù candidate thiếu metadata; scoring chốt quota sau
-dedupe và quality gate. Restaurant được compact builder đưa vào `food`, không
-trộn thành activity place.
+làm mất đường activity vào/ra meal. Graph cơ bản giữ mười neighbor gần nhất theo
+safe travel time có hướng từ matrix; forced relationship/priority/bridge arcs
+vẫn được bảo toàn. Mỗi daily CP-SAT repair mặc định giữ một search worker cho hai pass sau khi
+benchmark local cho thấy multi-worker làm model hiện tại chậm hơn đáng kể.
+Hai pass không đặt solver timeout mặc định; deployment có SLA phải inject giới
+hạn qua `SolverConfig`.
+Preprocessing giới hạn optional candidate vào tối đa hai ngày thuộc geographic
+center gần nhất; user/URL giữ toàn bộ feasible days và food relationship đi
+cùng TravelPlace. Meal coverage được repair sau projection. Pass utility dùng
+relative gap 5%, còn pass priority vẫn tối ưu exact trước khi khóa riêng count
+user input và URL.
+Retrieval ngoài gap phân tích còn mở hai core pool theo chuyến. TravelPlace dùng
+target `14/ngày` với coverage mềm Special Experience/popular; food hard minimum là unique matching cho từng slot
+`day × breakfast/lunch/dinner`, tối đa 60 mỗi loại. PlaceChecker còn thử một
+reserve matching rời hard set và gửi cả feasibility qua `foodCoverage`.
+Core query over-fetch có giới hạn để bù candidate thiếu metadata; scoring chốt
+quota sau dedupe và quality gate. PlaceChecker đếm lại đúng candidate đủ điều
+kiện compact output; thiếu một trong hai quota thì status là `blocked` và root
+không tạo `planner_input`. Thiếu pairing gần chỉ tạo warning; Restaurant được
+đưa vào `food`, không trộn thành activity place.
 Compatibility graph không database vẫn dùng `DevelopmentCatalog`. Khi có
 `DATABASE_URL` và `GOOGLE_MAPS_SCRAPER_ENABLED=true`, gap retrieval chỉ gọi
 `GoogleMapsPlaywrightSearch` sau khi Knowledge Graph không đủ candidate đã
@@ -324,16 +352,13 @@ trung lập. PlaceChecker PostgreSQL adapter diễn giải `Special_Near`,
 evidence có provenance sang scoring/output. Adapter không còn đọc `Near` legacy
 hoặc `Must_Visit`. Timing mặc định của `Has_Style` được đọc từ properties của
 node Style đích; timing riêng của place được ưu tiên.
-Nhánh food selection riêng duyệt primary
-`ADM -> Special_Experience -> FoodItem <- Special_Experience <- Restaurant <- Special_Near <- TravelPlace`.
-Nó giữ tối đa một selection cho mỗi TravelPlace, chấp nhận quán duy nhất và dùng
-Bayesian/review reliability để phân xử khi có nhiều quán. Query thuộc adapter,
-thuật toán chọn thuộc service/tool của module.
-Primary query chỉ nối bằng FoodItem ID chính xác, không dùng tên. Rich selection
-giữ FoodItem, match type và confidence. Khi một anchor không có primary pair,
-query dùng FoodItem trực tiếp từ `Restaurant -> Offer_Item` với match type
-`offer_item_fallback`; fallback không ghi ngược, merge Knowledge Graph hoặc giả
-làm món đặc trưng.
+Nhánh food query một batch Restaurant trong bán kính tọa độ 5 km quanh tối đa
+8-12 anchor đại diện. SpecialNear là evidence, còn SpecialExperience và
+OfferItem được đọc song song. Service dedup Restaurant, gộp anchor/provenance,
+validate metadata, rồi chạy unique meal-slot matching. Service chỉ query general
+ADM một lần cho các meal type còn thiếu ở hard/reserve matching và match lại.
+Logic nằm trong `place_checker/food_meal_matching.py`; pool selection bắt buộc
+giữ mọi Restaurant ID đã được hard hoặc reserve matching chọn.
 Identity acceptance mềm dành riêng
 cho URL/direct input nằm trong `place_checker/resolution_policy.py`; policy này
 không áp dụng cho system/retrieval candidate.
@@ -344,14 +369,20 @@ graph vẫn chưa bền vững.
 
 ## Cấu trúc style frontend
 
-`frontend/src/app/globals.css` là entrypoint style duy nhất của app và chỉ giữ
-các `@import`. CSS theo vùng chức năng nằm trong `frontend/src/styles/global/`,
-được import theo đúng thứ tự cascade hiện tại; style riêng của Planner nằm trong
-`frontend/src/features/planner/styles/`.
+`frontend/src/app/globals.css` giữ style shell dùng chung. CSS lớn chỉ thuộc một
+route như landing, profile, group, Leaflet và MapLibre được import tại page tương
+ứng để không nằm trong payload của mọi route. CSS theo vùng chức năng còn lại
+nằm trong `frontend/src/styles/global/`; style riêng của Planner nằm trong
+`frontend/src/features/planner/styles/`. Bản đồ và các widget planner toàn cục
+được tách thành dynamic chunk.
 
-The existing planner UI remains the active entrypoint. Its API adapter in
-`frontend/src/features/planner/api/plans.ts` maps the current `/v1/trip-chats`
-contract to the existing view models without changing the planner layout.
+The existing planner UI remains the active entrypoint. The compatibility facade
+in `frontend/src/features/planner/api/plans.ts` maps the current
+`/v1/trip-chats` contract to the existing view models without changing the
+planner layout. Transport contracts live in `features/planner/contracts/`;
+directions, reviews and place search use capability-specific adapters in
+`features/planner/api/`. Pure guided-intake policy and formatting live in
+`features/planner/model/` with colocated tests.
 
 `admin-frontend/app/globals.css` cũng chỉ giữ các import. Style admin được chia
 theo shell/run, responsive, Knowledge Graph và AI import trong

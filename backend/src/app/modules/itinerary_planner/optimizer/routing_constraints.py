@@ -23,6 +23,8 @@ def add_routing_and_budget_constraints(
     problem: PreparedPlanningProblem,
     routing: RoutingProblem,
     variables: PlannerVariables,
+    *,
+    max_inter_stop_wait_minutes: int | None = MAX_INTER_STOP_WAIT_MINUTES,
 ) -> None:
     arcs_by_pair = {
         (arc.origin_id, arc.destination_id): arc for arc in routing.sparse_arcs
@@ -92,6 +94,7 @@ def add_routing_and_budget_constraints(
                     arc,
                     sparse_arc.travel,
                     late_departure[(origin_id, day)],
+                    max_inter_stop_wait_minutes,
                 )
             elif origin_id.startswith("__start__"):
                 model.Add(
@@ -265,6 +268,7 @@ def _add_travel_precedence(
     arc: cp_model.IntVar,
     travel: SafeTravel,
     late_departure: cp_model.IntVar,
+    max_inter_stop_wait_minutes: int | None,
 ) -> None:
     origin_end = variables.end[(origin_id, day)]
     destination_start = variables.start[(destination_id, day)]
@@ -279,7 +283,8 @@ def _add_travel_precedence(
         wait == destination_start - origin_end - travel.safe_minutes
     ).OnlyEnforceIf(arc)
     model.Add(wait == 0).OnlyEnforceIf(arc.Not())
-    model.Add(wait <= MAX_INTER_STOP_WAIT_MINUTES)
+    if max_inter_stop_wait_minutes is not None:
+        model.Add(wait <= max_inter_stop_wait_minutes)
     night_arc = variables.remember(
         model.NewBoolVar(f"night_arc:{origin_id}:{destination_id}:{day}")
     )

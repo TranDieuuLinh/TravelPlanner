@@ -9,9 +9,10 @@ from app.modules.place_checker.enums import (
 )
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
 from app.modules.place_checker.pool_policy import (
+    activity_pool_target_for_days,
     combined_pool_target_for_days,
+    food_pool_target_for_days,
     pool_query_limit_for_days,
-    pool_target_for_days,
 )
 from app.modules.place_checker.pool_balancing import CandidatePoolBalancer
 from app.modules.place_checker.reranking import CandidateDiversityReranker
@@ -43,6 +44,7 @@ WEIGHTS = {
     "data_confidence": 0.05,
 }
 
+
 class CandidateScoringService:
     def __init__(self, *, now: datetime | None = None) -> None:
         self.now = now or datetime.now(UTC)
@@ -62,9 +64,7 @@ class CandidateScoringService:
         if reserve_limit_per_gap is None:
             reserve_limit_per_gap = pool_query_limit_for_days(context.days)
         candidates = [
-            candidate
-            for gap in retrieval.gaps
-            for candidate in gap.candidates
+            candidate for gap in retrieval.gaps for candidate in gap.candidates
         ]
         existing_categories, existing_experiences, anchors = self._existing(
             existing_places
@@ -97,7 +97,8 @@ class CandidateScoringService:
             ranked = CandidatePoolBalancer.select_entity_type_quotas(
                 ranked,
                 existing_places,
-                target_per_type=pool_target_for_days(context.days),
+                activity_target=activity_pool_target_for_days(context.days),
+                food_target=food_pool_target_for_days(context.days),
             )
         excluded = sorted(
             (item for item in scored if not item.eligible),
@@ -224,7 +225,9 @@ class CandidateScoringService:
     def _preference_match(cls, preferences: list[str], labels: set[str]) -> float:
         if not preferences:
             return 0.5
-        matches = sum(cls._matches_any([preference], labels) for preference in preferences)
+        matches = sum(
+            cls._matches_any([preference], labels) for preference in preferences
+        )
         return min(1.0, matches / len(preferences))
 
     @staticmethod
@@ -273,9 +276,7 @@ class CandidateScoringService:
         context: TripEvaluationContext,
     ) -> float:
         duration = (
-            candidate.metadata.typical_duration_minutes
-            if candidate.metadata
-            else None
+            candidate.metadata.typical_duration_minutes if candidate.metadata else None
         )
         if duration is None:
             return 0.5
@@ -298,7 +299,9 @@ class CandidateScoringService:
             metadata.opening_hours,
             metadata.fetched_at,
         ]
-        return sum(value is not None and value is not False for value in fields) / len(fields)
+        return sum(value is not None and value is not False for value in fields) / len(
+            fields
+        )
 
     @staticmethod
     def _geo_fit(distance: float | None) -> float:

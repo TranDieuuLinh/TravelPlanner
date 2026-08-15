@@ -31,7 +31,7 @@ from app.modules.itinerary_planner.routing_models import (
 from app.modules.itinerary_planner.sparse_arc_policy import meal_access_pairs
 from app.shared.tools.transport_cost import TransportCostEstimator
 
-DEFAULT_NEIGHBOR_LIMIT = 12
+DEFAULT_NEIGHBOR_LIMIT = 10
 ROUTING_PROFILE = "auto"
 BUFFER_POLICY_VERSION = "safe-travel-v1"
 PRIORITY_VALUES = {CandidatePriority.user_input, CandidatePriority.url}
@@ -262,11 +262,13 @@ def build_sparse_arcs(
         reasons[pair].add("meal_access")
 
     for candidate_id, candidate in problem.candidate_by_id.items():
-        if candidate.priority not in PRIORITY_VALUES:
-            continue
         incoming = [pair for pair in feasible if pair[1] == candidate_id]
         outgoing = [pair for pair in feasible if pair[0] == candidate_id]
-        for options, reason in ((incoming, "priority_in"), (outgoing, "priority_out")):
+        priority = candidate.priority in PRIORITY_VALUES
+        for options, reason in (
+            (incoming, "priority_in" if priority else "candidate_in"),
+            (outgoing, "priority_out" if priority else "candidate_out"),
+        ):
             if options and not any(pair in selected for pair in options):
                 pair = min(options, key=lambda item: (travel[item].safe_minutes, item))
                 selected.add(pair)

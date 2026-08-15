@@ -11,7 +11,11 @@ from app.modules.conversation_memory.public import (
     MemoryVersionConflict,
     WorkingMemoryState,
 )
-from app.modules.trip_chat.contract import TripChat
+from app.modules.trip_chat.contract import (
+    PlanNoteUpdateStatus,
+    TripChat,
+    TripChatBootstrap,
+)
 from app.modules.trip_chat.ports import TripChatRepository
 
 logger = logging.getLogger(__name__)
@@ -39,11 +43,49 @@ class TripChatService:
     async def create(self, user_id: int, title: str | None) -> TripChat:
         return await self.repository.create_chat(user_id, title)
 
-    async def list(self, user_id: int):
-        return await self.repository.list_chats(user_id)
+    async def list(self, user_id: int, *, limit: int = 30, offset: int = 0):
+        return await self.repository.list_chats(user_id, limit=limit, offset=offset)
+
+    async def bootstrap(
+        self, user_id: int, *, chat_id: str | None = None, limit: int = 30
+    ) -> TripChatBootstrap:
+        chats = await self.repository.list_chats(user_id, limit=limit)
+        selected_id = chat_id or (chats[0].id if chats else None)
+        active_chat = (
+            await self.repository.get_chat(user_id, selected_id)
+            if selected_id
+            else None
+        )
+        return TripChatBootstrap(chats=chats, active_chat=active_chat)
 
     async def get(self, user_id: int, chat_id: str) -> TripChat | None:
         return await self.repository.get_chat(user_id, chat_id)
+
+    async def update_personal_notes(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        day: int,
+        item_id: str,
+        personal_notes: str | None,
+    ) -> tuple[PlanNoteUpdateStatus, TripChat | None]:
+        normalized = personal_notes.strip() if personal_notes else None
+        status = await self.repository.update_personal_notes(
+            user_id,
+            chat_id,
+            expected_revision=expected_revision,
+            day=day,
+            item_id=item_id,
+            personal_notes=normalized,
+        )
+        chat = (
+            await self.repository.get_chat(user_id, chat_id)
+            if status == "updated"
+            else None
+        )
+        return status, chat
 
     async def send(
         self,

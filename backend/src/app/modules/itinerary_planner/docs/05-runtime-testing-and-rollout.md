@@ -14,7 +14,7 @@ LangGraph node nên phản ánh các failure boundary, không chia theo từng h
 ```text
 prepare_problem
 -> build_travel_matrix
--> optimize_itinerary
+-> optimize_hybrid_itinerary
 -> enrich_selected_routes
 -> finalize_output
 ```
@@ -24,10 +24,32 @@ Trách nhiệm:
 ```text
 prepare_problem       validate/normalize/preflight
 build_travel_matrix   provider call, cache, sparse graph
-optimize_itinerary    CP-SAT ba pass
+optimize_hybrid_itinerary activity cluster, meal corridor, 2-opt/swap, CP-SAT từng ngày
 enrich_selected_routes route detail cho selected arcs và accommodation transfers
 finalize_output       sort timeline, totals, warnings, unscheduled
 ```
+
+Runtime mặc định giữ một CP-SAT search worker cho mỗi daily repair và sparse graph `K=10` theo
+`safeTravelMinutes` từ matrix. Forced relationship, meal-access, priority và
+component-bridge arcs luôn được union lại sau nearest-neighbor pruning.
+Hai solver pass của mỗi ngày có timeout mặc định tương ứng 2 và 5 giây.
+Deployment cần SLA khác có thể inject `SolverConfig`. Pass utility dùng relative gap 5%; pass
+priority `user_input > URL` vẫn exact trong daily subproblem. Greedy/local-search order được đưa vào
+CP-SAT bằng solution hint; CP-SAT vẫn có quyền sửa selection, time và route để
+thỏa hard constraint.
+Greedy không dùng tổng activity duration làm điều kiện loại sớm. Nó tạo activity
+skeleton trước, giữ placeholder cho ba meal, rồi ưu tiên restaurant theo tổng
+travel từ activity trước qua restaurant đến activity sau. Daily CP-SAT vẫn sở
+hữu kiểm tra duration cùng opening/travel/meal constraints và có thể sửa hint.
+
+Nếu shortlist heuristic vô nghiệm, runtime thử lại ngày đó với toàn bộ candidate
+còn khả dụng trong day-domain và hard wait cap 150 phút. Nếu full-day strict
+solve vẫn `INFEASIBLE`, runtime retry đúng một lần không hard wait cap nhưng giữ
+progressive idle penalty. Nếu pool food unique vẫn làm ngày vô nghiệm, fallback
+cuối chỉ mở lại restaurant đã dùng; activity đã dùng vẫn bị loại. Timeout/
+`UNKNOWN` không kích hoạt relaxation hay reuse. Khi ghép ngày, Planner kiểm tra
+lại explicit budget, 9 giờ nghỉ và thời gian transfer accommodation; vi phạm
+trả infeasible, không xuất lịch sai.
 
 Node chỉ đọc/ghi state và gọi service. Retry, timeout và fallback policy nằm
 trong service/adapter.
@@ -128,6 +150,9 @@ Implementation còn trả `destination`, `timezone`, ngày thực tế, stop met
 ordered route legs, breakdown từng ngày, solver passes,
 `objectivePolicyVersion` và `phaseTimingsMs`. API giữ legacy `itinerary` cho
 PlanEditor và trả plan mới qua field riêng `plannerOutput`.
+Stop metadata giữ `rating`, `reviewCount` và `openingHours` từ candidate đã được
+PlaceChecker chuẩn hóa để UI itinerary/map hiển thị dữ liệu DB mà không query
+provider trực tiếp.
 
 ## Failure policy
 
@@ -136,7 +161,7 @@ invalid contract         -> validation error, không gọi routing
 thiếu meal coverage     -> structured planning error trước matrix
 Valhalla unavailable     -> straight-line fallback có warning; không giả road travel production
 matrix partial           -> loại unreachable arcs, fail nếu priority bị cô lập
-CP-SAT INFEASIBLE        -> diagnostics theo budget/opening/meal/connectivity
+daily CP-SAT INFEASIBLE  -> retry full day-domain rồi trả diagnostics
 CP-SAT UNKNOWN           -> timeout error nếu chưa có incumbent
 CP-SAT FEASIBLE          -> trả plan + optimalityProven=false
 route detail partial     -> giữ plan nếu timeline còn hợp lệ, warning leg thiếu geometry
@@ -208,9 +233,9 @@ subtour prevention
 ### Lexicographic tests
 
 ```text
-utility không được hy sinh user_input count
-URL không được làm giảm locked user_input count
-pass 3 có thể đổi ID nhưng phải giữ locked counts
+utility không được hy sinh user_input/URL count
+một user_input phải có giá trị hơn toàn bộ URL
+pass utility có thể đổi ID nhưng phải giữ locked counts
 FEASIBLE timeout không được báo optimal
 ```
 
@@ -271,7 +296,7 @@ Mọi weight change cần regression test; không rải magic number trong const
 
 ### Checkpoint D: lexicographic + utility
 
-- Ba pass, warm hints, component breakdown.
+- Hai pass, warm hints, component breakdown.
 - Tags-only diversity, relationship, fatigue/balance.
 
 ### Checkpoint E: route detail + repair

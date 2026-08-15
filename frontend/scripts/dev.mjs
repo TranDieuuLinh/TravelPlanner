@@ -112,10 +112,12 @@ if (!hasFileSystemEntry(devOutputLink)) {
   symlinkSync(devOutputTarget, devOutputLink, "junction");
 }
 
-// Next 15's Turbopack dev cache can leave page bundles behind after its shared
-// SSR runtime has disappeared. Use the stable webpack dev server by default;
-// production builds remain unchanged.
-const child = spawn(process.execPath, [nextCli, "dev"], {
+// Turbopack cuts route compilation time substantially for the large planner
+// client bundle. The cache checks above repair the incomplete-runtime case;
+// set NEXT_USE_TURBOPACK=0 only when debugging a bundler-specific issue.
+const devArgs = [nextCli, "dev"];
+if (process.env.NEXT_USE_TURBOPACK !== "0") devArgs.push("--turbopack");
+const child = spawn(process.execPath, devArgs, {
   cwd: projectRoot,
   env: {
     ...process.env,

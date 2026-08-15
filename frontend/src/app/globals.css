@@ -1,13 +1,6 @@
 @import "../styles/base.css";
-@import "../features/planner/styles/planner-shell.css";
 @import "../styles/reset.css";
 @import "../styles/global/shell-and-mobile.css";
-@import "../styles/global/groups.css";
 @import "../styles/global/assistant.css";
-@import "../styles/global/explore.css";
 @import "../styles/global/auth-and-reviews.css";
-@import "../styles/global/profile.css";
 @import "../styles/global/planner-chat.css";
-@import "../styles/global/community.css";
-@import "../styles/global/itinerary.css";
-@import "../styles/global/landing.css";

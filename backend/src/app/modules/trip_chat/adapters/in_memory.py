@@ -1,12 +1,15 @@
 """In-memory adapter for TripChatRepository."""
 
+from copy import deepcopy
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.modules.trip_chat.contract import (
+    PlanNoteUpdateStatus,
     TripChat,
     TripChatMessage,
 )
+from app.modules.trip_chat.plan_snapshot import update_stop_personal_notes
 
 
 class InMemoryTripChatRepository:
@@ -32,8 +35,15 @@ class InMemoryTripChatRepository:
         self._chats[(user_id, chat_id)] = chat
         return chat
 
-    async def list_chats(self, user_id: int) -> list[TripChat]:
-        return [chat for (uid, _), chat in self._chats.items() if uid == user_id]
+    async def list_chats(
+        self, user_id: int, *, limit: int = 30, offset: int = 0
+    ) -> list[TripChat]:
+        chats = sorted(
+            [chat for (uid, _), chat in self._chats.items() if uid == user_id],
+            key=lambda chat: chat.updated_at,
+            reverse=True,
+        )
+        return chats[offset : offset + limit]
 
     async def get_chat(self, user_id: int, chat_id: str) -> TripChat | None:
         return self._chats.get((user_id, chat_id))
@@ -86,3 +96,35 @@ class InMemoryTripChatRepository:
         )
         self._chats[(user_id, chat_id)] = updated_chat
         return updated_chat
+
+    async def update_personal_notes(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        day: int,
+        item_id: str,
+        personal_notes: str | None,
+    ) -> PlanNoteUpdateStatus:
+        chat = await self.get_chat(user_id, chat_id)
+        if chat is None:
+            return "chat_not_found"
+        if chat.revision != expected_revision:
+            return "revision_conflict"
+        output = deepcopy(chat.current_planner_output)
+        if not update_stop_personal_notes(
+            output,
+            day=day,
+            item_id=item_id,
+            personal_notes=personal_notes,
+        ):
+            return "item_not_found"
+        self._chats[(user_id, chat_id)] = chat.model_copy(
+            update={
+                "revision": chat.revision + 1,
+                "current_planner_output": output,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
+        return "updated"

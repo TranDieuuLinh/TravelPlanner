@@ -14,6 +14,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/features/auth/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
@@ -33,12 +34,11 @@ import { APIError } from "@/shared/api/client";
 import {
   addTripChatItem,
   calculateDayDirections,
+  bootstrapTripChats,
   confirmTripChatCandidateResolution,
   createTripChat,
   deleteAllTripChats,
-  deleteUrlImportJob,
   deleteTripChat,
-  enqueueTripChatUrls,
   enrichTripChatRoutes,
   getTripChat,
   listTripChats,
@@ -51,10 +51,10 @@ import {
   selectTripChatTransportOption,
   updateTripChatIntent,
   updateTripChatItem,
+  updateTripChatItemPersonalNotes,
   type PlaceSuggestion,
   type ExplorerContext,
   type ExploreResponse,
-  type PlaceCategory,
   type TransportOption,
   type TransportLeg,
   type TripChat,
@@ -70,34 +70,27 @@ import { useConversationTurn } from "@/features/planner/hooks/useConversationTur
 import {
   enqueueGuestUrlJobs,
   enqueueGuestPromptJob,
-  deleteGuestUrlJob,
   GUEST_URL_JOBS_EVENT,
   GUEST_URL_JOB_RESULT_EVENT,
   listGuestUrlJobs,
   type GuestUrlImportJob,
 } from "@/features/planner/lib/guest-url-jobs";
-import {
-  PlannerMap,
-  type PlannerMapCurrentLocation,
-  type PlannerMapPlace,
-  type PlannerMapRoute,
-  type PlannerMapSearchPlace,
+import type {
+  PlannerMapCurrentLocation,
+  PlannerMapPlace,
+  PlannerMapRoute,
+  PlannerMapSearchPlace,
 } from "@/features/planner/components/PlannerMap";
 import { createDayColorMap } from "@/features/planner/lib/day-colors";
+import { transportOptionSelectionKey } from "@/features/planner/lib/transport-options";
 import {
-  isAvailableTransportOption,
-  isCarMode,
-  isPublicTransitMode,
-  isWalkingMode,
-  resolveSelectedTransportOption,
-  transportOptionSelectionKey,
-  visibleTransportOptions,
-} from "@/features/planner/lib/transport-options";
-import { visiblePlanDays, visiblePlanItems } from "@/features/planner/lib/visible-plan-days";
+  visiblePlanDays,
+  visiblePlanItems,
+} from "@/features/planner/lib/visible-plan-days";
 import {
-  formatPlanNote,
   formatSourceNoteForDisplay,
   planItemNotePresentation,
+  sourceNoteTextForDisplay,
 } from "@/features/planner/lib/plan-note";
 import { planItemMapKey } from "@/features/planner/lib/plan-map-key";
 import { rebaseItineraryItemOrder } from "@/features/planner/lib/itinerary-order";
@@ -106,18 +99,25 @@ import {
   searchItineraryPlaces,
   type ItinerarySearchResult,
 } from "@/features/planner/lib/itinerary-search";
+import { shouldApplyBackgroundChatResult } from "@/features/planner/lib/planner-chat-navigation";
 import {
-  resolvePlannerEntryChatId,
-  shouldApplyBackgroundChatResult,
-} from "@/features/planner/lib/planner-chat-navigation";
-import {
-  getDOMFloatingChatRect,
   getPlannerChatClasses,
   getPlannerLayoutClasses,
   preserveFloatingChatRect,
 } from "@/features/planner/lib/planner-chat-layout";
 import { dragAutoScrollVelocity } from "@/features/planner/lib/drag-auto-scroll";
 import { parseUrlOnlyInput } from "@/features/planner/lib/url-only-input";
+
+const PlannerMap = dynamic(
+  () =>
+    import("@/features/planner/components/PlannerMap").then(
+      (module) => module.PlannerMap
+    ),
+  {
+    ssr: false,
+    loading: () => <div className="routeLoading">Đang mở bản đồ…</div>,
+  }
+);
 import { guestConversationShortcut } from "@/features/planner/lib/conversation-shortcuts";
 import { visibleConversationMessages } from "@/features/planner/lib/conversation-messages";
 import {
@@ -137,6 +137,7 @@ import {
   transportLegsMatch,
   transportOptionsForLeg,
 } from "@/features/planner/utils/transportSelection";
+import { accommodationRoutePositions } from "@/features/planner/utils/accommodationRoute";
 import {
   formatItineraryTimeWindow,
   itineraryTimeWindowAriaLabel,
@@ -152,20 +153,9 @@ import {
   normalizeDeviceHeading,
   headingFromOrientationEvent,
   itinerarySourceLabel,
-  sourceProviderLabel,
-  compactSourceUrl,
   SourceProviderIcon,
   paceLabel,
   isDisplayableImageUrl,
-  formatCompactCount,
-  formatOpeningHoursForPlanDay,
-  formatOpeningHoursSummary,
-  formatOpeningHoursSchedule,
-  openingHourDayNumber,
-  formatOpeningHourSlots,
-  openingHourDayLabel,
-  dayOfWeekForTripDay,
-  currentDayOfWeekInVietnam,
 } from "@/features/planner/lib/planner-formatters";
 import type { DeviceOrientationPermissionEvent } from "@/features/planner/lib/planner-formatters";
 import {
@@ -174,13 +164,13 @@ import {
   planTransportRouteMapKey,
   directionTransportRouteMapKey,
   promoteTransportOptionInPlan,
-  isDevelopmentTransitFixture,
   isDrawableTransportRoute,
-  hasValidGeometryCoordinates,
   formatDistance,
   formatDuration,
 } from "@/features/planner/lib/planner-transport";
 import {
+  AccommodationItineraryCard,
+  AccommodationRouteStrip,
   ItineraryReviewRating,
   UnscheduledPlacesSection,
 } from "@/features/planner/components/PlannerSubcomponents";
@@ -188,16 +178,22 @@ import { TripProjectSidebar } from "@/features/planner/components/TripProjectSid
 import { GuidedIntakeDialog } from "@/features/planner/components/GuidedIntakeDialog";
 import {
   ChevronDownIcon,
-  CloseIcon,
-  ClockIcon,
-  SidebarIcon,
   HistoryMenuButton,
   MapPinIcon,
-  NewChatIcon,
-  TrashIcon,
   TransportModeIcon,
   TransportOptionCard,
 } from "@/features/planner/components/PlannerIcons";
+import {
+  budgetFromAnswer,
+  buildGuidedIntakeRequest,
+  guidedIntakeOrder,
+  guidedIntakeQuestions,
+  travelerAnswer,
+  travelerOptions,
+  type GuidedIntakeAnswers,
+  type GuidedIntakeStep,
+  type TravelerCounts,
+} from "@/features/planner/model/guided-intake";
 
 type ChatMessage = {
   id: number | string;
@@ -220,22 +216,6 @@ type WorkflowStage =
   | "planning"
   | "ready"
   | "failed";
-type GuidedIntakeStep =
-  | "destination"
-  | "dates"
-  | "budget"
-  | "travelers"
-  | "note"
-  | "complete";
-type GuidedIntakeAnswers = Partial<
-  Record<Exclude<GuidedIntakeStep, "complete">, string>
->;
-type TravelerCounts = {
-  adults: number;
-  children: number;
-  infants: number;
-  pets: number;
-};
 type LocationStatus = "idle" | "locating" | "ready" | "error";
 type PlaceLocationTarget = "add" | "edit";
 type DirectionsStatus = "idle" | "routing" | "ready" | "error";
@@ -292,88 +272,11 @@ type DirectionStop = {
   mapKey: string | null;
 };
 
-const guidedIntakeOrder: Exclude<GuidedIntakeStep, "complete">[] = [
-  "destination",
-  "dates",
-  "travelers",
-  "budget",
-  "note",
-];
-
-const guidedIntakeQuestions: Record<
-  Exclude<GuidedIntakeStep, "complete">,
-  string
-> = {
-  destination: "Bạn muốn đi đâu?",
-  dates: "Khi nào bạn muốn đi?",
-  budget: "Ngân sách của bạn?",
-  travelers: "Bạn đi cùng ai?",
-  note: "Có lưu ý gì không?",
-};
-
-const guidedIntakePlaceholders: Record<
-  Exclude<GuidedIntakeStep, "complete">,
-  string
-> = {
-  destination: "Ví dụ: Kyoto, Đà Lạt, miền Tây…",
-  dates: "Ví dụ: 12–15/09 hoặc cuối tuần sau…",
-  budget: "Ví dụ: khoảng 8 triệu cho cả nhóm…",
-  travelers: "Ví dụ: 2 người lớn và 1 bé…",
-  note: "Thêm một lưu ý nếu có…",
-};
-
-const travelerOptions: ReadonlyArray<{
-  key: keyof TravelerCounts;
-  label: string;
-  description: string;
-  minimum: number;
-  maximum: number;
-}> = [
-  {
-    key: "adults",
-    label: "Người lớn",
-    description: "Từ 13 tuổi",
-    minimum: 1,
-    maximum: 20,
-  },
-  {
-    key: "children",
-    label: "Trẻ em",
-    description: "Từ 2–12 tuổi",
-    minimum: 0,
-    maximum: 20,
-  },
-  {
-    key: "infants",
-    label: "Em bé",
-    description: "Dưới 2 tuổi",
-    minimum: 0,
-    maximum: 10,
-  },
-  {
-    key: "pets",
-    label: "Thú cưng",
-    description: "Mang theo trong chuyến đi",
-    minimum: 0,
-    maximum: 5,
-  },
-];
-
-function travelerAnswer(counts: TravelerCounts): string {
-  return [
-    counts.adults ? `${counts.adults} người lớn` : "",
-    counts.children ? `${counts.children} trẻ em` : "",
-    counts.infants ? `${counts.infants} em bé` : "",
-    counts.pets ? `${counts.pets} thú cưng` : "",
-  ]
-    .filter(Boolean)
-    .join(", ");
-}
+const ACCOMMODATION_MAP_KEY = "plan-accommodation";
 
 const NEW_CHAT_GREETING =
-  "Penguin xin chào! Bạn muốn đi đâu, tìm hiểu thêm về một địa điểm hay bắt đầu lên lịch trình? Bạn có thể kể ý tưởng chuyến đi hoặc gửi một đường link cho Penguin nhé.";
+  "Dán URL 🔗 hoặc viết yêu cầu để Penguin lên lịch trình cho bạn nhá";
 
-const URL_PATTERN = /https?:\/\/[^\s<>"']+/i;
 const URL_PATTERN_GLOBAL = /https?:\/\/[^\s<>"']+/gi;
 const ITINERARY_NO_IMAGE_SRC = "/images/penguin-no-image.png";
 const UNSCHEDULED_PLAN_DAY = -1;
@@ -446,7 +349,9 @@ function formatTripBudget(intent: TripIntent): string {
       maximumFractionDigits: 0,
     }).format(intent.budget.targetAmount);
   }
-  return `Mức ${budgetLevelLabel(intent.budget.level).toLocaleLowerCase("vi-VN")}`;
+  return `Mức ${budgetLevelLabel(intent.budget.level).toLocaleLowerCase(
+    "vi-VN"
+  )}`;
 }
 
 function guidedAnswersFromTripIntent(intent: TripIntent): GuidedIntakeAnswers {
@@ -459,47 +364,6 @@ function guidedAnswersFromTripIntent(intent: TripIntent): GuidedIntakeAnswers {
   };
 }
 
-function budgetFromAnswer(answer: string, current: TripIntent["budget"]) {
-  const normalized = answer.trim().toLocaleLowerCase("vi-VN");
-  const digits = normalized.replace(/[^\d]/g, "");
-  let targetAmount = digits ? Number(digits) : null;
-  const decimalMatch = normalized.match(/(\d+(?:[.,]\d+)?)\s*(triệu|tr|million)/);
-  if (decimalMatch) {
-    targetAmount = Math.round(Number(decimalMatch[1].replace(",", ".")) * 1_000_000);
-  } else if (targetAmount != null && /\b(nghìn|ngàn|k)\b/.test(normalized)) {
-    targetAmount *= 1_000;
-  }
-  const level = normalized.includes("cao")
-    ? "high"
-    : normalized.includes("thấp")
-      ? "low"
-      : normalized.includes("trung bình")
-        ? "medium"
-        : current.level;
-  return { ...current, targetAmount, level };
-}
-
-function finishedTripFacts(context: ExplorerContext) {
-  const intent = context.tripIntent;
-  const budget =
-    intent.budget.targetAmount != null
-      ? formatBudget(context)
-      : `Mức ${budgetLevelLabel(intent.budget.level).toLocaleLowerCase(
-          "vi-VN"
-        )}`;
-
-  return [
-    { label: "Điểm đến", value: intent.destination || "Chưa xác định" },
-    { label: "Thời gian", value: formatTripTiming(intent.timing) },
-    { label: "Nhóm đi", value: formatTripParty(intent.travelParty) },
-    { label: "Ngân sách", value: budget },
-    {
-      label: "Lưu ý",
-      value: intent.notes.length ? intent.notes.join(" · ") : "Không có lưu ý",
-    },
-  ];
-}
-
 function extractMessageUrls(value: string): string[] {
   return Array.from(
     new Set(
@@ -510,21 +374,40 @@ function extractMessageUrls(value: string): string[] {
   );
 }
 
-function buildGuidedIntakeRequest(answers: GuidedIntakeAnswers): string {
-  const labels: Record<Exclude<GuidedIntakeStep, "complete">, string> = {
-    destination: "Điểm đến",
-    dates: "Thời gian",
-    budget: "Ngân sách",
-    travelers: "Nhóm đi",
-    note: "Điều cần lưu ý",
-  };
-  const details = guidedIntakeOrder.flatMap((step) => {
-    const value = answers[step]?.trim();
-    return value && value !== "Bỏ qua" ? [`- ${labels[step]}: ${value}`] : [];
-  });
-  return details.length
-    ? `Giúp mình lên kế hoạch chuyến đi.\n${details.join("\n")}`
-    : "Giúp mình tạo một chuyến đi mới từ các nguồn đã nhập.";
+function formatThinkingDuration(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const minuteAndSecond = `${String(minutes).padStart(2, "0")}:${String(
+    seconds
+  ).padStart(2, "0")}`;
+
+  return hours > 0
+    ? `${String(hours).padStart(2, "0")}:${minuteAndSecond}`
+    : minuteAndSecond;
+}
+
+function ThinkingDuration() {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const startedAt = Date.now();
+    const timerId = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+
+    return () => window.clearInterval(timerId);
+  }, []);
+
+  return (
+    <time
+      aria-hidden="true"
+      className="plannerInlineProcessingTime"
+      dateTime={`PT${elapsedSeconds}S`}
+    >
+      {formatThinkingDuration(elapsedSeconds)}
+    </time>
+  );
 }
 
 export default function PlannerPage() {
@@ -540,15 +423,13 @@ export default function PlannerPage() {
 function Planner() {
   const router = useRouter();
   const params = useSearchParams();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, sessionUnavailable } = useAuth();
   const initialChatId = params.get("chatId")?.trim() || null;
   const initialEntryChatIdRef = useRef(initialChatId);
   const initialDestination = params.get("destination") ?? "";
   const initialPrompt = params.get("prompt")?.trim() ?? "";
   const hasPrefilledRequest = Boolean(initialPrompt || initialDestination);
-  const [prompt, setPrompt] = useState(
-    initialPrompt
-  );
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [urlInput, setUrlInput] = useState("");
   const messageListRef = useRef<HTMLDivElement>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -644,6 +525,7 @@ function Planner() {
     useState<DirectionsStatus>("idle");
   const [directionsError, setDirectionsError] = useState("");
   const [locationFocusRequest, setLocationFocusRequest] = useState(0);
+  const [placeFocusRequest, setPlaceFocusRequest] = useState(0);
   const [routeFocusRequest, setRouteFocusRequest] = useState(0);
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("idle");
   const [locationError, setLocationError] = useState("");
@@ -665,9 +547,7 @@ function Planner() {
   const [loading, setLoading] = useState(false);
   const [backgroundPlanning, setBackgroundPlanning] = useState(false);
   const [initialPlanningActive, setInitialPlanningActive] = useState(false);
-  const [activePlanningJobs, setActivePlanningJobs] = useState<
-    ActivePlanningJob[]
-  >([]);
+  const [, setActivePlanningJobs] = useState<ActivePlanningJob[]>([]);
   const [queueingUrls, setQueueingUrls] = useState(false);
   const [error, setError] = useState("");
   const [tripChats, setTripChats] = useState<TripChatSummary[]>([]);
@@ -680,9 +560,8 @@ function Planner() {
   const submittingEntryRef = useRef(false);
   const [chatRevision, setChatRevision] = useState(0);
   const [tripIntentVersion, setTripIntentVersion] = useState(0);
-  const [tripIntentPlanStatus, setTripIntentPlanStatus] = useState<
-    TripChat["tripIntentPlanStatus"]
-  >("synced");
+  const [tripIntentPlanStatus, setTripIntentPlanStatus] =
+    useState<TripChat["tripIntentPlanStatus"]>("synced");
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null);
   const [deletingAllChats, setDeletingAllChats] = useState(false);
   const [historyCollapsed, setHistoryCollapsed] = useState(true);
@@ -1041,9 +920,7 @@ function Planner() {
     };
   }
 
-  function endMobileItineraryDrag(
-    event: ReactPointerEvent<HTMLButtonElement>
-  ) {
+  function endMobileItineraryDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     const drag = mobileItineraryDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     const deltaY = event.clientY - drag.startY;
@@ -1222,7 +1099,13 @@ function Planner() {
       if (job.chatId !== activeChatId) return;
       if (job.status === "queued" || job.status === "running") {
         setBackgroundPlanning(true);
-        setWorkflowStage(job.status === "queued" ? "preparing" : job.explorerTiming ? "planning" : "exploring");
+        setWorkflowStage(
+          job.status === "queued"
+            ? "preparing"
+            : job.explorerTiming
+            ? "planning"
+            : "exploring"
+        );
       } else if (job.status === "failed") {
         setBackgroundPlanning(false);
         setInitialPlanningActive(false);
@@ -1245,14 +1128,16 @@ function Planner() {
     }
     window.addEventListener("travelplanner:url-job-update", handleUrlJobUpdate);
     return () =>
-      window.removeEventListener("travelplanner:url-job-update", handleUrlJobUpdate);
+      window.removeEventListener(
+        "travelplanner:url-job-update",
+        handleUrlJobUpdate
+      );
   }, [activeChatId, chatRevision]);
 
   useEffect(() => {
     if (
       !activeChatId ||
-      (tripIntentPlanStatus !== "queued" &&
-        tripIntentPlanStatus !== "running")
+      (tripIntentPlanStatus !== "queued" && tripIntentPlanStatus !== "running")
     ) {
       return;
     }
@@ -1292,12 +1177,7 @@ function Planner() {
     return () => {
       cancelled = true;
     };
-  }, [
-    activeChatId,
-    tripIntentPlanStatus,
-    tripIntentVersion,
-    showPlannerToast,
-  ]);
+  }, [activeChatId, tripIntentPlanStatus, tripIntentVersion, showPlannerToast]);
 
   useEffect(() => {
     if (!user) {
@@ -1339,7 +1219,10 @@ function Planner() {
       .then((response) => applySnapshot(response.jobs))
       .catch(() => undefined);
     return () =>
-      window.removeEventListener("travelplanner:url-jobs-snapshot", handleSnapshot);
+      window.removeEventListener(
+        "travelplanner:url-jobs-snapshot",
+        handleSnapshot
+      );
   }, [user?.id]);
 
   useEffect(() => {
@@ -1364,17 +1247,16 @@ function Planner() {
       const activeJobs = jobs.filter(
         (job) => job.status === "queued" || job.status === "running"
       );
-      setActivePlanningJobs(activeJobs.map((job) => ({ id: job.id, guest: true })));
+      setActivePlanningJobs(
+        activeJobs.map((job) => ({ id: job.id, guest: true }))
+      );
       setBackgroundPlanning(activeJobs.length > 0);
       setInitialPlanningActive(activeJobs.length > 0);
       if (activeJobs.length > 0) {
         setWorkflowStage(
           activeJobs.every((job) => job.status === "queued")
             ? "preparing"
-            : activeJobs.some(
-            (job) =>
-              job.phase === "planning"
-          )
+            : activeJobs.some((job) => job.phase === "planning")
             ? "planning"
             : "exploring"
         );
@@ -1424,9 +1306,10 @@ function Planner() {
   const [editSearchCompleted, setEditSearchCompleted] = useState(false);
   const [editSearchFailed, setEditSearchFailed] = useState(false);
   const [mutatingItem, setMutatingItem] = useState(false);
-  const [candidateResolutionProgress, setCandidateResolutionProgress] = useState<
-    Record<string, { key: string; status: "queued" | "resolving" }>
-  >({});
+  const [candidateResolutionProgress, setCandidateResolutionProgress] =
+    useState<Record<string, { key: string; status: "queued" | "resolving" }>>(
+      {}
+    );
   const candidateResolutionQueueRef = useRef<
     Array<{
       chatId: string;
@@ -1483,7 +1366,9 @@ function Planner() {
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [openQuickActionKey]);
-  const conversationTurnRef = useRef<ReturnType<typeof useConversationTurn> | null>(null);
+  const conversationTurnRef = useRef<ReturnType<
+    typeof useConversationTurn
+  > | null>(null);
 
   const handleTurnTerminal = useCallback(
     async (result: { turn: TripChatTurn; outcome: string }) => {
@@ -1515,8 +1400,8 @@ function Planner() {
       let refreshedHasPlan: boolean | null = null;
       try {
         if (resultBelongsToActiveChat) {
-          const fresh = result.turn.chatSnapshot
-            ?? await getTripChat(result.turn.chatId);
+          const fresh =
+            result.turn.chatSnapshot ?? (await getTripChat(result.turn.chatId));
           refreshedHasPlan = Boolean(fresh.currentPlan);
           if (
             shouldApplyBackgroundChatResult(
@@ -1573,9 +1458,7 @@ function Planner() {
       setError(conversationTurn.error);
       return;
     }
-    if (
-      conversationTurn.status === "queued"
-    ) {
+    if (conversationTurn.status === "queued") {
       setWorkflowStage("classifying");
       return;
     }
@@ -1597,11 +1480,7 @@ function Planner() {
       setInitialPlanningActive(false);
       setWorkflowStage("failed");
     }
-  }, [
-    conversationTurn.error,
-    conversationTurn.status,
-    initialPlanningActive,
-  ]);
+  }, [conversationTurn.error, conversationTurn.status, initialPlanningActive]);
 
   function openItemEditor(
     day: number,
@@ -1853,12 +1732,12 @@ function Planner() {
     setMutatingItem(true);
     setError("");
     try {
-      const updatedChat = await updateTripChatItem({
+      const updatedChat = await updateTripChatItemPersonalNotes({
         chatId: activeChatId,
         expectedRevision: chatRevision,
         day,
         itemId,
-        item: { personalNotes },
+        personalNotes,
       });
       setChatRevision(updatedChat.revision);
       if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
@@ -2075,28 +1954,6 @@ function Planner() {
     }
   }
 
-  function handleMoveItemOrder(
-    day: number,
-    itemIndex: number,
-    direction: "up" | "down"
-  ) {
-    const targetDayObj = plan?.days.find((d) => d.day === day);
-    if (!targetDayObj) return;
-
-    const items = [...targetDayObj.items];
-    const targetIndex = direction === "up" ? itemIndex - 1 : itemIndex + 1;
-    if (targetIndex < 0 || targetIndex >= items.length) return;
-
-    const temp = items[itemIndex];
-    items[itemIndex] = items[targetIndex];
-    items[targetIndex] = temp;
-
-    const itemIds = items
-      .map((it) => it.itemId)
-      .filter((id): id is string => Boolean(id));
-    handleReorderItems(day, itemIds);
-  }
-
   useEffect(() => {
     if (historyCollapsed) return;
 
@@ -2110,9 +1967,14 @@ function Planner() {
 
   useEffect(() => {
     const entryChatId = initialEntryChatIdRef.current;
-    if (authLoading || !user) {
+    if (authLoading || sessionUnavailable || !user) {
       if (authLoading) {
         setPlannerEntryResolved(false);
+      } else if (sessionUnavailable) {
+        setError(
+          "Backend chưa phản hồi. Bạn vẫn có thể bắt đầu nội dung mới; lịch sử sẽ tự tải lại khi kết nối phục hồi."
+        );
+        setPlannerEntryResolved(true);
       } else {
         syncPlannerChatUrl(null);
         setTripChats([]);
@@ -2164,31 +2026,24 @@ function Planner() {
     setPlannerEntryResolved(false);
     setTripChats([]);
 
-    // A deep-linked chat can be loaded directly. Waiting for the full history
-    // list first adds an unnecessary round trip and leaves the planner on the
-    // "new chat" loading screen after every reload.
-    if (entryChatId && !hasPrefilledRequest) {
-      void openTripChat(entryChatId);
-    }
+    const bootstrapRequest = hasPrefilledRequest
+      ? listTripChats({ signal: controller.signal }).then((chats) => ({
+          chats,
+          activeChat: null,
+        }))
+      : bootstrapTripChats(entryChatId, { signal: controller.signal });
 
-    void listTripChats({ signal: controller.signal })
-      .then((chats) => {
+    void bootstrapRequest
+      .then(({ chats, activeChat }) => {
         if (cancelled) return;
         setTripChats(chats);
-        if (entryChatId && !hasPrefilledRequest) return;
-        const entryChatIdToOpen = resolvePlannerEntryChatId(
-          entryChatId,
-          hasPrefilledRequest,
-          chats.map((chat) => chat.id),
-        );
-        if (entryChatIdToOpen) {
-          void openTripChat(entryChatIdToOpen);
+        if (activeChat) {
+          applyTripChat(activeChat);
+          syncPlannerChatUrl(activeChat.id);
         } else if (entryChatId) {
           syncPlannerChatUrl(null);
-          setPlannerEntryResolved(true);
-        } else {
-          setPlannerEntryResolved(true);
         }
+        setPlannerEntryResolved(true);
       })
       .catch((caught) => {
         if (!cancelled) {
@@ -2197,11 +2052,7 @@ function Planner() {
               ? caught.message
               : "Không thể tải lịch sử chuyến đi. Bạn vẫn có thể bắt đầu chat mới."
           );
-          // The deep-linked chat is loading independently of the history
-          // sidebar, so keep its loading state until getTripChat finishes.
-          if (!(entryChatId && !hasPrefilledRequest)) {
-            setPlannerEntryResolved(true);
-          }
+          setPlannerEntryResolved(true);
         }
       });
     return () => {
@@ -2211,7 +2062,7 @@ function Planner() {
     // Query-string chat changes are handled by openTripChat/resetWorkflow.
     // Depending on initialChatId here makes Next's patched history.replaceState
     // rerun this bootstrap and clear the chat while it is being opened.
-  }, [authLoading, hasPrefilledRequest, user?.id]);
+  }, [authLoading, hasPrefilledRequest, sessionUnavailable, user?.id]);
 
   useEffect(() => {
     return () => {
@@ -2259,8 +2110,7 @@ function Planner() {
     [plan]
   );
   const awaitingInitialPlan =
-    !displayedPlan &&
-    (initialPlanningActive || backgroundPlanning || loading);
+    !displayedPlan && (initialPlanningActive || backgroundPlanning || loading);
 
   const planDayColorKeys = useMemo(() => {
     const startDate = displayedStartDate;
@@ -2279,7 +2129,8 @@ function Planner() {
     return displayedPlan.days.filter((day) => day.day === activePlanDay);
   }, [activePlanDay, displayedPlan]);
   const itinerarySearchResults = useMemo(
-    () => searchItineraryPlaces(displayedPlan?.days ?? [], itinerarySearchQuery),
+    () =>
+      searchItineraryPlaces(displayedPlan?.days ?? [], itinerarySearchQuery),
     [displayedPlan, itinerarySearchQuery]
   );
   const destinationStories = useMemo(
@@ -2410,9 +2261,23 @@ function Planner() {
       });
     });
   }, [displayedPlan]);
+  const accommodationRoutePositionsByDay = useMemo(() => {
+    const positions = new Map<number, { start: boolean; end: boolean }>();
+    const accommodation = displayedPlan?.accommodation;
+    if (!displayedPlan || !accommodation) return positions;
+
+    displayedPlan.days.forEach((day) => {
+      positions.set(
+        day.day,
+        accommodationRoutePositions(day, accommodation.name),
+      );
+    });
+    return positions;
+  }, [displayedPlan]);
   const mapPlaces = useMemo<PlannerMapPlace[]>(() => {
-    const startDate = displayedExploreResult?.explorer.tripIntent.timing.startDate;
-    return tripPlaces
+    const startDate =
+      displayedExploreResult?.explorer.tripIntent.timing.startDate;
+    const stopPlaces = tripPlaces
       .filter((item) => activePlanDay == null || item.day === activePlanDay)
       .flatMap((item) =>
         item.mapKey
@@ -2448,9 +2313,47 @@ function Planner() {
             ]
           : []
       );
+    const accommodation = displayedPlan?.accommodation;
+    const accommodationIsVisible =
+      activePlanDay == null
+        ? [...accommodationRoutePositionsByDay.values()].some(
+            ({ start, end }) => start || end,
+          )
+        : Boolean(
+            accommodationRoutePositionsByDay.get(activePlanDay)?.start ||
+              accommodationRoutePositionsByDay.get(activePlanDay)?.end,
+          );
+    if (!accommodation || !accommodationIsVisible) return stopPlaces;
+
+    return [
+      ...stopPlaces,
+      {
+        destination: displayedPlan.destination,
+        name: accommodation.name,
+        category: "hotel",
+        ontologyType: "Accommodation",
+        placeId: accommodation.placeId,
+        address: accommodation.address,
+        latitude: accommodation.latitude,
+        longitude: accommodation.longitude,
+        rating: accommodation.rating,
+        reviewCount: accommodation.reviewCount,
+        source: "itinerary_planner",
+        mapKey: ACCOMMODATION_MAP_KEY,
+        mapOrder: null,
+        dayColorKey: dateKeyForTripDay(
+          startDate,
+          activePlanDay ?? displayedPlan.days[0]?.day ?? 1
+        ),
+        dayLabel: "Nơi lưu trú",
+        timeWindow: `${accommodation.nights} đêm`,
+        imageUrl: null,
+      },
+    ];
   }, [
     activePlanDay,
-    displayedPlan?.destination,
+    accommodationRoutePositionsByDay,
+    displayedPlan,
     displayedExploreResult?.explorer.tripIntent.timing.startDate,
     tripPlaces,
   ]);
@@ -2535,24 +2438,6 @@ function Planner() {
         ) === index
     );
   }, [destinationQuery, directionDestinationOptions]);
-  const activeDayItineraryRouteSummary = useMemo(() => {
-    const day = displayedPlan?.days.find((item) => item.day === activePlanDay);
-    if (!day) return { distanceMeters: 0, durationMinutes: 0 };
-    return day.transportLegs.reduce(
-      (total, leg, index) => {
-        const selected = selectedTransportOption(
-          leg,
-          selectedPlanLegOptionKeys[planLegSelectionKey(day.day, index)]
-        );
-        return {
-          distanceMeters: total.distanceMeters + selected.distanceMeters,
-          durationMinutes:
-            total.durationMinutes + selected.estimatedDurationMinutes,
-        };
-      },
-      { distanceMeters: 0, durationMinutes: 0 }
-    );
-  }, [activePlanDay, displayedPlan, selectedPlanLegOptionKeys]);
   const mapDirectionOrigin = useMemo(
     () =>
       directionsSearchOpen
@@ -2577,38 +2462,10 @@ function Planner() {
       ),
     [dayDirectionLegs, selectedDirectionOptionKeys]
   );
-  const activeDayRouteSummary = useMemo(() => {
-    const firstStop = activeDayDirectionStops[0];
-    const startLegRoute = dayDirectionLegs[0];
-    const startLeg = selectedDayDirectionLegs[0];
-    const reachesFirstStop = Boolean(
-      firstStop &&
-        startLegRoute &&
-        startLeg &&
-        (firstStop.itemId && startLegRoute.toItemId
-          ? firstStop.itemId === startLegRoute.toItemId
-          : firstStop.name.trim().toLocaleLowerCase("vi") ===
-            startLegRoute.toPlace.trim().toLocaleLowerCase("vi"))
-    );
-    if (!reachesFirstStop || !startLeg) {
-      return activeDayItineraryRouteSummary;
-    }
-    return {
-      distanceMeters:
-        activeDayItineraryRouteSummary.distanceMeters + startLeg.distanceMeters,
-      durationMinutes:
-        activeDayItineraryRouteSummary.durationMinutes +
-        startLeg.estimatedDurationMinutes,
-    };
-  }, [
-    activeDayDirectionStops,
-    activeDayItineraryRouteSummary,
-    dayDirectionLegs,
-    selectedDayDirectionLegs,
-  ]);
   const mapRoutes = useMemo<PlannerMapRoute[]>(() => {
     if (!displayedPlan) return [];
-    const startDate = displayedExploreResult?.explorer.tripIntent.timing.startDate;
+    const startDate =
+      displayedExploreResult?.explorer.tripIntent.timing.startDate;
     const itineraryRoutes: PlannerMapRoute[] = displayedPlan.days
       .filter((day) => activePlanDay == null || day.day === activePlanDay)
       .flatMap((day) =>
@@ -2638,7 +2495,8 @@ function Planner() {
       );
 
     if (
-      (directionsActive || directionsSearchOpen ||
+      (directionsActive ||
+        directionsSearchOpen ||
         (directionsStatus === "ready" &&
           selectedDirectionOrigin &&
           selectedNavigationDestination)) &&
@@ -2692,6 +2550,43 @@ function Planner() {
     () => mapRoutes.find((route) => route.key === selectedMapRouteKey) ?? null,
     [mapRoutes, selectedMapRouteKey]
   );
+  const accommodationStartRouteByDay = useMemo(() => {
+    const routes = new Map<
+      number,
+      { leg: TransportLeg; routeKey: string | null }
+    >();
+    const accommodation = displayedPlan?.accommodation;
+    if (!displayedPlan || !accommodation) return routes;
+
+    displayedPlan.days.forEach((day) => {
+      const firstItem = day.items[0];
+      if (!firstItem) return;
+      const legIndex = day.transportLegs.findIndex((leg) => {
+        const startsAtAccommodation = planPlaceNamesMatch(
+          leg.fromPlace,
+          accommodation.name
+        );
+        const reachesFirstItem =
+          firstItem.itemId && leg.toItemId
+            ? firstItem.itemId === leg.toItemId
+            : planPlaceNamesMatch(firstItem.name, leg.toPlace);
+        return startsAtAccommodation && reachesFirstItem;
+      });
+      if (legIndex < 0) return;
+      const leg = day.transportLegs[legIndex];
+      const selected = selectedTransportOption(
+        leg,
+        selectedPlanLegOptionKeys[planLegSelectionKey(day.day, legIndex)]
+      );
+      routes.set(day.day, {
+        leg: { ...leg, ...selected },
+        routeKey: isDrawableTransportRoute(selected)
+          ? planTransportRouteMapKey(day.day, legIndex, selected)
+          : null,
+      });
+    });
+    return routes;
+  }, [displayedPlan, selectedPlanLegOptionKeys]);
 
   async function requestDayDirections(
     origin: PlannerMapCurrentLocation,
@@ -2889,7 +2784,7 @@ function Planner() {
     setEditSearchFailed(false);
   }
 
-  function useCurrentLocationForPlace(target: PlaceLocationTarget) {
+  function applyCurrentLocationToPlace(target: PlaceLocationTarget) {
     setPlaceLocationTarget(target);
     setLocationError("");
     if (currentLocation) {
@@ -3119,7 +3014,6 @@ function Planner() {
     legIndex: number,
     option: TransportOption
   ) {
-    const mode = option.mode;
     const optionKey = transportOptionSelectionKey(option);
     const previousDirectionRouteKey =
       activePlanDay != null
@@ -3295,7 +3189,11 @@ function Planner() {
     if (!chatId || !displayedPlan || retryingTransportLegKey) return;
 
     for (const day of displayedPlan.days) {
-      for (let legIndex = 0; legIndex < day.transportLegs.length; legIndex += 1) {
+      for (
+        let legIndex = 0;
+        legIndex < day.transportLegs.length;
+        legIndex += 1
+      ) {
         const leg = day.transportLegs[legIndex];
         if (transportOptionsForLeg(leg).length > 0) continue;
         const attemptKey = [
@@ -3319,11 +3217,6 @@ function Planner() {
     initialChatId,
     retryingTransportLegKey,
   ]);
-
-  function selectRouteOnMapWithoutFocus(routeKey: string) {
-    setSelectedMapPlaceKey(null);
-    setSelectedMapRouteKey(routeKey);
-  }
 
   function focusRouteOnMap(routeKey: string) {
     if (selectedMapRouteKey === routeKey) {
@@ -3395,6 +3288,11 @@ function Planner() {
     });
   }
 
+  function zoomPlaceOnMap(mapKey: string) {
+    focusPlaceOnMap(mapKey);
+    setPlaceFocusRequest((current) => current + 1);
+  }
+
   function selectItinerarySearchResult(result: ItinerarySearchResult) {
     const item = displayedPlan?.days.find((day) => day.day === result.day)
       ?.items[result.itemIndex];
@@ -3419,9 +3317,7 @@ function Planner() {
       window.requestAnimationFrame(() => {
         const matchingCard = Array.from(
           document.querySelectorAll<HTMLElement>("[data-itinerary-search-key]")
-        ).find(
-          (element) => element.dataset.itinerarySearchKey === result.key
-        );
+        ).find((element) => element.dataset.itinerarySearchKey === result.key);
         matchingCard?.scrollIntoView({ behavior: "smooth", block: "center" });
         matchingCard?.focus({ preventScroll: true });
       });
@@ -3533,13 +3429,14 @@ function Planner() {
       };
     }
     if (step === "travelers") {
-      const type = travelerCounts.children || travelerCounts.infants
-        ? "family"
-        : travelerCounts.adults === 1
+      const type =
+        travelerCounts.children || travelerCounts.infants
+          ? "family"
+          : travelerCounts.adults === 1
           ? "solo"
           : travelerCounts.adults === 2
-            ? "couple"
-            : "group";
+          ? "couple"
+          : "group";
       return {
         ...intent,
         travelParty: {
@@ -3652,18 +3549,14 @@ function Planner() {
     // Đóng hộp thoại ngay khi bắt đầu lưu để người dùng không bị giữ lại
     // trước màn hình "Đang cập nhật…" trong lúc request ghi vào DB hoàn tất.
     setGuidedIntakeOpen(false);
-    if (
-      await saveGuidedTripIntent(
-        guidedIntakeStep,
-        effectiveAnswer
-      )
-    ) {
+    if (await saveGuidedTripIntent(guidedIntakeStep, effectiveAnswer)) {
       return;
     }
     showPlannerToast(
-      `Đã cập nhật ${
-        guidedIntakeQuestions[guidedIntakeStep].replace(/[?？]$/, "")
-      }`
+      `Đã cập nhật ${guidedIntakeQuestions[guidedIntakeStep].replace(
+        /[?？]$/,
+        ""
+      )}`
     );
 
     if (guidedIntakeStep === guidedIntakeOrder[guidedIntakeOrder.length - 1]) {
@@ -3730,10 +3623,10 @@ function Planner() {
         ? step === "destination"
           ? intent.destination
           : step === "budget"
-            ? formatTripBudget(intent)
-            : step === "note"
-              ? intent.notes.join(" · ")
-              : guidedIntakeAnswers[step] ?? ""
+          ? formatTripBudget(intent)
+          : step === "note"
+          ? intent.notes.join(" · ")
+          : guidedIntakeAnswers[step] ?? ""
         : guidedIntakeAnswers[step] ?? ""
     );
     setGuidedIntakeOpen(true);
@@ -3804,16 +3697,16 @@ function Planner() {
         {
           id: Date.now() + 1,
           role: "assistant",
-          text: requestUrls.length > 0
-            ? `Mình đang đọc ${requestUrls.length} nguồn và tìm các địa điểm có bằng chứng. Bạn có thể tiếp tục ở đây trong lúc nguồn được xử lý.`
-            : "Mình đang chuẩn bị và lập lịch trình. Bạn có thể chuyển sang màn hình khác trong lúc tác vụ chạy nền.",
+          text:
+            requestUrls.length > 0
+              ? `Mình đang đọc ${requestUrls.length} nguồn và tìm các địa điểm có bằng chứng. Bạn có thể tiếp tục ở đây trong lúc nguồn được xử lý.`
+              : "Mình đang chuẩn bị và lập lịch trình. Bạn có thể chuyển sang màn hình khác trong lúc tác vụ chạy nền.",
         },
       ]);
       return;
     }
     if (user && requestUrls.length > 0) {
       setQueueingUrls(true);
-      setBackgroundPlanning(true);
       setError("");
       try {
         let chatId = activeChatId;
@@ -3827,21 +3720,21 @@ function Planner() {
           setChatRevision(created.revision);
           syncPlannerChatUrl(chatId);
         }
-        let queued = false;
-        let queuedJobs: UrlImportJob[] = [];
         for (let attempt = 0; attempt < 3; attempt += 1) {
           try {
-            if (requestUrls.length > 0) {
-              const batch = await enqueueTripChatUrls({
-                chatId,
-                content: text,
-                expectedRevision,
-                urls: requestUrls,
-              });
-              queuedJobs.push(...batch.jobs);
-            }
-            queued = true;
-            break;
+            const clientTurnId =
+              typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `turn-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            await conversationTurn.submitTurn({
+              chatId,
+              content: text,
+              expectedRevision,
+              clientTurnId,
+              attachmentNames: [],
+            });
+            setSelectedMapPlaceKey(null);
+            return;
           } catch (caught) {
             if (
               !(caught instanceof APIError) ||
@@ -3855,35 +3748,14 @@ function Planner() {
             applyTripChat(latest);
           }
         }
-        if (!queued) throw new Error("Không thể thêm nguồn vào hàng chờ.");
-        setActivePlanningJobs(
-          queuedJobs.map((job) => ({ id: job.id, guest: false }))
-        );
-        setUrlJobSnapshot((current) => [
-          ...queuedJobs,
-          ...current.filter(
-            (job) => !queuedJobs.some((queued) => queued.id === job.id)
-          ),
-        ]);
-        setTripChats(await listTripChats());
-        window.dispatchEvent(new CustomEvent("travelplanner:url-job-enqueued", {
-          detail: queuedJobs
-        }));
-        setMessages((current) => [
-          ...current,
-          {
-            id: Date.now() + 1,
-            role: "assistant",
-            text: `Mình đang đọc ${requestUrls.length} nguồn và tìm các địa điểm có bằng chứng. Bạn có thể tiếp tục ở đây trong lúc nguồn được xử lý.`,
-          },
-        ]);
+        throw new Error("Không thể xử lý nguồn URL.");
       } catch (caught) {
         setBackgroundPlanning(false);
         setInitialPlanningActive(false);
         const message =
           caught instanceof Error
             ? caught.message
-            : "Không thể thêm nguồn vào hàng chờ.";
+            : "Không thể xử lý nguồn URL.";
         setError(message);
       } finally {
         setQueueingUrls(false);
@@ -3990,6 +3862,9 @@ function Planner() {
     setInitialPlanningActive(false);
     setActivePlanningJobs([]);
     setChatCollapsed(false);
+    setFloatingChatRect(null);
+    expandedChatSizeRef.current = null;
+    chatPointerInteractionRef.current = null;
     setError("");
     setGuidedIntakeStep("destination");
     setGuidedIntakeOpen(false);
@@ -4012,22 +3887,6 @@ function Planner() {
       setTripIntentVersion(0);
       setTripIntentPlanStatus("synced");
     }
-  }
-
-  async function cancelBackgroundPlanning() {
-    const jobs = [...activePlanningJobs];
-    setError("");
-    await Promise.allSettled(
-      jobs.map(async (job) => {
-        if (job.guest) {
-          deleteGuestUrlJob(job.id);
-          return;
-        }
-        await deleteUrlImportJob(job.id);
-      })
-    );
-    resetWorkflow();
-    showPlannerToast("Đã dừng tác vụ và mở chat mới");
   }
 
   async function openTripChat(chatId: string) {
@@ -4072,8 +3931,11 @@ function Planner() {
               : "exploring"
           );
         } else {
-          const activeTurn = (chat.turns ?? []).find((turn) =>
-            turn.status === "queued" || turn.status === "classifying" || turn.status === "executing"
+          const activeTurn = (chat.turns ?? []).find(
+            (turn) =>
+              turn.status === "queued" ||
+              turn.status === "classifying" ||
+              turn.status === "executing"
           );
           if (activeTurn) {
             setInitialPlanningActive(!chat.currentPlan);
@@ -4081,13 +3943,17 @@ function Planner() {
               activeTurn.status === "queued"
                 ? "preparing"
                 : activeTurn.status === "classifying"
-                  ? "exploring"
-                  : "planning"
+                ? "exploring"
+                : "planning"
             );
             void conversationTurn.resumeTurn(activeTurn).catch((caught) => {
               setInitialPlanningActive(false);
               setWorkflowStage("failed");
-              setError(caught instanceof Error ? caught.message : "Không thể tiếp tục tác vụ.");
+              setError(
+                caught instanceof Error
+                  ? caught.message
+                  : "Không thể tiếp tục tác vụ."
+              );
             });
           }
         }
@@ -4111,7 +3977,11 @@ function Planner() {
     const url = new URL(window.location.href);
     if (chatId) url.searchParams.set("chatId", chatId);
     else url.searchParams.delete("chatId");
-    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    window.history.replaceState(
+      {},
+      "",
+      `${url.pathname}${url.search}${url.hash}`
+    );
   }
 
   async function handleDeleteTripChat(chat: TripChatSummary) {
@@ -4142,7 +4012,8 @@ function Planner() {
   }
 
   async function handleDeleteAllTripChats() {
-    if (loading || deletingChatId || deletingAllChats || !tripChats.length) return;
+    if (loading || deletingChatId || deletingAllChats || !tripChats.length)
+      return;
     if (
       !window.confirm(
         `Xóa tất cả ${tripChats.length} cuộc trò chuyện? Toàn bộ tin nhắn và lịch trình trong lịch sử sẽ bị xóa vĩnh viễn.`
@@ -4159,7 +4030,9 @@ function Planner() {
       resetWorkflow();
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Không thể xóa tất cả lịch sử chat."
+        caught instanceof Error
+          ? caught.message
+          : "Không thể xóa tất cả lịch sử chat."
       );
     } finally {
       setDeletingAllChats(false);
@@ -4205,7 +4078,16 @@ function Planner() {
               tripIntent: chat.currentTripIntent,
               assumptions: [],
               missingInfoQuestions: [],
-              preferenceSnapshot: { version: 1, signals: [], effectiveProfile: { version: 1, explicit: [], scores: {}, observationCount: 0 } },
+              preferenceSnapshot: {
+                version: 1,
+                signals: [],
+                effectiveProfile: {
+                  version: 1,
+                  explicit: [],
+                  scores: {},
+                  observationCount: 0,
+                },
+              },
               candidateReviews: chat.candidateReviews,
             },
             allowFinderGapFill: true,
@@ -4238,9 +4120,7 @@ function Planner() {
     () =>
       new Set(
         urlJobSnapshot
-          .filter(
-            (job) => job.status === "queued" || job.status === "running"
-          )
+          .filter((job) => job.status === "queued" || job.status === "running")
           .map((job) => job.chatId)
       ),
     [urlJobSnapshot]
@@ -4312,7 +4192,8 @@ function Planner() {
     matchRank: number
   ) {
     if (!activeChatId || !place.candidateId) return;
-    if (candidateResolutionCandidateIdsRef.current.has(place.candidateId)) return;
+    if (candidateResolutionCandidateIdsRef.current.has(place.candidateId))
+      return;
 
     const key = `${place.candidateId}:${matchRank}`;
     candidateResolutionCandidateIdsRef.current.add(place.candidateId);
@@ -4385,9 +4266,7 @@ function Planner() {
   async function handleDismissUnscheduledPlace(place: UnscheduledPlace) {
     if (!activeChatId || mutatingItem) return;
     if (
-      !confirm(
-        `Không thêm “${itineraryDisplayName(place.name)}” vào kế hoạch?`
-      )
+      !confirm(`Không thêm “${itineraryDisplayName(place.name)}” vào kế hoạch?`)
     ) {
       return;
     }
@@ -4428,29 +4307,30 @@ function Planner() {
     event.preventDefault();
     const currentUrls = parseUrlOnlyInput(urlInput);
     const nextUrls = Array.from(
-      new Set([
-        ...(currentUrls.ok ? currentUrls.urls : []),
-        ...pastedUrls,
-      ])
+      new Set([...(currentUrls.ok ? currentUrls.urls : []), ...pastedUrls])
     );
     setUrlInput(nextUrls.join("\n"));
 
     const field = event.currentTarget;
     const selectionStart = field.selectionStart;
     const selectionEnd = field.selectionEnd;
-    const remainingText = pastedUrls.reduce(
-      (value, url) => value.replace(url, ""),
-      pastedText
-    ).trim();
+    const remainingText = pastedUrls
+      .reduce((value, url) => value.replace(url, ""), pastedText)
+      .trim();
     const before = prompt.slice(0, selectionStart);
     const after = prompt.slice(selectionEnd);
     const pastedContent = remainingText
-      ? `${before && !/\s$/.test(before) ? " " : ""}${remainingText}${after && !/^\s/.test(after) ? " " : ""}`
+      ? `${before && !/\s$/.test(before) ? " " : ""}${remainingText}${
+          after && !/^\s/.test(after) ? " " : ""
+        }`
       : "";
     setPrompt(`${before}${pastedContent}${after}`);
     window.requestAnimationFrame(() => {
       const nextPosition = before.length + pastedContent.length;
-      composerTextareaRef.current?.setSelectionRange(nextPosition, nextPosition);
+      composerTextareaRef.current?.setSelectionRange(
+        nextPosition,
+        nextPosition
+      );
     });
   }
 
@@ -4513,7 +4393,10 @@ function Planner() {
             <strong>Kế hoạch chi tiết</strong>
             <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
               <small>
-                <nav aria-label="Thông tin chuyến đi" className="plannerIntakeNav">
+                <nav
+                  aria-label="Thông tin chuyến đi"
+                  className="plannerIntakeNav"
+                >
                   {(
                     [
                       ["destination", "Điểm đến"],
@@ -4533,7 +4416,9 @@ function Planner() {
                             : undefined
                         }
                         className={value ? "is-filled" : ""}
-                        disabled={backgroundPlanning || loading || savingTripIntent}
+                        disabled={
+                          backgroundPlanning || loading || savingTripIntent
+                        }
                         key={step}
                         onClick={() => openGuidedStep(step)}
                         title={value || label}
@@ -4603,7 +4488,6 @@ function Planner() {
           className="plannerWorkspace pageWidth"
           inert={reorderingDay != null ? true : undefined}
         >
-
           <TripProjectSidebar
             activeChatId={activeChatId}
             activeJobChatIds={activeJobChatIds}
@@ -4684,7 +4568,7 @@ function Planner() {
                 })}
                 ref={plannerChatRef}
                 style={
-                  floatingChatRect
+                  displayedPlan && floatingChatRect
                     ? ({
                         "--floating-chat-x": `${floatingChatRect.x}px`,
                         "--floating-chat-y": `${floatingChatRect.y}px`,
@@ -4713,10 +4597,10 @@ function Planner() {
                         ? "Đang hiểu yêu cầu của bạn"
                         : "Đang chạy nền · có thể chuyển tab"
                       : workflowStage === "ready"
-                        ? "Lịch trình sẵn sàng để chỉnh sửa"
-                        : workflowStage === "failed"
-                          ? "Cần bạn kiểm tra và thử lại"
-                          : "Cùng bạn xây dựng chuyến đi"
+                      ? "Lịch trình sẵn sàng để chỉnh sửa"
+                      : workflowStage === "failed"
+                      ? "Cần bạn kiểm tra và thử lại"
+                      : "Cùng bạn xây dựng chuyến đi"
                   }
                 />
                 <div className="plannerChatContent" id="planner-chat-content">
@@ -4731,7 +4615,9 @@ function Planner() {
                       className="plannerInlineProcessing"
                       role="status"
                     >
-                      Đang suy nghĩ
+                      <span>Đang suy nghĩ</span>
+                      <span aria-hidden="true">·</span>
+                      <ThinkingDuration />
                     </div>
                   ) : null}
                   {error ? <p className="formError">{error}</p> : null}
@@ -4837,10 +4723,18 @@ function Planner() {
                 >
                   <span aria-hidden="true" />
                   <strong>
-                    {mobileItineraryExpanded ? "Vuốt xuống để xem bản đồ" : "Vuốt lên xem lịch trình"}
+                    {mobileItineraryExpanded
+                      ? "Vuốt xuống để xem bản đồ"
+                      : "Vuốt lên xem lịch trình"}
                   </strong>
                   <svg aria-hidden="true" viewBox="0 0 24 24">
-                    <path d={mobileItineraryExpanded ? "m6 9 6 6 6-6" : "m6 15 6-6 6 6"} />
+                    <path
+                      d={
+                        mobileItineraryExpanded
+                          ? "m6 9 6 6 6-6"
+                          : "m6 15 6-6 6 6"
+                      }
+                    />
                   </svg>
                 </button>
                 <header className="panelHeading itineraryHeading">
@@ -4858,7 +4752,10 @@ function Planner() {
                     </div>
                     <div className="plannerIntakePeekaboo itineraryIntakePeekaboo">
                       <small>
-                        <nav aria-label="Thông tin chuyến đi" className="plannerIntakeNav">
+                        <nav
+                          aria-label="Thông tin chuyến đi"
+                          className="plannerIntakeNav"
+                        >
                           {(
                             [
                               ["destination", "Điểm đến"],
@@ -4871,20 +4768,28 @@ function Planner() {
                             const value = guidedIntakeAnswers[step];
                             return (
                               <button
-                                aria-label={value ? `${label}: ${value}` : label}
+                                aria-label={
+                                  value ? `${label}: ${value}` : label
+                                }
                                 aria-current={
                                   guidedIntakeOpen && guidedIntakeStep === step
                                     ? "step"
                                     : undefined
                                 }
                                 className={value ? "is-filled" : ""}
-                                disabled={backgroundPlanning || loading || savingTripIntent}
+                                disabled={
+                                  backgroundPlanning ||
+                                  loading ||
+                                  savingTripIntent
+                                }
                                 key={step}
                                 onClick={() => openGuidedStep(step)}
                                 title={value || label}
                                 type="button"
                               >
-                                <span className="plannerIntakeCopy">{label}</span>
+                                <span className="plannerIntakeCopy">
+                                  {label}
+                                </span>
                               </button>
                             );
                           })}
@@ -4906,77 +4811,89 @@ function Planner() {
                   <div className="exploreResult" ref={itineraryScrollRef}>
                     {displayedExploreResult ? (
                       <section className="tripSummaryCard">
-                      <div className="tripSummaryIntro">
-                        <span className="destinationPin" aria-hidden="true">
-                          ⌖
-                        </span>
-                        <div>
-                          <span className="tripSummaryLabel">
-                            Điểm đến của bạn
+                        <div className="tripSummaryIntro">
+                          <span className="destinationPin" aria-hidden="true">
+                            ⌖
                           </span>
-                          <h3>
-                            {displayedExploreResult.explorer.tripIntent.destination}
-                          </h3>
-                          <p>
-                            {displayedExploreResult.explorer.tripIntent.preferences.travelStyle}{" "}
-                            · Nhịp độ{" "}
-                            {paceLabel(
-                              displayedExploreResult.explorer.tripIntent.preferences.pace
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div
-                        className="tripQuickFacts"
-                        aria-label="Thông tin chuyến đi"
-                      >
-                        <div>
-                          <span>Ngày có lịch trình</span>
-                          <strong>{displayedPlan.days.length} ngày</strong>
-                        </div>
-                        <div>
-                          <span>Nhóm đi</span>
-                          <strong>
-                            {displayedExploreResult.explorer.tripIntent.travelParty.adults + displayedExploreResult.explorer.tripIntent.travelParty.children + displayedExploreResult.explorer.tripIntent.travelParty.infants}{" "}
-                            người
-                          </strong>
-                        </div>
-                        <div>
-                          <span>Mức ngân sách</span>
-                          <strong>
-                            {budgetLevelLabel(
-                              displayedExploreResult.explorer.tripIntent.budget
-                                .level
-                            )}
-                          </strong>
-                        </div>
-                      </div>
-                      <div className="budgetSummary">
-                        <span className="budgetIcon" aria-hidden="true">
-                          ₫
-                        </span>
-                        <div>
-                          <span>Mức chi dự kiến</span>
-                          <strong>
-                            {formatBudget(displayedExploreResult.explorer)}
-                          </strong>
-                        </div>
-                      </div>
-                      {displayedExploreResult.explorer.tripIntent.preferences.interests
-                        .length ? (
-                        <div className="interestGroup">
-                          <span className="sectionMicroTitle">
-                            Bạn muốn trải nghiệm
-                          </span>
-                          <div className="tagRow">
-                            {displayedExploreResult.explorer.tripIntent.preferences.interests.map(
-                              (interest) => (
-                                <span key={interest}>{interest}</span>
-                              )
-                            )}
+                          <div>
+                            <span className="tripSummaryLabel">
+                              Điểm đến của bạn
+                            </span>
+                            <h3>
+                              {
+                                displayedExploreResult.explorer.tripIntent
+                                  .destination
+                              }
+                            </h3>
+                            <p>
+                              {
+                                displayedExploreResult.explorer.tripIntent
+                                  .preferences.travelStyle
+                              }{" "}
+                              · Nhịp độ{" "}
+                              {paceLabel(
+                                displayedExploreResult.explorer.tripIntent
+                                  .preferences.pace
+                              )}
+                            </p>
                           </div>
                         </div>
-                      ) : null}
+                        <div
+                          className="tripQuickFacts"
+                          aria-label="Thông tin chuyến đi"
+                        >
+                          <div>
+                            <span>Ngày có lịch trình</span>
+                            <strong>{displayedPlan.days.length} ngày</strong>
+                          </div>
+                          <div>
+                            <span>Nhóm đi</span>
+                            <strong>
+                              {displayedExploreResult.explorer.tripIntent
+                                .travelParty.adults +
+                                displayedExploreResult.explorer.tripIntent
+                                  .travelParty.children +
+                                displayedExploreResult.explorer.tripIntent
+                                  .travelParty.infants}{" "}
+                              người
+                            </strong>
+                          </div>
+                          <div>
+                            <span>Mức ngân sách</span>
+                            <strong>
+                              {budgetLevelLabel(
+                                displayedExploreResult.explorer.tripIntent
+                                  .budget.level
+                              )}
+                            </strong>
+                          </div>
+                        </div>
+                        <div className="budgetSummary">
+                          <span className="budgetIcon" aria-hidden="true">
+                            ₫
+                          </span>
+                          <div>
+                            <span>Mức chi dự kiến</span>
+                            <strong>
+                              {formatBudget(displayedExploreResult.explorer)}
+                            </strong>
+                          </div>
+                        </div>
+                        {displayedExploreResult.explorer.tripIntent.preferences
+                          .interests.length ? (
+                          <div className="interestGroup">
+                            <span className="sectionMicroTitle">
+                              Bạn muốn trải nghiệm
+                            </span>
+                            <div className="tagRow">
+                              {displayedExploreResult.explorer.tripIntent.preferences.interests.map(
+                                (interest) => (
+                                  <span key={interest}>{interest}</span>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
                       </section>
                     ) : null}
 
@@ -5046,9 +4963,7 @@ function Planner() {
                         })}
                         <button
                           aria-controls="plan-days-panel"
-                          aria-selected={
-                            activePlanDay === UNSCHEDULED_PLAN_DAY
-                          }
+                          aria-selected={activePlanDay === UNSCHEDULED_PLAN_DAY}
                           className={
                             activePlanDay === UNSCHEDULED_PLAN_DAY
                               ? "active dayTabUnscheduled"
@@ -5071,7 +4986,8 @@ function Planner() {
                             <span className="dayTabDot" aria-hidden="true" />
                             Chưa xếp
                           </span>
-                          {(displayedPlan.unscheduledPlaces?.length ?? 0) > 0 ? (
+                          {(displayedPlan.unscheduledPlaces?.length ?? 0) >
+                          0 ? (
                             <small>
                               {displayedPlan.unscheduledPlaces?.length} địa điểm
                             </small>
@@ -5080,7 +4996,11 @@ function Planner() {
                         <button
                           aria-controls="plan-days-panel"
                           aria-selected={activePlanDay === GROUP_PLAN_DAY}
-                          className={activePlanDay === GROUP_PLAN_DAY ? "active dayTabGroup" : "dayTabGroup"}
+                          className={
+                            activePlanDay === GROUP_PLAN_DAY
+                              ? "active dayTabGroup"
+                              : "dayTabGroup"
+                          }
                           id="plan-day-tab-group"
                           onClick={() => {
                             setActivePlanDay(GROUP_PLAN_DAY);
@@ -5092,14 +5012,14 @@ function Planner() {
                           tabIndex={activePlanDay === GROUP_PLAN_DAY ? 0 : -1}
                           type="button"
                         >
-                          <span className="dayTabLabel"><span className="dayTabDot" aria-hidden="true" />Nhóm</span>
+                          <span className="dayTabLabel">
+                            <span className="dayTabDot" aria-hidden="true" />
+                            Nhóm
+                          </span>
                           <small>{3} công cụ</small>
                         </button>
                       </div>
                       <div className="itinerarySearch">
-                        <label className="srOnly" htmlFor="itinerary-place-search">
-                          Tìm địa điểm trong lịch trình hiện tại
-                        </label>
                         <div className="itinerarySearchField">
                           <svg aria-hidden="true" viewBox="0 0 24 24">
                             <circle cx="11" cy="11" r="7" />
@@ -5191,10 +5111,10 @@ function Planner() {
                           activePlanDay == null
                             ? "plan-day-tab-all"
                             : activePlanDay === UNSCHEDULED_PLAN_DAY
-                              ? "plan-day-tab-unscheduled"
-                              : activePlanDay === GROUP_PLAN_DAY
-                                ? "plan-day-tab-group"
-                              : `plan-day-tab-${activePlanDay}`
+                            ? "plan-day-tab-unscheduled"
+                            : activePlanDay === GROUP_PLAN_DAY
+                            ? "plan-day-tab-group"
+                            : `plan-day-tab-${activePlanDay}`
                         }
                         className="planDayPanels"
                         id="plan-days-panel"
@@ -5472,6 +5392,44 @@ function Planner() {
                               </div>
                             ) : null}
                             <div className="itineraryStops">
+                              {displayedPlan.accommodation &&
+                              accommodationRoutePositionsByDay.get(
+                                displayedPlanDay.day
+                              )?.start ? (
+                                <AccommodationItineraryCard
+                                  accommodation={displayedPlan.accommodation}
+                                  mapKey={ACCOMMODATION_MAP_KEY}
+                                  onFocusMap={focusPlaceOnMap}
+                                  onZoomMap={zoomPlaceOnMap}
+                                  onOpenReviews={setItineraryReviewPlace}
+                                  selected={
+                                    selectedMapPlaceKey ===
+                                    ACCOMMODATION_MAP_KEY
+                                  }
+                                />
+                              ) : null}
+                              {accommodationStartRouteByDay.get(
+                                displayedPlanDay.day
+                              ) ? (
+                                <AccommodationRouteStrip
+                                  leg={
+                                    accommodationStartRouteByDay.get(
+                                      displayedPlanDay.day
+                                    )!.leg
+                                  }
+                                  onToggle={focusRouteOnMap}
+                                  routeKey={
+                                    accommodationStartRouteByDay.get(
+                                      displayedPlanDay.day
+                                    )!.routeKey
+                                  }
+                                  selected={
+                                    accommodationStartRouteByDay.get(
+                                      displayedPlanDay.day
+                                    )!.routeKey === selectedMapRouteKey
+                                  }
+                                />
+                              ) : null}
                               {reorderingDay === displayedPlanDay.day ? (
                                 <p
                                   className="itineraryReorderStatus"
@@ -5481,16 +5439,21 @@ function Planner() {
                                 </p>
                               ) : null}
                               {displayedPlanDay.items.map((item, itemIndex) => {
-                                const displayNotes = formatPlanNote(item.notes);
+                                const displayNotes = sourceNoteTextForDisplay(
+                                  item.notes
+                                );
                                 const notePresentation =
                                   planItemNotePresentation(item);
-                                const sourceNotes = notePresentation.sourceNotes;
+                                const sourceNotes =
+                                  notePresentation.sourceNotes;
                                 const personalNotes =
                                   notePresentation.personalText;
                                 const activityNoteCount =
                                   sourceNotes.length + (personalNotes ? 1 : 0);
-                                 const notePanelId = `activity-note-${displayedPlanDay.day}-${itemIndex}`;
-                                 const quickActionKey = `${displayedPlanDay.day}:${item.itemId ?? itemIndex}`;
+                                const notePanelId = `activity-note-${displayedPlanDay.day}-${itemIndex}`;
+                                const quickActionKey = `${
+                                  displayedPlanDay.day
+                                }:${item.itemId ?? itemIndex}`;
                                 const displayItemName = itineraryDisplayName(
                                   item.name
                                 );
@@ -5620,15 +5583,13 @@ function Planner() {
                                 const placeImageUrls = (item.imageUrls ?? [])
                                   .filter(isDisplayableImageUrl)
                                   .map((url) => url.trim());
-                                const placeImageUrl =
-                                  placeImageUrls[0] ?? null;
+                                const placeImageUrl = placeImageUrls[0] ?? null;
                                 const itineraryImageUrl =
                                   placeImageUrl ?? ITINERARY_NO_IMAGE_SRC;
                                 const isDragging =
                                   draggedItemKey?.itemId === item.itemId;
                                 const isDragTarget =
                                   dragOverItemId === item.itemId && !isDragging;
-                                const itemDragHandle = null;
                                 const itemNoteAction =
                                   activityNoteCount ||
                                   (item.itemId && activeChatId) ? (
@@ -5678,9 +5639,7 @@ function Planner() {
                                         Ghi chú
                                       </span>
                                       {activityNoteCount ? (
-                                        <span
-                                          className="activityNotesButtonCount"
-                                        >
+                                        <span className="activityNotesButtonCount">
                                           {activityNoteCount}
                                         </span>
                                       ) : null}
@@ -5726,8 +5685,19 @@ function Planner() {
                                               <section
                                                 key={`${sourceNote.type}-${sourceNoteIndex}`}
                                               >
-                                                <strong>{sourceNote.label}</strong>
+                                                <strong>
+                                                  {sourceNote.label}
+                                                </strong>
                                                 <p>{sourceNote.text}</p>
+                                                {sourceNote.sourceUrl ? (
+                                                  <a
+                                                    href={sourceNote.sourceUrl}
+                                                    rel="noreferrer"
+                                                    target="_blank"
+                                                  >
+                                                    Mở nguồn
+                                                  </a>
+                                                ) : null}
                                               </section>
                                             )
                                           )}
@@ -5871,9 +5841,7 @@ function Planner() {
                                               <p>{displayNotes}</p>
                                             ) : null}
                                           </div>
-                                          {canReorder ? (
-                                            null
-                                          ) : null}
+                                          {canReorder ? null : null}
                                         </div>
                                       ) : (
                                         <article
@@ -5969,20 +5937,30 @@ function Planner() {
                                                       : `Chưa có ảnh cho ${displayItemName}`
                                                   }
                                                   draggable={false}
-                                                  loading={itemIndex < 3 ? "eager" : "lazy"}
+                                                  loading={
+                                                    itemIndex < 3
+                                                      ? "eager"
+                                                      : "lazy"
+                                                  }
                                                   referrerPolicy="no-referrer"
                                                   onError={(event) => {
                                                     const currentIndex = Number(
-                                                      event.currentTarget.dataset.imageIndex ??
+                                                      event.currentTarget
+                                                        .dataset.imageIndex ??
                                                         "0"
                                                     );
                                                     const nextImageUrl =
-                                                      placeImageUrls[currentIndex + 1];
+                                                      placeImageUrls[
+                                                        currentIndex + 1
+                                                      ];
 
                                                     if (nextImageUrl) {
                                                       event.currentTarget.dataset.imageIndex =
-                                                        String(currentIndex + 1);
-                                                      event.currentTarget.src = nextImageUrl;
+                                                        String(
+                                                          currentIndex + 1
+                                                        );
+                                                      event.currentTarget.src =
+                                                        nextImageUrl;
                                                       return;
                                                     }
 
@@ -6020,7 +5998,16 @@ function Planner() {
                                                             mapKey
                                                           )
                                                         }
+                                                        onDoubleClick={(
+                                                          event
+                                                        ) => {
+                                                          event.stopPropagation();
+                                                          zoomPlaceOnMap(
+                                                            mapKey
+                                                          );
+                                                        }}
                                                         aria-label={`Hiển thị ${displayItemName} trên bản đồ`}
+                                                        title={`Nhấp đúp để phóng to ${displayItemName} trên bản đồ`}
                                                         type="button"
                                                       >
                                                         <strong>
@@ -6064,7 +6051,11 @@ function Planner() {
                                                         aria-hidden="true"
                                                         viewBox="0 0 24 24"
                                                       >
-                                                        <circle cx="12" cy="12" r="8.5" />
+                                                        <circle
+                                                          cx="12"
+                                                          cy="12"
+                                                          r="8.5"
+                                                        />
                                                         <path d="M12 7.5v5l3.5 2" />
                                                       </svg>
                                                       <span>
@@ -6074,134 +6065,157 @@ function Planner() {
                                                   ) : null}
                                                 </div>
                                               </header>
-                                                <div className="itineraryPlaceQuickActions">
-                                                  {sourceLabel?.url ? (
-                                                    <a
-                                                      aria-label={`Mở link ${sourceLabel.text} của ${displayItemName}`}
-                                                      className={`itinerarySourceIconLink itinerarySourceIconLink--${sourceLabel.provider}`}
-                                                      href={sourceLabel.url}
-                                                      rel="noreferrer"
-                                                      target="_blank"
-                                                      title={`Link ${
-                                                        sourceLabel.text
-                                                      }: ${
-                                                        sourceLabel.displayUrl ??
-                                                        sourceLabel.url
-                                                      }`}
-                                                    >
-                                                      <SourceProviderIcon
-                                                        provider={
-                                                          sourceLabel.provider
-                                                        }
-                                                      />
-                                                      <span>URL</span>
-                                                    </a>
-                                                  ) : null}
-                                                  <span
-                                                    aria-label={
-                                                      isFoodStop
-                                                        ? "Ăn uống"
-                                                        : "Hoạt động tham quan"
-                                                    }
-                                                    className="itineraryTypeIcon"
-                                                    role="img"
-                                                    title={
-                                                      isFoodStop
-                                                        ? "Ăn uống"
-                                                        : "Hoạt động tham quan"
-                                                    }
+                                              <div className="itineraryPlaceQuickActions">
+                                                {sourceLabel?.url ? (
+                                                  <a
+                                                    aria-label={`Mở link ${sourceLabel.text} của ${displayItemName}`}
+                                                    className={`itinerarySourceIconLink itinerarySourceIconLink--${sourceLabel.provider}`}
+                                                    href={sourceLabel.url}
+                                                    rel="noreferrer"
+                                                    target="_blank"
+                                                    title={`Link ${
+                                                      sourceLabel.text
+                                                    }: ${
+                                                      sourceLabel.displayUrl ??
+                                                      sourceLabel.url
+                                                    }`}
                                                   >
-                                                    {isFoodStop ? (
-                                                      <svg viewBox="0 0 24 24">
-                                                        <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
-                                                        <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
-                                                      </svg>
-                                                    ) : (
-                                                      <svg viewBox="0 0 24 24">
-                                                        <circle cx="6" cy="6" r="2.5" />
-                                                        <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
-                                                        <path d="m2 21 6-9 4 5 2-3 8 7" />
-                                                        <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
-                                                      </svg>
-                                                    )}
-                                                  </span>
-                                                  {item.itemId && activeChatId ? (
-                                                    <div className="itineraryPlaceQuickActionMenu">
-                                                      <button
-                                                        aria-expanded={
+                                                    <SourceProviderIcon
+                                                      provider={
+                                                        sourceLabel.provider
+                                                      }
+                                                    />
+                                                    <span>URL</span>
+                                                  </a>
+                                                ) : null}
+                                                <span
+                                                  aria-label={
+                                                    isFoodStop
+                                                      ? "Ăn uống"
+                                                      : "Hoạt động tham quan"
+                                                  }
+                                                  className="itineraryTypeIcon"
+                                                  role="img"
+                                                  title={
+                                                    isFoodStop
+                                                      ? "Ăn uống"
+                                                      : "Hoạt động tham quan"
+                                                  }
+                                                >
+                                                  {isFoodStop ? (
+                                                    <svg viewBox="0 0 24 24">
+                                                      <path d="M6 3v7M3.5 3v4.5A2.5 2.5 0 0 0 6 10a2.5 2.5 0 0 0 2.5-2.5V3M6 10v11" />
+                                                      <path d="M15 3v18M15 3c3 1.1 4.5 3.7 4.5 7H15" />
+                                                    </svg>
+                                                  ) : (
+                                                    <svg viewBox="0 0 24 24">
+                                                      <circle
+                                                        cx="6"
+                                                        cy="6"
+                                                        r="2.5"
+                                                      />
+                                                      <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7" />
+                                                      <path d="m2 21 6-9 4 5 2-3 8 7" />
+                                                      <path d="M13 5c1-1 2-1 3 0 1-1 2-1 3 0M16 9c1-1 2-1 3 0 1-1 2-1 3 0" />
+                                                    </svg>
+                                                  )}
+                                                </span>
+                                                {item.itemId && activeChatId ? (
+                                                  <div className="itineraryPlaceQuickActionMenu">
+                                                    <button
+                                                      aria-expanded={
+                                                        openQuickActionKey ===
+                                                        quickActionKey
+                                                      }
+                                                      aria-haspopup="menu"
+                                                      aria-label={`Mở thao tác cho ${displayItemName}`}
+                                                      className="itineraryQuickActionMenuButton"
+                                                      onClick={(event) => {
+                                                        event.stopPropagation();
+                                                        setOpenQuickActionKey(
                                                           openQuickActionKey ===
-                                                          quickActionKey
-                                                        }
-                                                        aria-haspopup="menu"
-                                                        aria-label={`Mở thao tác cho ${displayItemName}`}
-                                                        className="itineraryQuickActionMenuButton"
-                                                        onClick={(event) => {
-                                                          event.stopPropagation();
-                                                          setOpenQuickActionKey(
-                                                            openQuickActionKey ===
-                                                              quickActionKey
-                                                              ? null
-                                                              : quickActionKey
-                                                          );
-                                                        }}
-                                                        title="Thao tác"
-                                                        type="button"
+                                                            quickActionKey
+                                                            ? null
+                                                            : quickActionKey
+                                                        );
+                                                      }}
+                                                      title="Thao tác"
+                                                      type="button"
+                                                    >
+                                                      <svg
+                                                        viewBox="0 0 24 24"
+                                                        aria-hidden="true"
                                                       >
-                                                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                                                          <circle cx="5" cy="12" r="1.5" />
-                                                          <circle cx="12" cy="12" r="1.5" />
-                                                          <circle cx="19" cy="12" r="1.5" />
-                                                        </svg>
-                                                      </button>
-                                                      {openQuickActionKey ===
-                                                      quickActionKey ? (
-                                                        <div
-                                                          className="itineraryPlaceQuickActionPopup"
-                                                          role="menu"
-                                                        >
-                                                          <>
-                                                              <button
-                                                                aria-label={`Sửa ${displayItemName}`}
-                                                                className="itineraryActionButton"
-                                                                onClick={() => {
-                                                                  setOpenQuickActionKey(null);
-                                                                  openItemEditor(
-                                                                    displayedPlanDay.day,
-                                                                    item
-                                                                  );
-                                                                }}
-                                                                role="menuitem"
-                                                                title="Sửa địa điểm"
-                                                                type="button"
-                                                              >
-                                                                <svg viewBox="0 0 24 24">
-                                                                  <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z" />
-                                                                </svg>
-                                                              </button>
-                                                              <button
-                                                                aria-label={`Xóa ${displayItemName}`}
-                                                                className="itineraryActionButton danger"
-                                                                onClick={() => {
-                                                                  setOpenQuickActionKey(null);
-                                                                  handleDeleteItem(
-                                                                    displayedPlanDay.day,
-                                                                    item.itemId!
-                                                                  );
-                                                                }}
-                                                                role="menuitem"
-                                                                title="Xóa địa điểm"
-                                                                type="button"
-                                                              >
-                                                                <svg viewBox="0 0 24 24">
-                                                                  <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
-                                                                </svg>
-                                                              </button>
-                                                          </>
-                                                        </div>
-                                                      ) : null}
-                                                    </div>
-                                                  ) : null}
-                                                </div>
+                                                        <circle
+                                                          cx="5"
+                                                          cy="12"
+                                                          r="1.5"
+                                                        />
+                                                        <circle
+                                                          cx="12"
+                                                          cy="12"
+                                                          r="1.5"
+                                                        />
+                                                        <circle
+                                                          cx="19"
+                                                          cy="12"
+                                                          r="1.5"
+                                                        />
+                                                      </svg>
+                                                    </button>
+                                                    {openQuickActionKey ===
+                                                    quickActionKey ? (
+                                                      <div
+                                                        className="itineraryPlaceQuickActionPopup"
+                                                        role="menu"
+                                                      >
+                                                        <>
+                                                          <button
+                                                            aria-label={`Sửa ${displayItemName}`}
+                                                            className="itineraryActionButton"
+                                                            onClick={() => {
+                                                              setOpenQuickActionKey(
+                                                                null
+                                                              );
+                                                              openItemEditor(
+                                                                displayedPlanDay.day,
+                                                                item
+                                                              );
+                                                            }}
+                                                            role="menuitem"
+                                                            title="Sửa địa điểm"
+                                                            type="button"
+                                                          >
+                                                            <svg viewBox="0 0 24 24">
+                                                              <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z" />
+                                                            </svg>
+                                                          </button>
+                                                          <button
+                                                            aria-label={`Xóa ${displayItemName}`}
+                                                            className="itineraryActionButton danger"
+                                                            onClick={() => {
+                                                              setOpenQuickActionKey(
+                                                                null
+                                                              );
+                                                              handleDeleteItem(
+                                                                displayedPlanDay.day,
+                                                                item.itemId!
+                                                              );
+                                                            }}
+                                                            role="menuitem"
+                                                            title="Xóa địa điểm"
+                                                            type="button"
+                                                          >
+                                                            <svg viewBox="0 0 24 24">
+                                                              <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
+                                                            </svg>
+                                                          </button>
+                                                        </>
+                                                      </div>
+                                                    ) : null}
+                                                  </div>
+                                                ) : null}
+                                              </div>
                                               {itemNoteAction}
                                             </div>
                                           </div>
@@ -6384,7 +6398,9 @@ function Planner() {
                                             Không tính được tuyến phù hợp
                                           </strong>
                                           <small>
-                                            Tính lại chặng từ {transportLeg.fromPlace} đến {transportLeg.toPlace}.
+                                            Tính lại chặng từ{" "}
+                                            {transportLeg.fromPlace} đến{" "}
+                                            {transportLeg.toPlace}.
                                           </small>
                                           {transportLegRetryErrors[
                                             transportOptionsPanelKey
@@ -6423,6 +6439,22 @@ function Planner() {
                                   </Fragment>
                                 );
                               })}
+                              {displayedPlan.accommodation &&
+                              accommodationRoutePositionsByDay.get(
+                                displayedPlanDay.day
+                              )?.end ? (
+                                <AccommodationItineraryCard
+                                  accommodation={displayedPlan.accommodation}
+                                  mapKey={ACCOMMODATION_MAP_KEY}
+                                  onFocusMap={focusPlaceOnMap}
+                                  onZoomMap={zoomPlaceOnMap}
+                                  onOpenReviews={setItineraryReviewPlace}
+                                  selected={
+                                    selectedMapPlaceKey ===
+                                    ACCOMMODATION_MAP_KEY
+                                  }
+                                />
+                              ) : null}
                             </div>
                             {activeChatId ? (
                               <button
@@ -6455,11 +6487,16 @@ function Planner() {
                         ))}
                         {activePlanDay === UNSCHEDULED_PLAN_DAY ||
                         (activePlanDay == null &&
-                          (displayedPlan.unscheduledPlaces?.length ?? 0) > 0) ? (
+                          (displayedPlan.unscheduledPlaces?.length ?? 0) >
+                            0) ? (
                           <UnscheduledPlacesSection
-                            candidateResolutionProgress={candidateResolutionProgress}
+                            candidateResolutionProgress={
+                              candidateResolutionProgress
+                            }
                             disabled={mutatingItem}
-                            onConfirmCandidate={handleConfirmCandidateResolution}
+                            onConfirmCandidate={
+                              handleConfirmCandidateResolution
+                            }
                             onDismissPlace={handleDismissUnscheduledPlace}
                             onOpenReviews={setItineraryReviewPlace}
                             places={displayedPlan.unscheduledPlaces ?? []}
@@ -6545,7 +6582,10 @@ function Planner() {
                   Tất cả
                 </button>
                 {displayedPlan?.days.map((day) => {
-                  const dateKey = dateKeyForTripDay(displayedStartDate, day.day);
+                  const dateKey = dateKeyForTripDay(
+                    displayedStartDate,
+                    day.day
+                  );
                   const color = planDayColors.get(dateKey) ?? "#365f5a";
                   return (
                     <button
@@ -6604,6 +6644,7 @@ function Planner() {
                 destinationSearchBusy={false}
                 destinationSuggestions={directionDestinationSuggestions}
                 locationFocusRequest={locationFocusRequest}
+                placeFocusRequest={placeFocusRequest}
                 onChooseDestination={chooseDirectionDestination}
                 onCancelDirections={clearDayDirections}
                 onChooseOrigin={chooseDirectionOrigin}
@@ -6688,16 +6729,20 @@ function Planner() {
                   </header>
                   <div className="destinationDetailsNotes">
                     {destinationHistoryStories.length ? (
-                      destinationHistoryStories.map(({ story, text }, index) => (
-                        <article
-                          key={`${story.ref ?? "destination-history"}-${index}`}
-                        >
-                          <p>
-                            {text}
-                            <DestinationSourceLink href={story.ref} />
-                          </p>
-                        </article>
-                      ))
+                      destinationHistoryStories.map(
+                        ({ story, text }, index) => (
+                          <article
+                            key={`${
+                              story.ref ?? "destination-history"
+                            }-${index}`}
+                          >
+                            <p>
+                              {text}
+                              <DestinationSourceLink href={story.ref} />
+                            </p>
+                          </article>
+                        )
+                      )
                     ) : (
                       <p className="destinationDetailsEmpty">
                         Chưa có nội dung lịch sử kèm nguồn.
@@ -6718,9 +6763,7 @@ function Planner() {
                   <div className="destinationDetailsNotes">
                     {destinationAdviceStories.length ? (
                       destinationAdviceStories.map(({ story, text }, index) => (
-                        <article
-                          key={`${story.ref ?? story.type}-${index}`}
-                        >
+                        <article key={`${story.ref ?? story.type}-${index}`}>
                           <p>
                             <strong>
                               {destinationNoteLabel(story.type, index)}.
@@ -6844,7 +6887,7 @@ function Planner() {
                           : ""
                       }`}
                       disabled={locationStatus === "locating"}
-                      onClick={() => useCurrentLocationForPlace("edit")}
+                      onClick={() => applyCurrentLocationToPlace("edit")}
                       title="Dùng vị trí hiện tại"
                       type="button"
                     >
@@ -7055,14 +7098,19 @@ function Planner() {
                           : ""
                       }`}
                       disabled={locationStatus === "locating"}
-                      onClick={() => useCurrentLocationForPlace("add")}
+                      onClick={() => applyCurrentLocationToPlace("add")}
                       title="Dùng vị trí hiện tại"
                       type="button"
                     >
                       <svg aria-hidden="true" viewBox="0 0 24 24">
                         <circle cx="12" cy="12" r="5" />
                         <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-                        <circle className="addPlaceLocateDot" cx="12" cy="12" r="1.5" />
+                        <circle
+                          className="addPlaceLocateDot"
+                          cx="12"
+                          cy="12"
+                          r="1.5"
+                        />
                       </svg>
                     </button>
                   </div>
@@ -7121,7 +7169,11 @@ function Planner() {
                             <div className="suggestionMeta">
                               {suggestion.rating != null ? (
                                 <span className="suggestionRating">
-                                  <svg viewBox="0 0 24 24" width="14" height="14">
+                                  <svg
+                                    viewBox="0 0 24 24"
+                                    width="14"
+                                    height="14"
+                                  >
                                     <path
                                       d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"
                                       fill="#f59e0b"
@@ -7132,7 +7184,8 @@ function Planner() {
                               ) : null}
                               {suggestion.reviewCount != null ? (
                                 <span className="suggestionReviews">
-                                  ({suggestion.reviewCount.toLocaleString("vi")} đánh giá)
+                                  ({suggestion.reviewCount.toLocaleString("vi")}{" "}
+                                  đánh giá)
                                 </span>
                               ) : null}
                               {suggestion.placeType ? (

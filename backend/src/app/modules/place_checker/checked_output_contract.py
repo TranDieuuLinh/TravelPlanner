@@ -21,6 +21,7 @@ from app.modules.place_checker.evaluation_contract import (
     PlannerConstraint,
 )
 from app.shared.contracts.place import Coordinates
+from app.shared.contracts.source_note import SourceNote
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 
 
@@ -103,6 +104,7 @@ class CheckedPlace(ContractModel):
     image_urls: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
+    provider_note: SourceNote | None = None
     duration: CheckedDuration
     cost: CheckedCost
     opening: CheckedOpening

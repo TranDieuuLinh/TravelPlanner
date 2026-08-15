@@ -11,19 +11,22 @@ from app.modules.itinerary_planner.optimizer.config import (
     STRONG_TAGS,
     ObjectiveWeights,
 )
+from app.modules.itinerary_planner.optimizer.review_value import (
+    build_popularity_value,
+    build_quality_value,
+)
 from app.modules.itinerary_planner.optimizer.source_mix import build_source_mix_cost
 from app.modules.itinerary_planner.optimizer.variables import PlannerVariables
 from app.modules.itinerary_planner.policies import (
     ACCOMMODATION_RELOCATION_DISTANCE_METERS,
+    IDEAL_INTER_STOP_WAIT_MINUTES,
+    LIGHT_INTER_STOP_WAIT_MINUTES,
     MEAL_POLICIES,
     STANDARD_DAY_END_MINUTE,
+    STRONG_INTER_STOP_WAIT_MINUTES,
 )
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import RoutingProblem
-from app.shared.tools.bayesian_rating import (
-    bayesian_prior,
-    bayesian_review_quality,
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,11 +45,10 @@ def build_objective(
     positive = {
         "specialExperienceValue": _special_value(problem, variables, weights),
         "preferenceValue": _preference_value(problem, variables, weights),
-        "placeQualityValue": _quality_value(problem, variables, weights),
+        "placeQualityValue": build_quality_value(problem, variables, weights),
+        "popularityValue": build_popularity_value(problem, variables, weights),
         "timeFitValue": _time_fit(model, problem, variables, weights),
-        "relationshipValue": _relationship_value(
-            model, problem, variables, weights
-        ),
+        "relationshipValue": _relationship_value(model, problem, variables, weights),
     }
     negative = {
         "activityDiversityCost": _activity_diversity(
@@ -98,26 +100,9 @@ def _preference_value(problem, variables, weights):
     terms = []
     for candidate_id, candidate in problem.candidate_by_id.items():
         ratio = len(preferences & set(candidate.tags)) / len(preferences)
-        terms.append(variables.selected[candidate_id] * round(ratio * weights.preference_max))
-    return sum(terms)
-
-
-def _quality_value(problem, variables, weights):
-    prior = bayesian_prior(
-        (candidate.rating, candidate.review_count)
-        for candidate in problem.candidate_by_id.values()
-    )
-    terms = []
-    for candidate_id, candidate in problem.candidate_by_id.items():
-        if candidate.rating is None:
-            continue
-        quality = bayesian_review_quality(
-            rating=candidate.rating,
-            review_count=candidate.review_count,
-            prior=prior,
+        terms.append(
+            variables.selected[candidate_id] * round(ratio * weights.preference_max)
         )
-        score = round(quality.quality * weights.quality_max)
-        terms.append(variables.selected[candidate_id] * score)
     return sum(terms)
 
 
@@ -151,7 +136,9 @@ def _time_fit(model, problem, variables, weights):
                     variables.end[(candidate_id, day)] > window.start_minute
                 ).OnlyEnforceIf(partial)
                 day_matches.extend((full, partial))
-                values.extend((full * weights.time_fit, partial * (weights.time_fit // 2)))
+                values.extend(
+                    (full * weights.time_fit, partial * (weights.time_fit // 2))
+                )
             model.Add(sum(day_matches) <= assigned)
     return sum(values)
 
@@ -160,7 +147,9 @@ def _relationship_value(model, problem, variables, weights):
     same_day = []
     for origin_id, targets in problem.related_by_place.items():
         for destination_id in targets:
-            common_days = problem.feasible_days[origin_id] & problem.feasible_days[destination_id]
+            common_days = (
+                problem.feasible_days[origin_id] & problem.feasible_days[destination_id]
+            )
             for day in common_days:
                 related = variables.remember(
                     model.NewBoolVar(f"related:{origin_id}:{destination_id}:{day}")
@@ -188,9 +177,12 @@ def _activity_diversity(model, problem, variables, weights):
                 literals = [
                     variables.assigned[(candidate.place_id, day)]
                     for candidate in candidates
-                    if tag in candidate.tags and (candidate.place_id, day) in variables.assigned
+                    if tag in candidate.tags
+                    and (candidate.place_id, day) in variables.assigned
                 ]
-                costs.extend(_convex_repeat(model, literals, coefficient, f"act:{tag}:{day}"))
+                costs.extend(
+                    _convex_repeat(model, literals, coefficient, f"act:{tag}:{day}")
+                )
     return sum(costs)
 
 
@@ -203,7 +195,9 @@ def _food_diversity(model, problem, variables, weights):
             for food in problem.valid_food
             if tag in food.tags
         ]
-        costs.extend(_convex_repeat(model, literals, weights.food_diversity, f"food:{tag}"))
+        costs.extend(
+            _convex_repeat(model, literals, weights.food_diversity, f"food:{tag}")
+        )
     return sum(costs)
 
 
@@ -263,7 +257,8 @@ def _accommodation_relocation_cost(routing, variables, weights):
             (accommodation_id, candidate_id)
             if direction == "start"
             else (candidate_id, accommodation_id)
-        ].distance_meters > ACCOMMODATION_RELOCATION_DISTANCE_METERS
+        ].distance_meters
+        > ACCOMMODATION_RELOCATION_DISTANCE_METERS
     )
 
 
@@ -281,12 +276,43 @@ def _accommodation_price_cost(problem, variables, weights):
 
 
 def _waiting_cost(model, variables, weights):
-    excess = []
+    costs = []
     for key, waiting in variables.waiting.items():
-        value = variables.remember(model.NewIntVar(0, 1440, f"paid_wait:{key}"))
-        model.AddMaxEquality(value, [waiting - 15, 0])
-        excess.append(value)
-    return sum(excess) * weights.waiting_minute
+        light = _waiting_excess(
+            model,
+            variables,
+            waiting,
+            IDEAL_INTER_STOP_WAIT_MINUTES,
+            f"light_wait:{key}",
+        )
+        strong = _waiting_excess(
+            model,
+            variables,
+            waiting,
+            LIGHT_INTER_STOP_WAIT_MINUTES,
+            f"strong_wait:{key}",
+        )
+        very_strong = _waiting_excess(
+            model,
+            variables,
+            waiting,
+            STRONG_INTER_STOP_WAIT_MINUTES,
+            f"very_strong_wait:{key}",
+        )
+        costs.extend(
+            (
+                light * weights.waiting_minute,
+                strong * weights.waiting_minute * 2,
+                very_strong * weights.waiting_minute * 6,
+            )
+        )
+    return sum(costs)
+
+
+def _waiting_excess(model, variables, waiting, threshold, name):
+    value = variables.remember(model.NewIntVar(0, 1440, name))
+    model.AddMaxEquality(value, [waiting - threshold, 0])
+    return value
 
 
 def _meal_deviation(model, variables, weights):
@@ -309,7 +335,9 @@ def _fatigue(model, problem, variables, weights):
             for (candidate_id, candidate_day), variable in variables.assigned.items()
             if candidate_day == day
         ]
-        stop_excess = variables.remember(model.NewIntVar(0, len(assignments), f"stop_excess:{day}"))
+        stop_excess = variables.remember(
+            model.NewIntVar(0, len(assignments), f"stop_excess:{day}")
+        )
         model.AddMaxEquality(stop_excess, [sum(assignments) - 6, 0])
         terms.append(stop_excess * weights.excess_stop)
         active = sum(
@@ -321,13 +349,17 @@ def _fatigue(model, problem, variables, weights):
             for (food_id, meal_day, meal), variable in variables.meal.items()
             if meal_day == day
         )
-        active_excess = variables.remember(model.NewIntVar(0, 1440, f"active_excess:{day}"))
+        active_excess = variables.remember(
+            model.NewIntVar(0, 1440, f"active_excess:{day}")
+        )
         model.AddMaxEquality(active_excess, [active - 600, 0])
         terms.append(active_excess * weights.excess_active_minute)
         for (candidate_id, candidate_day), end in variables.end.items():
             if candidate_day != day:
                 continue
-            late = variables.remember(model.NewIntVar(0, 240, f"late_minutes:{candidate_id}:{day}"))
+            late = variables.remember(
+                model.NewIntVar(0, 240, f"late_minutes:{candidate_id}:{day}")
+            )
             model.AddMaxEquality(late, [end - STANDARD_DAY_END_MINUTE, 0])
             terms.append(late * weights.late_minute)
     return sum(terms)
@@ -342,7 +374,10 @@ def _day_imbalance(model, problem, variables, weights):
             total
             == sum(
                 problem.candidate_by_id[candidate_id].duration_minutes * variable
-                for (candidate_id, candidate_day), variable in variables.assigned.items()
+                for (
+                    candidate_id,
+                    candidate_day,
+                ), variable in variables.assigned.items()
                 if candidate_day == day and candidate_id not in food_ids
             )
         )

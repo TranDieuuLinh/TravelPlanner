@@ -11,11 +11,6 @@ import { createDayColorMap } from "@/features/planner/lib/day-colors";
 import { routeForwardBearing } from "@/features/planner/lib/map-navigation";
 import { planItemNotePresentation } from "@/features/planner/lib/plan-note";
 import {
-  isCarMode,
-  isPublicTransitMode,
-  isWalkingMode
-} from "@/features/planner/lib/transport-options";
-import {
   MAP_CONTROL_PAN_PIXELS,
   MAP_CONTROL_ROTATE_DEGREES,
   MAP_KEYBOARD_PITCH_DEGREES,
@@ -45,7 +40,6 @@ import {
   CloseIcon,
   CompassIcon,
   DirectionsIcon,
-  FitMapIcon,
   formatCompactCount,
   formatMapDistance,
   formatOpeningHoursForDay,
@@ -59,7 +53,7 @@ import { PlaceReviewsModal } from "@/features/planner/components/PlaceReviewsMod
 export type PlannerMapPlace = ExplorePlace & {
   destination: string;
   mapKey: string;
-  mapOrder: number;
+  mapOrder: number | null;
   dayColorKey: string;
   dayLabel: string;
   timeWindow: string;
@@ -129,6 +123,7 @@ type PlannerMapProps = {
   destinationSearchBusy: boolean;
   selectedDirectionDestination: PlannerMapSearchPlace | null;
   locationFocusRequest: number;
+  placeFocusRequest: number;
   routeFocusRequest: number;
   dayColorKeys?: string[];
   locationBusy: boolean;
@@ -169,6 +164,7 @@ export function PlannerMap({
   destinationSearchBusy,
   selectedDirectionDestination,
   locationFocusRequest,
+  placeFocusRequest,
   routeFocusRequest,
   dayColorKeys = [],
   locationBusy,
@@ -579,21 +575,26 @@ export function PlannerMap({
 
     locatedPlaces.forEach((place) => {
       const isSelected = place.mapKey === selectedKey;
+      const isAccommodation = place.category === "hotel";
       const markerColor = dayColors.get(place.dayColorKey) ?? MAP_ROUTE_COLOR;
       const element = document.createElement("button");
       element.className = [
         "candidateMapMarker",
+        isAccommodation ? "candidateMapMarker--accommodation" : "",
         isSelected ? "is-selected" : ""
       ]
         .filter(Boolean)
         .join(" ");
       element.type = "button";
       element.title = `${place.name}. Nhấp để xem, nhấp đúp để phóng to`;
-      element.setAttribute("aria-label", `${place.mapOrder}. ${place.name}`);
+      element.setAttribute(
+        "aria-label",
+        isAccommodation ? `Nơi lưu trú: ${place.name}` : `${place.mapOrder}. ${place.name}`
+      );
       const pin = document.createElement("span");
       pin.style.setProperty("--marker-color", markerColor);
       const order = document.createElement("b");
-      order.textContent = String(place.mapOrder);
+      order.textContent = isAccommodation ? "H" : String(place.mapOrder);
       pin.append(order);
       element.append(pin);
 
@@ -606,7 +607,9 @@ export function PlannerMap({
       destination.textContent = place.destination;
       const name = document.createElement("h3");
       name.className = "candidateMapPopupTitle";
-      name.textContent = `${place.mapOrder}. ${place.name}`;
+      name.textContent = isAccommodation
+        ? `Nơi lưu trú · ${place.name}`
+        : `${place.mapOrder}. ${place.name}`;
       const meta = document.createElement("div");
       meta.className = "candidateMapPopupMeta";
       if (place.rating != null) {
@@ -1180,6 +1183,16 @@ export function PlannerMap({
     map.easeTo({ center: marker.getLngLat(), duration: 400 });
     if (!marker.getPopup()?.isOpen()) marker.togglePopup();
   }, [mapReady, selectedKey]);
+
+  useEffect(() => {
+    if (placeFocusRequest <= 0 || !selectedKey || !mapReady) return;
+    const marker = markersRef.current.get(selectedKey);
+    const map = mapRef.current;
+    if (!marker || !map) return;
+
+    zoomMapClose(map, marker.getLngLat().toArray() as [number, number]);
+    if (!marker.getPopup()?.isOpen()) marker.togglePopup();
+  }, [mapReady, placeFocusRequest, selectedKey]);
 
   useEffect(() => {
     if (routeFocusRequest <= 0 || !selectedRouteKey || !mapReady) return;

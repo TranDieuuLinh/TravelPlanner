@@ -39,7 +39,10 @@ def test_graph_prepares_new_planner_input() -> None:
     assert result["output"].destination == "Hanoi"
     assert len(result["output"].days) == 1
     assert len(result["output"].days[0].stops) >= 6
-    assert result["output"].solver.objective_policy_version
+    assert (
+        result["output"].solver.objective_policy_version
+        == "hybrid-activity-corridor-v2"
+    )
     assert result["output"].phase_timings_ms["total"] >= 0
 
 
@@ -57,4 +60,9 @@ def test_graph_returns_preflight_error_without_three_meals() -> None:
     result = asyncio.run(graph.ainvoke({"input": raw}))
 
     assert "breakfast" in result["error"]
+    assert result["error_code"] == "missing_meal_coverage"
+    assert result["preflight_failure"].model_dump(mode="json") == {
+        "code": "missing_meal_coverage",
+        "missing": [{"day": 1, "meal": "breakfast"}],
+    }
     assert "prepared_problem" not in result

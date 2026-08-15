@@ -32,12 +32,11 @@ function displayReason(reason: string): string {
 
 export default function AdminPlaceReviewPage() {
   const router = useRouter();
-  const { loading: authLoading, user } = useAuth();
+  const { loading: authLoading, sessionUnavailable, user } = useAuth();
   const [groups, setGroups] = useState<PlaceReviewGroup[]>([]);
   const [groupCount, setGroupCount] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
@@ -45,8 +44,8 @@ export default function AdminPlaceReviewPage() {
   const [savingGroupId, setSavingGroupId] = useState("");
 
   useEffect(() => {
-    if (!authLoading && (!user || user.role !== "admin")) router.replace("/");
-  }, [authLoading, router, user]);
+    if (!authLoading && !sessionUnavailable && (!user || user.role !== "admin")) router.replace("/");
+  }, [authLoading, router, sessionUnavailable, user]);
 
   useEffect(() => {
     if (user?.role !== "admin") return;
@@ -77,33 +76,6 @@ export default function AdminPlaceReviewPage() {
       window.clearTimeout(timer);
     };
   }, [page, query, user]);
-
-  async function loadMore() {
-    setLoadingMore(true);
-    setError("");
-    try {
-      const response = await getPlaceReviewGroups({
-        offset: (page - 1) * PAGE_SIZE,
-        limit: PAGE_SIZE,
-        query,
-      });
-      setGroups(response.groups);
-      setGroupCount(response.groupCount);
-      setCanonicalIds(Object.fromEntries(
-        response.groups.map((group) => [group.groupId, group.records[0]?.entityId ?? ""]),
-      ));
-      setCanonicalIds((current) => ({
-        ...current,
-        ...Object.fromEntries(
-          response.groups.map((group) => [group.groupId, group.records[0]?.entityId ?? ""]),
-        ),
-      }));
-    } catch (err) {
-      setError(err instanceof APIError ? err.message : "Không thể tải thêm nhóm review.");
-    } finally {
-      setLoadingMore(false);
-    }
-  }
 
   async function decide(group: PlaceReviewGroup, decision: "merge" | "dismiss") {
     const canonicalId = canonicalIds[group.groupId] ?? group.records[0]?.entityId;
@@ -232,7 +204,7 @@ export default function AdminPlaceReviewPage() {
         <div className="placeReviewLoadMore">
           <span>Trang {page} / {Math.ceil(groupCount / PAGE_SIZE)}</span>
           <button className="secondaryBtn" disabled={loading || page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} type="button">
-            {loadingMore ? "Đang tải..." : "Hiện thêm 50 nhóm"}
+            Trang trước
           </button>
           <button className="secondaryBtn" disabled={loading || page >= Math.ceil(groupCount / PAGE_SIZE)} onClick={() => setPage((current) => current + 1)} type="button">
             Trang sau

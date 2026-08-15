@@ -33,6 +33,10 @@ class SpecialFoodRestaurantSource(Protocol):
         *,
         adm_id: str,
         anchor_place_ids: list[str],
+        radius_km: float | None = 5.0,
+        per_anchor_limit: int = 8,
+        excluded_restaurant_ids: list[str] | None = None,
+        required_meals: list[str] | None = None,
     ) -> list[FoodRestaurantCandidate]: ...
 
 

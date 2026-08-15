@@ -28,7 +28,7 @@ export default function EditListingPage() {
   const params = useParams();
   const listingId = params.listingId as string;
   const router = useRouter();
-  const { loading: authLoading, user } = useAuth();
+  const { loading: authLoading, sessionUnavailable, user } = useAuth();
 
   const [listing, setListing] = useState<ListingDetail | null>(null);
   const [title, setTitle] = useState("");
@@ -43,14 +43,14 @@ export default function EditListingPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!authLoading && (!user || user.role !== "creator")) {
+    if (!authLoading && !sessionUnavailable && (!user || user.role !== "creator")) {
       router.replace("/profile");
       return;
     }
     if (user && user.role === "creator" && listingId) {
       fetchDetail();
     }
-  }, [authLoading, listingId, router, user]);
+  }, [authLoading, listingId, router, sessionUnavailable, user]);
 
   async function fetchDetail() {
     setLoading(true);

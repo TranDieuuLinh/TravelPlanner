@@ -132,7 +132,7 @@ Không tạo full `N x N x days`. Với mỗi node `i`:
 
 1. Lọc reachable và time-feasible neighbors.
 2. Xếp theo safe travel time, sau đó ID để deterministic.
-3. Giữ `K=12` neighbors cơ bản.
+3. Giữ `K=10` neighbors cơ bản để giảm số arc/biến CP-SAT.
 4. Union thêm forced arcs.
 
 Forced arcs:
@@ -145,7 +145,10 @@ bridge arc giữa geographic clusters
 ```
 
 Priority không có nghĩa là nối mỗi priority node với mọi node. Chỉ bổ sung
-arc khi node priority thiếu incoming/outgoing path khả thi.
+arc khi node priority thiếu incoming/outgoing path khả thi. Sau khi giảm
+`K=10`, policy cũng bổ sung nearest incoming/outgoing cho mọi candidate khả thi
+nếu pruning làm candidate đó chỉ còn một chiều; việc này giữ candidate
+preference/source-mix trong miền lựa chọn mà không khôi phục full graph.
 
 ## Bảo đảm graph không bị đứt
 
@@ -160,10 +163,15 @@ priority nodes không bị cô lập do K quá nhỏ
 Thêm bridge bằng nearest cross-component arcs cho tới khi candidate graph có
 thể tạo một route. Không thêm unreachable arc.
 
-Adaptive policy:
+Khoảng cách để chọn neighbor là `safeTravelMinutes` có hướng từ global
+Valhalla matrix, đã gồm routing buffer. Khi bằng nhau mới tie-break bằng ID để
+giữ deterministic. Không dùng khoảng cách đường chim bay khi matrix Valhalla
+khả dụng.
+
+Adaptive policy mục tiêu:
 
 ```text
-solve K=12
+solve K=10
 model infeasible do graph sparsity -> rebuild K=20
 vẫn infeasible -> expand riêng isolated/priority nodes
 ```

@@ -8,7 +8,6 @@ import {
   transportModeLabel,
 } from "@/features/planner/lib/planner-transport";
 import {
-  isCarMode,
   isPublicTransitMode,
   isWalkingMode,
 } from "@/features/planner/lib/transport-options";

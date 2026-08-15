@@ -10,15 +10,24 @@ PlaceChecker không gán ngày hoặc buổi. Module chỉ trả pool đã xác 
 - preference matches, avoid conflicts và suitability;
 - score, tọa độ, chi phí và data quality.
 
-Pool có hai quota độc lập: mỗi ngày 8 `TravelPlace` và 8 `Restaurant`, với tối
-thiểu 12 và tối đa 60 candidate cho từng loại.
+Pool có hai quota độc lập: reserve 14 `TravelPlace`/ngày và 10 `Restaurant`/ngày.
+Food hard feasibility vẫn là unique matching cho ba meal slot/ngày; reserve 10
+không thay thế meal-window gate.
 Restaurant đi vào compact `food`, không bị trộn thành activity place. Đây là
 candidate reserve; FinalItineraryPlanner vẫn chỉ xếp số stop khả thi theo thời
 gian, bữa ăn và route.
 Khi food selection bổ sung quán ghép với TravelPlace, compact builder ưu tiên
 quán user-requested rồi quán đã ghép và vẫn chặn tổng Restaurant theo quota.
 
-FinalItineraryPlanner áp tỷ lệ khi đã biết số slot sáng/tối. Không xóa
+TravelPlace selector dùng coverage mềm trên phần candidate retrieval cần thêm:
+
+- khoảng 6/14 có evidence `Special_Experience` thật;
+- khoảng 4/14 có popularity signal từ Bayesian quality và `log(reviewCount)`;
+- phần còn lại theo ranking diversity/preference/geography đã có.
+
+Candidate được dedup giữa bucket; thiếu bucket thì ranking chung bù đủ target.
+Đây là reserve toàn chuyến `14 × days`, không phải quota cứng cho từng itinerary
+day. FinalItineraryPlanner áp tỷ lệ khi đã biết số slot sáng/tối. Không xóa
 candidate khỏi PlaceChecker chỉ vì chưa được bốc vào một slot.
 
 ## Thứ tự điều kiện
@@ -107,4 +116,5 @@ Quota dùng largest-remainder và penalty mềm được clamp theo availability
 nhóm nào không bị phạt và được bù bằng nhóm còn lại trong cùng buổi. Output
 `sourceMix` vẫn giữ policy target chưa clamp, actual,
 `quotaFallback` và reason. Seed khám phá, geographic cluster audit và policy
-80/20 vẫn là phần chưa triển khai.
+80/20 vẫn là phần chưa triển khai; coverage special/popular của reserve đã được
+triển khai trước bước Planner.

@@ -15,6 +15,7 @@ from app.modules.itinerary_planner.contract import (
     PlannerFoodCandidate,
     PlannerTrip,
 )
+from app.modules.itinerary_planner.day_domains import project_optional_day_domains
 from app.modules.itinerary_planner.policies import (
     LATE_NIGHT_TAGS,
     MEAL_POLICIES,
@@ -329,6 +330,19 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
                 + ", ".join(sorted(invalid_targets))
             )
         related_by_place[candidate.place_id] = frozenset(valid_targets)
+
+    day_domains = project_optional_day_domains(
+        days=trip.days,
+        places=valid_places,
+        food=valid_food,
+        feasible_days=feasible_days,
+        feasible_windows=feasible_windows,
+        meal_eligibility=meal_eligibility,
+    )
+    feasible_days = day_domains.feasible_days
+    feasible_windows = day_domains.feasible_windows
+    meal_eligibility = day_domains.meal_eligibility
+    warnings.extend(day_domains.warnings)
 
     for place_id in unknown_days_by_id:
         warnings.append(

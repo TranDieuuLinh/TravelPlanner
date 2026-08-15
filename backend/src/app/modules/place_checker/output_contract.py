@@ -29,13 +29,17 @@ from app.modules.place_checker.enums import (
     VerificationStatus,
 )
 from app.modules.place_checker.evaluation_contract import PlannerConstraint
-from app.modules.place_checker.food_selection_contract import SelectedFoodRestaurant
+from app.modules.place_checker.food_selection_contract import (
+    FoodMealCoverage,
+    SelectedFoodRestaurant,
+)
 from app.modules.place_checker.item_contract import ResolvedInputItem, SpecialExperience
 from app.modules.place_checker.retrieval_contract import RetrievalBatch
 from app.modules.place_checker.scoring_contract import (
     CandidateRankingBatch,
 )
 from app.shared.contracts.place import Coordinates
+from app.shared.contracts.source_note import SourceNote
 
 
 class UnresolvedEntity(ContractModel):
@@ -83,6 +87,7 @@ class PlaceCheckerResult(ContractModel):
     food_restaurant_selections: list[SelectedFoodRestaurant] = Field(
         default_factory=list
     )
+    food_meal_coverage: FoodMealCoverage = Field(default_factory=FoodMealCoverage)
     budget_analysis: BudgetAnalysis
     capacity_analysis: CapacityAnalysis
     coverage_analysis: CoverageAnalysis
@@ -212,7 +217,7 @@ class PlannerOutputPlace(ContractModel):
     coordinates: Coordinates
     address: str | None = None
     priority: Literal["user_input", "url", "special_experience", "special_near"]
-    notes: str | None = None
+    notes: SourceNote | None = None
     tags: list[str] = Field(default_factory=list)
     image_urls: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
@@ -267,6 +272,7 @@ class PlaceCheckerPlannerOutput(ContractModel):
     trip: PlannerOutputTrip
     places: list[PlannerOutputPlace] = Field(default_factory=list)
     food: list[PlannerOutputFood] = Field(default_factory=list)
+    food_coverage: FoodMealCoverage = Field(default_factory=FoodMealCoverage)
     accommodations: list[PlannerOutputAccommodation] = Field(
         default_factory=list,
         max_length=3,

@@ -120,7 +120,8 @@ test("presents source and personal notes without merging their ownership", () =>
         {
           type: "url",
           label: "Gợi ý từ nguồn tham khảo",
-          text: "Creator gọi cà phê trứng vào buổi sáng và dặn nên gọi ít đường."
+          text: "Creator gọi cà phê trứng vào buổi sáng và dặn nên gọi ít đường.",
+          sourceUrl: "https://example.com/reel"
         }
       ],
       sourceLabel: "Gợi ý từ nguồn tham khảo",
@@ -128,6 +129,28 @@ test("presents source and personal notes without merging their ownership", () =>
       personalText: "Nhớ gọi ít đường."
     }
   );
+});
+
+test("presents the selected structured source note separately from personal notes", () => {
+  const presentation = planItemNotePresentation({
+    name: "Hồ Gươm",
+    notes: {
+      text: "Nên đến trước 8 giờ.",
+      sourceType: "url",
+      sourceUrl: "https://example.test/video",
+    },
+    personalNotes: "Nhớ mang ô.",
+  });
+
+  assert.deepEqual(presentation.sourceNotes, [
+    {
+      type: "url",
+      label: "Gợi ý từ nguồn tham khảo",
+      text: "Nên đến trước 8 giờ.",
+      sourceUrl: "https://example.test/video",
+    },
+  ]);
+  assert.equal(presentation.personalText, "Nhớ mang ô.");
 });
 
 test("infers a source label for legacy plan revisions", () => {

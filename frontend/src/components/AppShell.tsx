@@ -1,11 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useAuth } from "@/features/auth/components/AuthProvider";
-import { BackgroundUrlJobs } from "@/features/planner/components/BackgroundUrlJobs";
-import { GlobalPlannerAssistant } from "@/features/planner/components/GlobalPlannerAssistant";
+
+const BackgroundUrlJobs = dynamic(
+  () => import("@/features/planner/components/BackgroundUrlJobs").then(
+    (module) => module.BackgroundUrlJobs
+  ),
+  { ssr: false }
+);
+const GlobalPlannerAssistant = dynamic(
+  () => import("@/features/planner/components/GlobalPlannerAssistant").then(
+    (module) => module.GlobalPlannerAssistant
+  ),
+  { ssr: false }
+);
 
 type NavItem = {
   href: string;

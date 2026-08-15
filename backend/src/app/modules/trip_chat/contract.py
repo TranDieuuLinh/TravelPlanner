@@ -17,6 +17,16 @@ class SendTripChatMessageInput(TripChatModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
+class UpdatePersonalNotesInput(TripChatModel):
+    expected_revision: int = Field(ge=0)
+    personal_notes: str | None = Field(default=None, max_length=4000)
+
+
+PlanNoteUpdateStatus = Literal[
+    "updated", "chat_not_found", "revision_conflict", "item_not_found"
+]
+
+
 class TripChatMessage(TripChatModel):
     id: str
     role: Literal["user", "assistant"]
@@ -42,6 +52,11 @@ class TripChat(TripChatSummary):
     current_itinerary: dict[str, Any] | None = None
     current_planner_output: dict[str, Any] | None = None
     messages: list[TripChatMessage] = Field(default_factory=list)
+
+
+class TripChatBootstrap(TripChatModel):
+    chats: list[TripChatSummary] = Field(default_factory=list)
+    active_chat: TripChat | None = None
 
 
 class TripChatMessageResponse(TripChatModel):

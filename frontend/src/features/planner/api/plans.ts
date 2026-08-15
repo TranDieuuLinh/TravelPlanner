@@ -6,6 +6,28 @@ import {
   type CurrentTripChat,
   type CurrentTripChatSummary,
 } from "@/features/planner/lib/trip-chat-mapping";
+import type { TransportLeg } from "@/features/planner/contracts/transport";
+
+export type {
+  CurrentLocationRouteInput,
+  DayDirectionsInput,
+  TransportLeg,
+  TransportOption,
+} from "@/features/planner/contracts/transport";
+export {
+  calculateCurrentLocationRoute,
+  calculateDayDirections,
+} from "@/features/planner/api/directions";
+export { getPlaceReviews } from "@/features/planner/api/reviews";
+export type {
+  PlaceReview,
+  PlaceReviewPage,
+} from "@/features/planner/api/reviews";
+export {
+  PLACE_SEARCH_TOP_K,
+  searchPlaces,
+} from "@/features/planner/api/place-search";
+export type { PlaceSuggestion } from "@/features/planner/api/place-search";
 
 const mapFullCurrentTripChat = (chat: CurrentTripChat): TripChat =>
   mapCurrentTripChat(chat, plannerOutputToTravelPlan);
@@ -26,6 +48,12 @@ export type PlanNoteSource = {
   ref?: string | null;
   evidenceTypes?: string[];
   fetchedAt?: string | null;
+};
+
+export type PlanSourceNote = {
+  text: string;
+  sourceType: "url" | "google_maps" | "knowledge_graph" | "backend";
+  sourceUrl?: string | null;
 };
 
 export type KnowledgePlaceType =
@@ -52,7 +80,7 @@ export type PlanItem = {
   sourceDay?: number | null;
   sourceTimeHint?: string | null;
   sourceActivity?: string | null;
-  notes?: string | null;
+  notes?: PlanSourceNote | string | null;
   noteSources?: PlanNoteSource[];
   personalNotes?: string | null;
   imageUrls?: string[];
@@ -64,109 +92,6 @@ export type PlanItem = {
   longitude?: number | null;
 };
 
-export type PlaceReview = {
-  id: string;
-  authorName?: string | null;
-  rating?: number | null;
-  publishedAt?: string | null;
-  whenText?: string | null;
-  language?: string | null;
-  reviewText?: string | null;
-};
-
-export type PlaceReviewPage = {
-  items: PlaceReview[];
-  total: number;
-  limit: number;
-  offset: number;
-  hasMore: boolean;
-  ratingCounts: Record<string, number>;
-};
-
-export function getPlaceReviews(
-  placeId: string,
-  options: { rating?: number | null; limit?: number; offset?: number } = {}
-): Promise<PlaceReviewPage> {
-  const params = new URLSearchParams({
-    limit: String(options.limit ?? 20),
-    offset: String(options.offset ?? 0),
-  });
-  if (options.rating != null) {
-    params.set("rating", String(options.rating));
-  }
-  return apiFetch<PlaceReviewPage>(
-    `/places/${encodeURIComponent(placeId)}/reviews?${params.toString()}`
-  );
-}
-export type TransportOption = {
-  mode: string;
-  distanceMeters: number;
-  estimatedDurationMinutes: number;
-  geometryCoordinates: [number, number][];
-  source: string;
-  verified: boolean;
-  fetchedAt?: string | null;
-  details?: {
-    transitModes?: string[];
-    lines?: string[];
-    scheduleStatus?: string;
-    segments?: Array<{
-      mode: string;
-      fromPlace: string;
-      toPlace: string;
-      distanceMeters: number;
-      estimatedDurationMinutes: number;
-      geometryCoordinates: [number, number][];
-      line?: string | null;
-      headsign?: string | null;
-    }>;
-  };
-};
-
-export type TransportLeg = TransportOption & {
-  fromItemId?: string | null;
-  toItemId?: string | null;
-  fromPlace: string;
-  toPlace: string;
-  alternatives?: TransportOption[];
-};
-
-export type CurrentLocationRouteInput = {
-  origin: {
-    latitude: number;
-    longitude: number;
-    name?: string;
-  };
-  destination: {
-    itemId?: string | null;
-    name: string;
-    selected: boolean;
-    address?: string | null;
-    timeWindow?: string | null;
-    latitude: number;
-    longitude: number;
-  };
-  departureTime?: string | null;
-  preferredModes?: string[];
-  avoidModes?: string[];
-};
-
-export type DayDirectionsInput = {
-  origin: {
-    latitude: number;
-    longitude: number;
-    name?: string;
-  };
-  destinations: Array<{
-    itemId?: string | null;
-    name: string;
-    address?: string | null;
-    latitude: number;
-    longitude: number;
-  }>;
-  requestedMode?: "walk" | "car" | "bus" | null;
-  departureTime?: string | null;
-};
 export type PlanDay = {
   day: number;
   items: PlanItem[];
@@ -222,6 +147,10 @@ export type TravelPlan = {
     placeId: string;
     name: string;
     address?: string | null;
+    latitude: number;
+    longitude: number;
+    rating?: number | null;
+    reviewCount?: number | null;
     pricePerNight: number;
     currency: string;
     nights: number;
@@ -440,7 +369,7 @@ export type ExplorePlace = {
   priority?: number;
   preferenceLevel?: "mentioned" | "preferred" | "must_visit";
   attributes?: string[];
-  notes?: string | null;
+  notes?: PlanSourceNote | string | null;
   noteSources?: PlanNoteSource[];
   personalNotes?: string | null;
   sourceRefs?: string[];
@@ -580,7 +509,11 @@ export type TripChat = TripChatSummary & {
 async function sendCurrentTripChatMessage(chatId: string, content: string): Promise<TripChat> {
   const response = await apiFetch<{ chat: CurrentTripChat }>(
     `/v1/trip-chats/${encodeURIComponent(chatId)}/messages`,
-    { method: "POST", body: JSON.stringify({ content }) },
+    {
+      method: "POST",
+      body: JSON.stringify({ content }),
+      signal: AbortSignal.timeout(120_000),
+    },
   );
   return mapFullCurrentTripChat(response.chat);
 }
@@ -713,23 +646,6 @@ export async function enrichTripChatRoutes(input: {
   });
 }
 
-export async function calculateCurrentLocationRoute(
-  input: CurrentLocationRouteInput
-): Promise<TransportLeg> {
-  return apiFetch<TransportLeg>("/plans/current-location-route", {
-    method: "POST",
-    body: JSON.stringify(input)
-  });
-}
-
-export async function calculateDayDirections(
-  input: DayDirectionsInput
-): Promise<TransportLeg[]> {
-  return apiFetch<TransportLeg[]>("/plans/day-directions", {
-    method: "POST",
-    body: JSON.stringify(input)
-  });
-}
 
 export async function createTripChat(title?: string): Promise<TripChat> {
   const chat = await apiFetch<CurrentTripChat>("/v1/trip-chats", {
@@ -742,8 +658,26 @@ export async function createTripChat(title?: string): Promise<TripChat> {
 export async function listTripChats(
   init: Pick<RequestInit, "signal"> = {}
 ): Promise<TripChatSummary[]> {
-  const chats = await apiFetch<CurrentTripChatSummary[]>("/v1/trip-chats", init);
+  const chats = await apiFetch<CurrentTripChatSummary[]>("/v1/trip-chats?limit=30", init);
   return chats.map(mapCurrentTripChatSummary);
+}
+
+export async function bootstrapTripChats(
+  chatId: string | null,
+  init: Pick<RequestInit, "signal"> = {}
+): Promise<{ chats: TripChatSummary[]; activeChat: TripChat | null }> {
+  const params = new URLSearchParams({ limit: "30" });
+  if (chatId) params.set("chatId", chatId);
+  const response = await apiFetch<{
+    chats: CurrentTripChatSummary[];
+    activeChat: CurrentTripChat | null;
+  }>(`/v1/trip-chats/bootstrap?${params.toString()}`, init);
+  return {
+    chats: response.chats.map(mapCurrentTripChatSummary),
+    activeChat: response.activeChat
+      ? mapFullCurrentTripChat(response.activeChat)
+      : null,
+  };
 }
 
 export async function getTripChat(
@@ -951,6 +885,26 @@ export async function updateTripChatItem(input: {
   });
 }
 
+export async function updateTripChatItemPersonalNotes(input: {
+  chatId: string;
+  expectedRevision: number;
+  day: number;
+  itemId: string;
+  personalNotes?: string | null;
+}): Promise<TripChat> {
+  const chat = await apiFetch<CurrentTripChat>(
+    `/v1/trip-chats/${encodeURIComponent(input.chatId)}/plan/days/${input.day}/items/${encodeURIComponent(input.itemId)}/personal-notes`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        expectedRevision: input.expectedRevision,
+        personalNotes: input.personalNotes ?? null,
+      }),
+    },
+  );
+  return mapFullCurrentTripChat(chat);
+}
+
 export async function removeTripChatItem(input: {
   chatId: string;
   expectedRevision: number;
@@ -983,36 +937,6 @@ export async function removeTripChatUnscheduledPlace(input: {
     method: "DELETE",
     body: form
   });
-}
-
-export type PlaceSuggestion = {
-  name: string;
-  address?: string | null;
-  latitude?: number | null;
-  longitude?: number | null;
-  placeId?: string | null;
-  imageUrl?: string | null;
-  rating?: number | null;
-  reviewCount?: number | null;
-  priceLevel?: number | null;
-  placeType?: string | null;
-  phone?: string | null;
-  website?: string | null;
-  openingHours?: string[] | null;
-  isVerified?: boolean;
-  source?: "knowledge_graph" | "google_maps_scraper" | string | null;
-};
-
-export const PLACE_SEARCH_TOP_K = 5;
-
-export async function searchPlaces(
-  query: string,
-  destination?: string,
-  topK = PLACE_SEARCH_TOP_K
-): Promise<PlaceSuggestion[]> {
-  const params = new URLSearchParams({ query, topK: String(topK) });
-  if (destination) params.append("destination", destination);
-  return apiFetch<PlaceSuggestion[]>(`/plans/places/search?${params.toString()}`);
 }
 
 export async function reorderTripChatItem(input: {

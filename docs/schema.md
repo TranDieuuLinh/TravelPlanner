@@ -1,6 +1,6 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-14.
+Cập nhật lần cuối: 2026-08-16.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
@@ -18,9 +18,12 @@ Retrieval/system provisional vẫn không planner-eligible.
 |---|---|---|
 | `GET /health` | Không có | `{ "status": "ok" }` |
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
+| `PATCH /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/personal-notes` | `expectedRevision`, `personalNotes` | `TripChat` với planner snapshot đã cập nhật |
 | `POST /auth/login` | `LoginInput` | `LoginResponse` + cookies |
 | `POST /auth/register` | `RegisterInput` | `LoginResponse` + cookies |
 | `GET /me` | Session cookie | `AuthUser` |
+| `GET /v1/trip-chats?limit=&offset=` | Session cookie | Danh sách `TripChatSummary` phân trang, mặc định 30 |
+| `GET /v1/trip-chats/bootstrap?chatId=` | Session cookie | `TripChatBootstrap` gồm recent summaries và full active chat |
 | `POST /auth/logout` | Session + CSRF cookie | `204 No Content` |
 | `GET /admin/observability/status` | Admin session | Local observability counters and retention limit |
 | `GET /admin/observability/traces` | Admin session + `page`, `limit` | Recent agent requests; each summary includes `observationCount` and `entryPoint` |
@@ -181,11 +184,15 @@ Explorer qua root orchestration. Chỉ output `ready` được chuyển tiếp.
 
 Rich `PlaceCheckerResult` giữ evaluation, provenance và diagnostic. Sau đó
 `PlaceCheckerPlannerOutputBuilder` tạo compact
-`trip + places + food + accommodations + excludedCandidates`; root
+`trip + places + food + foodCoverage + accommodations + excludedCandidates`; root
 validate payload này bằng `ItineraryPlannerInput` và giữ tại `planner_input`.
-Retrieval/ranking duy trì hai quota candidate độc lập theo duration:
-`8 TravelPlace/ngày` và `8 Restaurant/ngày`, tối thiểu 12 và tối đa 60 mỗi loại;
-vì vậy ba ngày có target 48 stop candidates trước khi Planner chọn lịch khả thi. Một pool
+Retrieval/ranking dùng target `14 TravelPlace/ngày`; food hard minimum là
+`days * 3` Restaurant duy nhất. PlaceChecker dựng slot cho từng
+`day × breakfast/lunch/dinner` và chạy bipartite matching capacity một; vì vậy
+đủ số lượng nhưng sai meal window vẫn không qua hard gate. Một matching thứ hai
+dùng tập Restaurant rời nhau làm soft reserve, tối đa 60 candidate. Thiếu hard
+matching làm PlaceChecker `blocked`;
+thiếu relationship gần chỉ tạo warning và general food vẫn được phép. Một pool
 Accommodation riêng giữ tối đa 5 khách sạn có giá dương: low gần P25, medium
 gần P50 và high gần P80 của candidate đã xác minh trong thành phố; compact
 output phát tối đa ba phương án quanh mốc ngân sách để Planner chọn theo giá và
@@ -198,6 +205,9 @@ Mỗi place còn có `sourceKind` (`special_experience`, `offer_item`, `both` ho
 `generic`), `offeredActivityIds` và `timeSource`. `Offer_Item` chỉ được tính là
 nguồn activity khi target là `ActivityItem`; timing ActivityItem được truyền
 qua relationship evidence, còn `Has_Style` là fallback khi thiếu timing cụ thể.
+Travel reserve dùng coverage mềm 6/14 Special Experience thật và 4/14 popular;
+popular kết hợp Bayesian quality với log review count, bucket thiếu được ranking
+diversity bù và không làm PlaceChecker phân ngày thay Planner.
 Compact output chỉ chứa place/food có giá dùng được; user input bị loại được giữ
 trong `excludedCandidates` để Planner trả `unscheduled` cùng reason. `price.cost` là trung bình
 `price_min`/`price_max` khi có đủ khoảng, dùng giá trị duy nhất khi chỉ có một
@@ -217,17 +227,15 @@ positive-price KG percentiles
 P25/P50/P80 quan sát ngày 2026-08-14, ba bữa/ngày, 2/3/4 activities và
 4/5/6 chặng 5 km tương ứng low/medium/high.
 
-`PlaceCheckerResult.foodRestaurantSelections` giữ tối đa một cặp món/quán cho
-mỗi TravelPlace anchor. Primary selection dùng giao FoodItem ID chính xác giữa
-`ADM -> Special_Experience -> FoodItem` và
-`Restaurant -> Special_Experience -> FoodItem`, với restaurant được nối từ
-TravelPlace bằng `Special_Near`. Quán duy nhất vẫn được giữ;
-Bayesian rating và review reliability dùng để xếp nhiều quán. Compact food dùng
-`relationships` để liên kết ngược TravelPlace, không đưa FoodItem thành place.
-Adapter không nối FoodItem bằng tên. Nếu một TravelPlace không có primary
-exact-ID pair, adapter lấy FoodItem trực tiếp từ `Restaurant -> Offer_Item` cho
-anchor đó và gắn match type `offer_item_fallback`; fallback không merge hoặc
-sửa entity trong Knowledge Graph và không được gọi là món đặc trưng.
+`PlaceCheckerResult.foodRestaurantSelections` giữ mỗi Restaurant một lần sau
+dedup, cùng mọi TravelPlace anchor liên quan. Adapter tính khoảng cách tối đa
+5 km từ coordinates; `Special_Near` là provenance chứ không phải join gate.
+SpecialExperience và OfferItem là hai evidence độc lập. Candidate phải có tọa
+độ, duration, giá và meal window; nếu hard coverage vẫn thiếu thì adapter query
+general ADM một lần, loại các Restaurant ID đã thấy và giới hạn theo deficit.
+Fallback nhận đúng các meal type còn thiếu từ hard/reserve matching, sau đó
+matching được chạy lại. `foodCoverage` gửi hard/reserve assignments và missing
+slots sang Planner; thiếu reserve chỉ là trạng thái mềm, không tự block.
 Bayesian prior/rating/review quality là capability dùng chung trong
 `shared/tools/bayesian_rating.py`; PlaceChecker dùng nó trong pair score, còn
 FinalItineraryPlanner dùng quality 0..1 cho objective `placeQualityValue`.
@@ -235,7 +243,15 @@ FinalItineraryPlanner dùng quality 0..1 cho objective `placeQualityValue`.
 ### FinalItineraryPlanner
 
 Planner preprocess payload compact, lấy một global Valhalla driving matrix,
-tạo sparse arcs và chạy OR-Tools CP-SAT ba pass. Sau solver, module chỉ lấy
+giữ mười neighbor gần nhất theo safe travel time cho mỗi candidate rồi union
+forced relationship, meal-access, priority và bridge arcs. CP-SAT mặc định dùng
+một search worker trong từng pass do benchmark hiện tại chưa chứng minh
+multi-worker giảm latency. Default không đặt solver timeout; runtime cần SLA
+phải inject giới hạn riêng qua `SolverConfig`. Planner tạo geographic day-domain,
+greedy shortlist và 2-opt/swap, rồi chạy OR-Tools CP-SAT hai pass cho từng
+ngày. Greedy và CP-SAT dùng chung Bayesian review quality dựa trên rating,
+review count và prior của pool. Kết quả ghép ngày được kiểm tra lại budget, overnight rest và accommodation
+transfer. Sau solver, module chỉ lấy
 route detail cho selected arcs cùng accommodation transfers và có tối đa một affected-day repair nếu detail
 thực tế làm timeline sai.
 Mỗi ngày bắt buộc có activity xen giữa breakfast/lunch và lunch/dinner bằng
@@ -243,6 +259,10 @@ hard constraint cấm food-to-food arc. Waiting giữa hai stop liên tiếp b�
 hạn tối đa 15 phút ngoài `safeTravel` đã gồm routing buffer; khi pool/opening
 window không dựng được chuỗi liên tục, solver trả `INFEASIBLE` thay vì xuất
 ngày chỉ có ba bữa ăn.
+Optional candidate của chuyến từ ba ngày được giới hạn vào tối đa hai ngày gần
+geographic centers nhất trước khi tạo biến; user/URL không bị giới hạn và food
+liên kết đi theo TravelPlace. Pass utility có relative gap 5%, trong khi hai
+pass priority vẫn exact.
 
 `ItineraryPlannerOutput` gồm accommodation đã chọn, số đêm, ngày/stops/ordered route
 legs, cost và budget trên
@@ -360,6 +380,12 @@ Các schema dùng chung chính:
 
 ## Durable trip-chat API
 
+Mỗi `currentPlannerOutput.days[].stops[]` có `itemId` ổn định, source-owned
+`notes={text,sourceType,sourceUrl}` và user-owned `personalNotes`. Place Checker
+chọn URL note trước; nếu không có thì dùng mô tả Google Maps/Knowledge Graph.
+Endpoint personal-notes chỉ cập nhật `personalNotes` với revision check, không
+được sửa source note.
+
 ## Auto-attach Style rules
 
 The admin Knowledge Graph exposes `/admin/knowledge-graph/auto-attach/rules` for the persisted `attach_auto.yml` rule catalog. Each rule maps normalized entity names or aliases to a `Style` candidate through `Has_Style`. Default `time_duration` and `time_windows` are read from the target Style node; direct place timing overrides those defaults. Relationship properties remain a compatible per-attachment override. Rules store entity types, keywords, exact names, exclusions, default timing, override count, status, and source. Writes require admin authentication and default to `pending` review status.
@@ -370,6 +396,9 @@ chỉ đọc quan hệ khoảng cách `Special_Near`; `Near` legacy và `Must_Vi
 còn tham gia retrieval, evidence hoặc planning projection.
 
 The current frontend planner uses the authenticated `/v1/trip-chats` contract.
+Bootstrap tải một lần tối đa 30 summary và full chat được chọn; query summary
+chỉ chiếu boolean `hasItinerary`, không đọc hai JSON plan snapshot. Chi tiết
+message và plan chỉ được đọc cho active chat.
 Each chat owns a LangGraph thread identifier and persists user/assistant
 messages plus two independent snapshots in PostgreSQL: `currentItinerary` for
 the PlanEditor legacy contract and `currentPlannerOutput` for the new planner

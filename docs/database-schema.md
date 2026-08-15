@@ -1,6 +1,6 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-14.
+Cập nhật lần cuối: 2026-08-16.
 
 ## Phạm vi và trạng thái
 
@@ -170,11 +170,22 @@ PlanEditor JSON created by `backend/migrations/003_trip_chat.sql`;
 `current_planner_output` is the FinalItineraryPlanner JSON added by
 `backend/migrations/009_trip_chat_planner_output.sql`. A chat update uses the
 new non-null output and otherwise preserves the previous snapshot.
+List-chat queries are bounded (30 records by default) and project only whether
+a plan snapshot exists. The large JSONB snapshots are fetched only when opening
+one chat through the detail/bootstrap contract; no migration is required for
+this query-level optimization. The existing `(user_id, updated_at DESC)` index
+continues to serve the bounded recent-chat lookup.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
 | `current_itinerary` | jsonb | Có | Snapshot legacy dành cho PlanEditor. |
 | `current_planner_output` | jsonb | Có | Output mới gồm `days[].stops` và `days[].legs`. |
+
+Stop trong snapshot giữ hai vùng note độc lập: `notes` là object chỉ đọc gồm
+`text`, `sourceType`, `sourceUrl`; `personalNotes` là chuỗi do user sở hữu.
+URL note được chọn trước Google Maps/Knowledge Graph note. Thay đổi ghi chú cá
+nhân cập nhật nguyên tử chính JSONB này với optimistic revision; không có bảng
+note riêng và không lưu raw payload từ URL hoặc Google Maps.
 
 ### `agent_trip_chat_messages`
 
@@ -454,16 +465,14 @@ Planner normalize cả tag tiếng Việt (`Tâm linh`, `Văn hóa`, `kiến tr�
 `di tích`, ...) để preference và diversity objective dùng đúng dữ liệu cloud;
 thay đổi này không thêm bảng hoặc ghi ngược Knowledge Graph.
 
-PlaceChecker code ngày 2026-08-14 đã chuẩn bị primary read path yêu cầu cùng
-FoodItem ID trên hai cạnh `Special_Experience`: ADM → `FoodItem` và Restaurant
-→ `FoodItem`, với Restaurant được nối tới TravelPlace bằng `Special_Near`.
-Read path không nối FoodItem bằng tên. Đây là consumer contract đang chờ dữ
-liệu Knowledge Graph được cập nhật và xác minh; tại lần kiểm tra 2026-08-14,
-cloud data chưa có cạnh Restaurant → `Special_Experience` → FoodItem.
-Theo từng TravelPlace, nếu không có primary exact-ID pair, read path lấy trực
-tiếp FoodItem từ `Restaurant -> Offer_Item` và đánh dấu
-`offer_item_fallback`; nó không thay đổi hay hợp nhất các record
-`knowledge_entities` và không diễn giải fallback thành món đặc trưng.
+PlaceChecker read path ngày 2026-08-14 lấy Restaurant trong cây ADM và tính
+khoảng cách tọa độ tới batch TravelPlace anchor, giới hạn 5 km. `Special_Near`
+được đọc làm evidence nhưng không phải điều kiện join. Hai quan hệ Restaurant
+→ `Special_Experience` → FoodItem và Restaurant → `Offer_Item` → FoodItem được
+đọc độc lập; read path không nối FoodItem bằng tên và không ghi ngược KG. Khi
+pool gần thiếu hard hoặc reserve unique meal-slot matching, cùng read path có
+thể chạy general ADM một lần với danh sách Restaurant ID cần loại trừ và các
+meal type còn thiếu. Đây chỉ là thay đổi read path; không thêm bảng hoặc cột.
 
 ### `knowledge_entity_images`
 

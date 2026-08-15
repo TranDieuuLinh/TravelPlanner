@@ -2,7 +2,7 @@ from app.modules.place_checker.accommodation_planning_output import (
     select_accommodations,
 )
 from app.modules.place_checker.checked_output_contract import CheckedPlace
-from app.modules.place_checker.enums import SourceTier, VerificationStatus
+from app.modules.place_checker.enums import SourceTier
 from app.modules.place_checker.food_planning_output import (
     SelectedFoodPlanningProjector,
     limit_food_pool,
@@ -19,6 +19,8 @@ from app.modules.place_checker.output_contract import (
 )
 from app.modules.place_checker.planner_budget import build_planner_budget
 from app.modules.place_checker.planner_exclusions import build_excluded_candidate
+from app.modules.place_checker.planner_eligibility import is_planner_eligible
+from app.modules.place_checker.planner_notes import select_planner_source_note
 from app.modules.place_checker.planner_candidate_metadata import (
     preferred_time_values,
     source_metadata,
@@ -29,9 +31,13 @@ from app.modules.place_checker.planning_time_windows import (
     meals_for_hours,
     parse_planner_windows,
 )
-from app.modules.place_checker.pool_policy import pool_target_for_days
+from app.modules.place_checker.pool_policy import (
+    food_pool_target_for_days,
+    planner_pool_shortfall,
+)
 from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
 from app.shared.tools.daily_budget import DestinationDailyBudgetEstimator
+from app.shared.contracts.source_note import SourceNote
 
 __all__ = ["PlaceCheckerPlannerOutputBuilder", "PlaceCheckerPlanningProjector"]
 
@@ -54,13 +60,72 @@ class PlaceCheckerPlannerOutputBuilder:
         start_date: str,
         timezone: str,
     ) -> PlaceCheckerPlannerOutput:
+        places, food, excluded_candidates = self._candidate_pools(result)
+        return PlaceCheckerPlannerOutput(
+            trip=PlannerOutputTrip(
+                destination=(
+                    result.trip_context.destination.canonical_name
+                    or result.trip_context.destination.input_name
+                ),
+                days=result.trip_context.days,
+                start_date=start_date,
+                timezone=timezone,
+                people=result.trip_context.people.total,
+                budget=build_planner_budget(result, self.daily_budget_estimator),
+                preferences=result.trip_context.preferences,
+            ),
+            places=places,
+            food=food,
+            food_coverage=result.food_meal_coverage,
+            accommodations=select_accommodations(result),
+            excluded_candidates=excluded_candidates,
+        )
+
+    def pool_shortfall(self, result: PlaceCheckerResult) -> tuple[int, int, int, int]:
+        """Measure the exact eligible pools that would be sent to Planner."""
+        places, food, _ = self._candidate_pools(result)
+        shortfall = planner_pool_shortfall(
+            days=result.trip_context.days,
+            travel_place_count=len(places),
+            food_count=len(food),
+            food_meal_counts={
+                meal: sum(meal in candidate.supported_meals for candidate in food)
+                for meal in ("breakfast", "lunch", "dinner")
+            },
+        )
+        return (
+            shortfall[0],
+            shortfall[1],
+            shortfall[2],
+            max(shortfall[3], len(result.food_meal_coverage.hard_missing_slots)),
+        )
+
+    def unpaired_travel_place_ids(self, result: PlaceCheckerResult) -> list[str]:
+        """Return travel places without a linked special-near restaurant."""
+        places, food, _ = self._candidate_pools(result)
+        paired_place_ids = {
+            related_place_id
+            for restaurant in food
+            for related_place_id in restaurant.relationships
+        }
+        return [
+            place.place_id for place in places if place.place_id not in paired_place_ids
+        ]
+
+    def _candidate_pools(
+        self, result: PlaceCheckerResult
+    ) -> tuple[
+        list[PlannerOutputPlace],
+        list[PlannerOutputFood],
+        list[PlannerExcludedCandidate],
+    ]:
         places: list[PlannerOutputPlace] = []
         food: list[PlannerOutputFood] = []
         excluded_candidates: list[PlannerExcludedCandidate] = []
         for checked in result.checked_places:
             if checked.category == "accommodation":
                 continue
-            if not self._eligible(checked):
+            if not is_planner_eligible(checked):
                 if checked.mandatory or checked.source_tier in {
                     SourceTier.direct_user,
                     SourceTier.url,
@@ -114,7 +179,10 @@ class PlaceCheckerPlannerOutputBuilder:
                     update={
                         "relationships": list(
                             dict.fromkeys(
-                                [*current.relationships, selection.anchor_place_id]
+                                [
+                                    *current.relationships,
+                                    *selection.related_anchor_place_ids,
+                                ]
                             )
                         ),
                         "tags": list(
@@ -156,28 +224,11 @@ class PlaceCheckerPlannerOutputBuilder:
         }
         food = limit_food_pool(
             food,
-            limit=pool_target_for_days(result.trip_context.days),
+            limit=food_pool_target_for_days(result.trip_context.days),
             required_ids=required_food_ids,
             paired_ids=paired_food_ids,
         )
-        return PlaceCheckerPlannerOutput(
-            trip=PlannerOutputTrip(
-                destination=(
-                    result.trip_context.destination.canonical_name
-                    or result.trip_context.destination.input_name
-                ),
-                days=result.trip_context.days,
-                start_date=start_date,
-                timezone=timezone,
-                people=result.trip_context.people.total,
-                budget=build_planner_budget(result, self.daily_budget_estimator),
-                preferences=result.trip_context.preferences,
-            ),
-            places=places,
-            food=food,
-            accommodations=select_accommodations(result),
-            excluded_candidates=excluded_candidates,
-        )
+        return places, food, excluded_candidates
 
     _limit_food_pool = staticmethod(limit_food_pool)
 
@@ -190,25 +241,6 @@ class PlaceCheckerPlannerOutputBuilder:
             for candidate in candidates
         ]
 
-    @staticmethod
-    def _eligible(checked: CheckedPlace) -> bool:
-        return bool(
-            checked.place_id
-            and checked.canonical_name
-            and checked.coordinates
-            and checked.duration.typical_minutes
-            and has_usable_cost(
-                minimum=checked.cost.minimum,
-                typical=checked.cost.typical,
-                maximum=checked.cost.maximum,
-                tier=checked.cost.tier,
-            )
-            and checked.evaluation.planner_eligible
-            and (checked.mandatory or not checked.evaluation.avoid_conflicts)
-            and checked.verification.status
-            in {VerificationStatus.verified_kg, VerificationStatus.verified_external}
-        )
-
     @classmethod
     def _place(cls, checked: CheckedPlace, days: int) -> PlannerOutputPlace:
         source_kind, offered_activity_ids = source_metadata(
@@ -220,7 +252,7 @@ class PlaceCheckerPlannerOutputBuilder:
             coordinates=checked.coordinates,
             address=checked.address,
             priority=cls._priority(checked),
-            notes=cls._notes(checked),
+            notes=select_planner_source_note(checked),
             tags=checked.tags,
             image_urls=checked.image_urls,
             rating=checked.rating,
@@ -263,7 +295,7 @@ class PlaceCheckerPlannerOutputBuilder:
             coordinates=option.coordinates,
             address=option.address,
             priority="user_input",
-            notes=item.evidence,
+            notes=SourceNote(text=item.evidence, source_type="backend"),
             tags=option.tags,
             image_urls=option.image_urls,
             rating=option.rating,
@@ -329,41 +361,6 @@ class PlaceCheckerPlannerOutputBuilder:
         if "Special_Near" in types:
             return "special_near"
         return "special_experience"
-
-    @staticmethod
-    def _notes(checked: CheckedPlace) -> str | None:
-        prefix = (
-            "Cần xác minh đúng địa điểm/chi nhánh trước khi chốt lịch."
-            if checked.verification.status == VerificationStatus.provisional
-            else None
-        )
-        direct = next(
-            (
-                source.evidence
-                for source in checked.provenance.source_places
-                if source.origin.value != "system" and source.evidence
-            ),
-            None,
-        )
-        if direct:
-            return f"{prefix} {direct}" if prefix else direct
-        nearest = min(
-            (
-                relation
-                for relation in checked.relationship_evidence
-                if relation.relationship_type == "Special_Near"
-                and relation.distance_km is not None
-            ),
-            key=lambda relation: relation.distance_km,
-            default=None,
-        )
-        if nearest is None:
-            return prefix
-        note = (
-            f"Cách {nearest.related_name or 'địa điểm liên quan'} "
-            f"khoảng {nearest.distance_km:.2f} km theo Knowledge Graph."
-        )
-        return f"{prefix} {note}" if prefix else note
 
     @classmethod
     def _preferred_windows(cls, checked: CheckedPlace) -> list[PlannerTimeWindow]:

@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai PlaceChecker
 
-Cập nhật lần cuối: 2026-08-14.
+Cập nhật lần cuối: 2026-08-16.
 
 Thư mục này chứa kế hoạch triển khai stage PlaceChecker. Các module Python
 production sẽ được thêm bên cạnh `docs/` khi từng task được thực hiện.
@@ -19,17 +19,39 @@ Explorer
 PlaceChecker phân giải, xác minh, làm giàu và đánh giá candidate. Module không
 phân bổ ngày, chọn khung giờ chính xác, tối ưu thứ tự route hoặc tạo itinerary.
 PostgreSQL adapter đọc quan hệ Knowledge Graph theo ngữ nghĩa hiện hành:
-`Special_Near`/`Near` giữa các place, `Special_Experience` từ ADM tới place hoặc
+`Special_Near` giữa các place, `Special_Experience` từ ADM tới place hoặc
 `FoodItem`, `Offer_Item` và `Has_Style` từ place tới thuộc tính. Evidence quan hệ giữ trạng
 thái, nguồn, confidence/priority và khoảng cách để phục vụ audit và scoring.
 
-Nhánh food đặc trưng đọc chuỗi `ADM -> Special_Experience -> FoodItem`, giao với
-`TravelPlace -> Special_Near -> Restaurant -> Offer_Item -> FoodItem`, rồi chọn
-một restaurant cho mỗi TravelPlace. Một candidate duy nhất vẫn hợp lệ; khi có
-nhiều quán, service dùng Bayesian weighted rating, độ tin cậy review, priority
-món, confidence của edge và khoảng cách. PostgreSQL adapter chỉ đọc quan hệ;
+Nhánh food lấy một batch Restaurant trong bán kính tính toán tối đa 5 km quanh
+8-12 TravelPlace anchor đại diện. `Special_Near` là evidence bổ sung, không phải
+điều kiện vào query; `Offer_Item`, `Special_Experience` và `Has_Style` được giữ
+độc lập. Service dedup theo Restaurant, gộp mọi anchor/evidence, loại metadata
+không dùng được, dựng các slot `day × breakfast/lunch/dinner` và chạy unique
+bipartite matching. Khi hard matching hoặc reserve matching thứ hai còn thiếu,
+service chỉ query general ADM một lần cho đúng meal type thiếu rồi match lại.
+Hai matching không dùng chung Restaurant. PostgreSQL adapter chỉ đọc quan hệ;
 module không sở hữu migration Knowledge Graph. Công thức Bayesian nằm trong
 `shared/tools/bayesian_rating.py` để FinalItineraryPlanner dùng cùng policy.
+
+Planner projection chọn đúng một source note cho mỗi candidate: `urlNotes`
+được ưu tiên; nếu không có thì dùng `description` và `url_google_map` đọc từ
+Knowledge Graph làm Google/KG fallback. Output là object
+`notes={text,sourceType,sourceUrl}`; ghi chú cá nhân không thuộc Place Checker.
+
+Candidate pool gửi sang Planner có hard gate độc lập: 14 TravelPlace/ngày và
+3 Restaurant/ngày với một Restaurant duy nhất cho mỗi meal slot. Food reserve
+được over-fetch riêng theo target 10/ngày. Chỉ candidate vượt đủ
+verification, metadata và compact-output policy mới được tính. Thiếu một pool
+làm kết quả `blocked`; root không tạo `planner_input`. Thiếu relationship gần
+chỉ tạo warning vì Planner vẫn có thể dùng general food pool theo route. Compact
+output gửi cả `foodCoverage` gồm hard/reserve assignments và missing slots để
+Planner biết feasibility đã được kiểm tra trước.
+
+TravelPlace reserve dùng coverage mềm theo tỷ lệ tham chiếu 6/14 candidate có
+evidence `Special_Experience`, 4/14 candidate có Bayesian popularity signal và
+phần còn lại theo ranking đa dạng hiện có. Bucket thiếu được pool khác bù; đây
+không phải phân ngày hoặc quyết định itinerary.
 
 ## Input từ Explorer
 

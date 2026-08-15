@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
+from app.shared.contracts.source_note import SourceNote
+
 
 class PlannerContractModel(BaseModel):
     model_config = ConfigDict(
@@ -45,6 +47,30 @@ class MealType(StrEnum):
     breakfast = "breakfast"
     lunch = "lunch"
     dinner = "dinner"
+
+
+class MissingMealSlot(PlannerContractModel):
+    day: int = Field(ge=1, le=30)
+    meal: MealType
+
+
+class MealSlotAssignment(MissingMealSlot):
+    restaurant_id: str = Field(min_length=1, max_length=300)
+
+
+class FoodCoverageFeasibility(PlannerContractModel):
+    days: int = Field(default=0, ge=0, le=30)
+    hard_complete: bool = False
+    reserve_complete: bool = False
+    hard_assignments: list[MealSlotAssignment] = Field(default_factory=list)
+    hard_missing_slots: list[MissingMealSlot] = Field(default_factory=list)
+    reserve_assignments: list[MealSlotAssignment] = Field(default_factory=list)
+    reserve_missing_slots: list[MissingMealSlot] = Field(default_factory=list)
+
+
+class PlannerPreflightFailure(PlannerContractModel):
+    code: Literal["missing_meal_coverage"] = "missing_meal_coverage"
+    missing: list[MissingMealSlot] = Field(min_length=1, max_length=90)
 
 
 class TimeInterval(PlannerContractModel):
@@ -145,7 +171,7 @@ class PlannerCandidate(PlannerContractModel):
     coordinates: PlannerCoordinates
     address: str | None = Field(default=None, max_length=1000)
     priority: CandidatePriority
-    notes: str | None = Field(default=None, max_length=4000)
+    notes: SourceNote | None = None
     tags: list[str] = Field(default_factory=list, max_length=100)
     image_urls: list[str] = Field(default_factory=list, max_length=20)
     rating: float | None = Field(default=None, ge=0, le=5)
@@ -199,6 +225,9 @@ class ItineraryPlannerInput(PlannerContractModel):
     trip: PlannerTrip
     places: list[PlannerCandidate] = Field(default_factory=list, max_length=500)
     food: list[PlannerFoodCandidate] = Field(default_factory=list, max_length=500)
+    food_coverage: FoodCoverageFeasibility = Field(
+        default_factory=FoodCoverageFeasibility
+    )
     accommodations: list[PlannerAccommodation] = Field(
         default_factory=list,
         max_length=3,
@@ -235,4 +264,6 @@ class ItineraryPlannerInput(PlannerContractModel):
             raise ValueError("accommodation placeId must be unique")
         if set(ids) & set(accommodation_ids):
             raise ValueError("accommodation placeId must not overlap stop candidates")
+        if self.food_coverage.days not in {0, self.trip.days}:
+            raise ValueError("foodCoverage days must match trip days")
         return self

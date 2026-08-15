@@ -4,6 +4,8 @@ Verifies /v1/trip-chats/{chat_id}/messages API behavior, camelCase response sche
 and backward compatibility for /v1/agent/invoke.
 """
 
+import asyncio
+
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_graph
@@ -84,6 +86,66 @@ import unittest
 
 
 class TestTripChatMemoryAPI(unittest.TestCase):
+    def test_updates_personal_note_without_changing_source_note(self):
+        app, client, _memory_service = build_test_app()
+        created = client.post("/v1/trip-chats", json={"title": "Notes"}).json()
+        source_note = {
+            "text": "Đến trước 8 giờ",
+            "sourceType": "url",
+            "sourceUrl": "https://example.test/video",
+        }
+        seeded = asyncio.run(
+            app.state.trip_chat_repository.append_exchange(
+                1,
+                created["id"],
+                "Tạo lịch",
+                {"content": "Đã tạo"},
+                None,
+                {
+                    "destination": "Hà Nội",
+                    "days": [{
+                        "day": 1,
+                        "stops": [{
+                            "itemId": "planner:1:lake",
+                            "placeId": "lake",
+                            "notes": source_note,
+                            "personalNotes": None,
+                        }],
+                    }],
+                },
+            )
+        )
+        self.assertIsNotNone(seeded)
+
+        response = client.patch(
+            f"/v1/trip-chats/{created['id']}/plan/days/1/items/planner%3A1%3Alake/personal-notes",
+            json={
+                "expectedRevision": seeded.revision,
+                "personalNotes": "Nhớ mang ô",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        stop = response.json()["currentPlannerOutput"]["days"][0]["stops"][0]
+        self.assertEqual(stop["notes"], source_note)
+        self.assertEqual(stop["personalNotes"], "Nhớ mang ô")
+
+    def test_bootstrap_returns_recent_chats_and_requested_active_chat(self):
+        _app, client, _memory_service = build_test_app()
+        first = client.post("/v1/trip-chats", json={"title": "First"}).json()
+        second = client.post("/v1/trip-chats", json={"title": "Second"}).json()
+
+        response = client.get(
+            "/v1/trip-chats/bootstrap",
+            params={"chatId": first["id"], "limit": 1},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["chats"]), 1)
+        self.assertEqual(payload["chats"][0]["id"], second["id"])
+        self.assertEqual(payload["activeChat"]["id"], first["id"])
+
     def test_create_and_send_trip_chat_message_with_memory(self):
         _app, client, memory_service = build_test_app()
 

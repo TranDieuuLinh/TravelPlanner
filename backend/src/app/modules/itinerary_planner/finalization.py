@@ -65,6 +65,7 @@ def finalize_itinerary(
         candidate = problem.candidate_by_id[stop.place_id]
         stops_by_day[stop.day].append(
             ItineraryStop(
+                item_id=f"planner:{stop.day}:{stop.place_id}",
                 place_id=stop.place_id,
                 name=candidate.name,
                 kind="food" if stop.place_id in food_ids else "place",
@@ -78,6 +79,9 @@ def finalize_itinerary(
                 notes=candidate.notes,
                 tags=candidate.tags,
                 image_urls=candidate.image_urls,
+                rating=candidate.rating,
+                review_count=candidate.review_count,
+                opening_hours=candidate.opening_hours,
                 cost_per_person=ceil(candidate.price.cost),
             )
         )

@@ -1,6 +1,7 @@
 import pytest
 
 from app.modules.itinerary_planner.optimizer.solver import OptimizationError
+from app.modules.itinerary_planner.policies import MAX_INTER_STOP_WAIT_MINUTES
 from app.modules.itinerary_planner.routing_models import MatrixCell, TravelMatrix
 from app.modules.itinerary_planner.tests.factories import candidate, payload
 from app.modules.itinerary_planner.tests.optimizer_fixtures import (
@@ -24,20 +25,22 @@ def test_schedule_satisfies_meals_opening_route_and_per_person_budget() -> None:
     result, _, routing = solve_payload(raw)
 
     assert result.user_input_count == 1
-    assert {stop.meal_type.value for stop in result.scheduled_stops if stop.meal_type} == {
+    assert {
+        stop.meal_type.value for stop in result.scheduled_stops if stop.meal_type
+    } == {
         "breakfast",
         "lunch",
         "dinner",
     }
     meals = {
-        stop.meal_type.value: stop
-        for stop in result.scheduled_stops
-        if stop.meal_type
+        stop.meal_type.value: stop for stop in result.scheduled_stops if stop.meal_type
     }
     assert meals["breakfast"].start_minute <= 600
     assert meals["lunch"].start_minute - meals["breakfast"].start_minute >= 180
     assert meals["dinner"].start_minute - meals["lunch"].start_minute >= 300
-    museum_stop = next(stop for stop in result.scheduled_stops if stop.place_id == "museum")
+    museum_stop = next(
+        stop for stop in result.scheduled_stops if stop.place_id == "museum"
+    )
     assert 540 <= museum_stop.start_minute
     assert museum_stop.end_minute <= 720
     assert museum_stop.end_minute - museum_stop.start_minute == 90
@@ -57,6 +60,7 @@ def test_meals_are_separated_by_activity_and_route_wait_is_bounded() -> None:
     food_ids = {food.place_id for food in prepared.valid_food}
     stops = {(stop.place_id, stop.day): stop for stop in result.scheduled_stops}
 
+    waits = []
     for arc in result.selected_arcs:
         assert not (arc.origin_id in food_ids and arc.destination_id in food_ids)
         wait = (
@@ -66,7 +70,10 @@ def test_meals_are_separated_by_activity_and_route_wait_is_bounded() -> None:
                 (arc.origin_id, arc.destination_id)
             ].safe_minutes
         )
-        assert 0 <= wait <= 15
+        waits.append(wait)
+        assert 0 <= wait <= MAX_INTER_STOP_WAIT_MINUTES
+    assert any(wait > 15 for wait in waits)
+    assert result.objective_components["idleWaitingCost"] > 0
 
 
 def test_schedule_is_infeasible_without_activity_between_meals() -> None:
@@ -96,7 +103,7 @@ def test_lexicographic_passes_lock_user_then_url_count() -> None:
 
     assert result.user_input_count == 1
     assert result.url_count == 1
-    assert [item.name for item in result.passes] == ["user_input", "url", "utility"]
+    assert [item.name for item in result.passes] == ["priority", "utility"]
     assert all(item.status in {"OPTIMAL", "FEASIBLE"} for item in result.passes)
 
 

@@ -8,14 +8,17 @@ from pydantic import Field, model_validator
 from app.modules.itinerary_planner.contract import (
     CandidatePriority,
     MealType,
+    OpeningHours,
     PlannerAccommodation,
     PlannerContractModel,
     PlannerCoordinates,
     PlannerDailyBudgetEstimate,
 )
+from app.shared.contracts.source_note import SourceNote
 
 
 class ItineraryStop(PlannerContractModel):
+    item_id: str
     place_id: str
     name: str
     kind: Literal["place", "food"]
@@ -26,9 +29,13 @@ class ItineraryStop(PlannerContractModel):
     meal_type: MealType | None = None
     coordinates: PlannerCoordinates
     address: str | None = None
-    notes: str | None = None
+    notes: SourceNote | None = None
+    personal_notes: str | None = Field(default=None, max_length=4000)
     tags: list[str] = Field(default_factory=list)
     image_urls: list[str] = Field(default_factory=list)
+    rating: float | None = Field(default=None, ge=0, le=5)
+    review_count: int | None = Field(default=None, ge=0)
+    opening_hours: OpeningHours = None
     cost_per_person: int = Field(ge=0)
 
 

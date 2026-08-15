@@ -16,21 +16,21 @@ import type { ListingDetail } from "@/features/marketplace/types";
 
 export default function CreatorListingsPage() {
   const router = useRouter();
-  const { loading: authLoading, user } = useAuth();
+  const { loading: authLoading, sessionUnavailable, user } = useAuth();
   const [listings, setListings] = useState<ListingDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
 
   useEffect(() => {
-    if (!authLoading && (!user || user.role !== "creator")) {
+    if (!authLoading && !sessionUnavailable && (!user || user.role !== "creator")) {
       router.replace("/profile");
       return;
     }
     if (user && user.role === "creator") {
       fetchListings();
     }
-  }, [authLoading, router, user]);
+  }, [authLoading, router, sessionUnavailable, user]);
 
   async function fetchListings() {
     setLoading(true);

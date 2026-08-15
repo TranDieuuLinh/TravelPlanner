@@ -5,6 +5,7 @@ from app.modules.place_checker.output_contract import (
     PlannerTimeWindow,
 )
 from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
+from app.shared.contracts.source_note import SourceNote
 
 
 def limit_food_pool(
@@ -63,10 +64,17 @@ class SelectedFoodPlanningProjector:
             name=selection.restaurant_name,
             coordinates=metadata.coordinates,
             address=metadata.address,
-            priority="special_near",
-            notes=(
-                f"Gần {selection.anchor_name}; phục vụ món đặc trưng "
-                f"{selection.food_item_name}.{bayesian_note}"
+            priority=(
+                "special_near"
+                if selection.proximity_source != "general_adm"
+                else "special_experience"
+            ),
+            notes=SourceNote(
+                text=(
+                    f"Gần {selection.anchor_name}; phục vụ món đặc trưng "
+                    f"{selection.food_item_name}.{bayesian_note}"
+                ),
+                source_type="knowledge_graph",
             ),
             tags=list(
                 dict.fromkeys(
@@ -92,7 +100,7 @@ class SelectedFoodPlanningProjector:
                 ),
                 currency=metadata.cost_currency or "VND",
             ),
-            relationships=[selection.anchor_place_id],
+            relationships=list(selection.related_anchor_place_ids),
             supported_meals=meals,
         )
 

@@ -162,3 +162,46 @@ def test_preflight_reports_each_missing_day_and_meal() -> None:
         (1, MealType.breakfast),
         (2, MealType.breakfast),
     ]
+
+
+def test_geographic_projection_keeps_priority_global_and_links_special_near() -> None:
+    places = [candidate(f"optional_{index}") for index in range(4)]
+    places.append(candidate("required", priority="user_input"))
+    for index, place in enumerate(places):
+        place["coordinates"] = {
+            "latitude": 21.0 + index / 100,
+            "longitude": 105.8,
+        }
+    linked = food("linked")
+    linked["relationships"] = ["optional_0"]
+    coverage = food("coverage")
+    coverage["priority"] = "user_input"
+
+    prepared = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(
+            payload(days=4, places=places, foods=[linked, coverage])
+        )
+    )
+
+    assert len(prepared.feasible_days["optional_0"]) == 2
+    assert prepared.feasible_days["required"] == frozenset({1, 2, 3, 4})
+    assert prepared.feasible_days["linked"] == prepared.feasible_days["optional_0"]
+    assert any("Geographic day-domain projection" in item for item in prepared.warnings)
+
+
+def test_geographic_projection_repairs_meal_coverage_for_every_day() -> None:
+    places = [candidate(f"place_{index}") for index in range(4)]
+
+    prepared = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(
+            payload(days=4, places=places, foods=[food("only_food")])
+        )
+    )
+
+    assert prepared.feasible_days["only_food"] == frozenset({1, 2, 3, 4})
+    assert all(
+        ("only_food", day, meal) in prepared.meal_eligibility
+        for day in range(1, 5)
+        for meal in MealType
+    )
+    assert any("restored" in item for item in prepared.warnings)

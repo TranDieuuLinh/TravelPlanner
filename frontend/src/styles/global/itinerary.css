@@ -860,6 +860,30 @@
   align-self: center;
 }
 
+.itinerary .itineraryStop--accommodation .itineraryPlaceCard {
+  border-color: #e3e7e9;
+  background: #fff;
+}
+
+.itinerary .itineraryStop--accommodation .itineraryTypeIcon {
+  border-color: #e4d8d1;
+  background: #fbf5f1;
+  color: #8a5a44;
+}
+
+.itinerary .itineraryAccommodationDetails {
+  display: grid;
+  gap: 3px;
+  color: var(--itinerary-muted);
+  font-size: .6rem;
+  line-height: 1.45;
+}
+
+.itinerary .itineraryAccommodationDetails small {
+  color: var(--itinerary-muted);
+  font-size: .56rem;
+}
+
 .itinerary .itineraryPlaceMain {
   display: grid;
   min-width: 0;
@@ -2878,6 +2902,39 @@
   height: 13px;
 }
 
+.itinerary .itineraryStop--accommodation .itineraryPlaceQuickActions > .itineraryTypeIcon {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  flex-basis: 38px;
+  border: 2px solid #8a5a44;
+  background: #8a5a44;
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(92, 54, 36, .24);
+}
+
+.itinerary .itineraryStop--accommodation .itineraryPlaceQuickActions > .itineraryTypeIcon svg {
+  width: 21px;
+  height: 21px;
+  stroke-width: 2.1;
+}
+
+@media (max-width: 520px) {
+  .itinerary .itineraryStop--accommodation .itineraryPlaceQuickActions > .itineraryTypeIcon {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+    flex-basis: 34px;
+  }
+
+  .itinerary .itineraryStop--accommodation .itineraryPlaceQuickActions > .itineraryTypeIcon svg {
+    width: 19px;
+    height: 19px;
+  }
+}
+
 .itinerary .itineraryPlaceContent:has(> .itineraryNoteActionButton) {
   position: relative;
   align-self: stretch;
@@ -4585,7 +4642,9 @@
 }
 
 .plannerInlineProcessing {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   width: calc(100% - 28px);
   margin: 4px 14px 14px;
   padding: 4px 2px;
@@ -4593,6 +4652,10 @@
   font-size: .72rem;
   font-weight: 700;
   line-height: 1.4;
+}
+
+.plannerInlineProcessingTime {
+  font-variant-numeric: tabular-nums;
 }
 
 .plannerChat:not(.is-collapsed) .urlImportDock {

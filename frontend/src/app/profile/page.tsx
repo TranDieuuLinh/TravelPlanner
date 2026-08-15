@@ -1,5 +1,9 @@
 "use client";
 
+import "leaflet/dist/leaflet.css";
+import "@/styles/global/community.css";
+import "@/styles/global/profile.css";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
@@ -43,7 +47,7 @@ function formatTravelerPreference(value: string): string {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { loading, submitCreatorApplication, updateProfile, user } = useAuth();
+  const { loading, sessionUnavailable, submitCreatorApplication, updateProfile, user } = useAuth();
   const [activeTab, setActiveTab] = useState<ProfileTab>("achievements");
   const [showcase, setShowcase] = useState<ProfileShowcase>(emptyShowcase);
   const [travelerProfile, setTravelerProfile] = useState<TravelerProfile>(emptyTravelerProfile);
@@ -73,8 +77,8 @@ export default function ProfilePage() {
   const [postMessage, setPostMessage] = useState("");
 
   useEffect(() => {
-    if (!loading && !user) router.replace("/login?next=/profile");
-  }, [loading, router, user]);
+    if (!loading && !sessionUnavailable && !user) router.replace("/login?next=/profile");
+  }, [loading, router, sessionUnavailable, user]);
 
   useEffect(() => {
     if (!user) return;

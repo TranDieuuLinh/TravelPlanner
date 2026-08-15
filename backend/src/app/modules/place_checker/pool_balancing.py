@@ -1,3 +1,4 @@
+from app.modules.place_checker.activity_pool_selection import select_activity_coverage
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
 from app.modules.place_checker.pool_policy import ACCOMMODATION_POOL_TARGET
 from app.modules.place_checker.scoring_contract import ScoredCandidate
@@ -11,7 +12,8 @@ class CandidatePoolBalancer:
         ranked: list[ScoredCandidate],
         existing_places: PlaceEvaluationBatch,
         *,
-        target_per_type: int,
+        activity_target: int,
+        food_target: int,
     ) -> list[ScoredCandidate]:
         existing = {"travel_place": 0, "restaurant": 0, "accommodation": 0}
         for evaluation in existing_places.places:
@@ -31,20 +33,22 @@ class CandidatePoolBalancer:
                 for item in ranked
                 if cls._entity_type(item.candidate.category) == entity_type
             ]
-            target = (
-                ACCOMMODATION_POOL_TARGET
-                if entity_type == "accommodation"
-                else target_per_type
-            )
+            target = {
+                "travel_place": activity_target,
+                "restaurant": food_target,
+                "accommodation": ACCOMMODATION_POOL_TARGET,
+            }[entity_type]
             limit = max(0, target - existing[entity_type])
+            selected_for_type = (
+                select_activity_coverage(candidates, limit)
+                if entity_type == "travel_place"
+                else cls.balance_categories(candidates, limit)
+            )
             selected_keys.update(
-                item.candidate.candidate_key
-                for item in cls.balance_categories(candidates, limit)
+                item.candidate.candidate_key for item in selected_for_type
             )
         selected = [
-            item
-            for item in ranked
-            if item.candidate.candidate_key in selected_keys
+            item for item in ranked if item.candidate.candidate_key in selected_keys
         ]
         return [
             item.model_copy(update={"rank": position})
@@ -57,7 +61,9 @@ class CandidatePoolBalancer:
         limit: int,
     ) -> list[ScoredCandidate]:
         """Reserve discovery-group slots, then fill remaining slots by score."""
-        if limit <= 0 or len(ranked) <= limit:
+        if limit <= 0:
+            return []
+        if len(ranked) <= limit:
             return [
                 item.model_copy(update={"rank": index})
                 for index, item in enumerate(ranked, 1)
@@ -65,11 +71,7 @@ class CandidatePoolBalancer:
 
         groups: dict[str, list[ScoredCandidate]] = {}
         for item in ranked:
-            key = (
-                item.candidate.pool_category
-                or item.candidate.category
-                or "unknown"
-            )
+            key = item.candidate.pool_category or item.candidate.category or "unknown"
             groups.setdefault(key, []).append(item)
         ordered_groups = sorted(groups)
         selected: list[ScoredCandidate] = []

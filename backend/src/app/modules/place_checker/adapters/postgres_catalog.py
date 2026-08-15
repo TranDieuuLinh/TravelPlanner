@@ -15,6 +15,7 @@ from app.modules.place_checker.adapters.postgres_food_query import (
 )
 from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARCH_SQL
 from app.modules.place_checker.food_selection_contract import FoodRestaurantCandidate
+from app.modules.place_checker.planning_time_windows import meals_for_hours
 from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.shared.tools.search_places import AdministrativeArea, PlaceProviderCandidate
 from app.shared.tools.search_places.normalization import normalize_text
@@ -263,6 +264,10 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
         *,
         adm_id: str,
         anchor_place_ids: list[str],
+        radius_km: float | None = 5.0,
+        per_anchor_limit: int = 8,
+        excluded_restaurant_ids: list[str] | None = None,
+        required_meals: list[str] | None = None,
     ) -> list[FoodRestaurantCandidate]:
         if not anchor_place_ids:
             return []
@@ -271,11 +276,14 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
             SPECIAL_FOOD_RESTAURANT_SQL,
             adm_id,
             list(dict.fromkeys(anchor_place_ids)),
+            radius_km,
+            max(1, per_anchor_limit),
+            list(dict.fromkeys(excluded_restaurant_ids or [])),
         )
         metadata = await self.get_many(
             list(dict.fromkeys(row["restaurant_id"] for row in rows))
         )
-        return [
+        candidates = [
             FoodRestaurantCandidate(
                 anchor_place_id=row["anchor_place_id"],
                 food_item_id=row["food_item_id"],
@@ -291,10 +299,19 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
                 offer_confidence=float(row["offer_confidence"]),
                 distance_km=row["distance_km"],
                 threshold_km=row["threshold_km"],
+                proximity_source=row["proximity_source"],
                 metadata=metadata[row["restaurant_id"]],
             )
             for row in rows
             if row["restaurant_id"] in metadata
+        ]
+        required = set(required_meals or [])
+        if not required:
+            return candidates
+        return [
+            candidate
+            for candidate in candidates
+            if required & set(meals_for_hours(candidate.metadata.opening_hours))
         ]
 
     @staticmethod

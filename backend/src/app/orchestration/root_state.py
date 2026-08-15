@@ -9,6 +9,7 @@ from app.modules.information_finder.public import InformationFinderOutput
 from app.modules.itinerary_planner.public import (
     ItineraryPlannerInput,
     ItineraryPlannerOutput,
+    PlannerPreflightFailure,
 )
 from app.modules.place_checker.public import PlaceCheckerOutput, PlaceCheckerResult
 from app.modules.plan_editor.public import EditOperation
@@ -38,6 +39,7 @@ class RootState(TypedDict, total=False):
     place_output: PlaceCheckerOutput | PlaceCheckerResult
     planner_input: ItineraryPlannerInput
     planner_output: ItineraryPlannerOutput
+    planner_preflight_failure: PlannerPreflightFailure
     intent: TripIntent
     itinerary: Itinerary
 

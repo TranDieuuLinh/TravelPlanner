@@ -14,7 +14,7 @@ export default function ListingDetailPage() {
   const params = useParams();
   const listingId = params.listingId as string;
   const router = useRouter();
-  const { loading: authLoading, user } = useAuth();
+  const { user } = useAuth();
 
   const [listing, setListing] = useState<ListingDetail | null>(null);
   const [loading, setLoading] = useState(true);

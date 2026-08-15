@@ -2,7 +2,6 @@
 
 import {
   type ExploreResponse,
-  type ExplorerTimingReport,
   type PlanTimingReport,
   type TravelPlan,
   type UrlImportJob

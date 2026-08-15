@@ -47,6 +47,7 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
         "trip",
         "places",
         "food",
+        "foodCoverage",
         "accommodations",
         "excludedCandidates",
     }
@@ -95,6 +96,16 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
     assert food["placeId"] == "kg:pho"
     assert food["priority"] == "user_input"
     assert food["supportedMeals"] == ["lunch"]
+    assert output["foodCoverage"]["days"] == result.trip_context.days
+    assert set(output["foodCoverage"]) == {
+        "days",
+        "hardComplete",
+        "reserveComplete",
+        "hardAssignments",
+        "hardMissingSlots",
+        "reserveAssignments",
+        "reserveMissingSlots",
+    }
 
 
 def test_compact_output_adds_selected_special_food_near_anchor() -> None:
@@ -139,7 +150,8 @@ def test_compact_output_adds_selected_special_food_near_anchor() -> None:
     assert selected.priority == "special_near"
     assert selected.relationships == [anchor.place_id]
     assert "food-item:food:bun-cha" in selected.tags
-    assert "Bún chả" in selected.notes
+    assert selected.notes is not None
+    assert "Bún chả" in selected.notes.text
 
 
 def test_resolved_item_promotes_duplicate_pool_candidate_to_user_input() -> None:

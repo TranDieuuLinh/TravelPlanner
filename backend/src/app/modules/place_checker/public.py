@@ -74,6 +74,9 @@ from app.modules.place_checker.service import TripContextBuilder
 from app.modules.place_checker.factory import build_postgres_place_checker_pipeline
 from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
 from app.modules.place_checker.food_selection_contract import (
+    FoodMealCoverage,
+    FoodMealSlot,
+    FoodMealSlotAssignment,
     FoodRestaurantCandidate,
     FoodSelectionAnchor,
     FoodSelectionBatch,
@@ -101,6 +104,9 @@ __all__ = [
     "ItemResolutionBatch",
     "GapAnalysis",
     "FoodRestaurantCandidate",
+    "FoodMealCoverage",
+    "FoodMealSlot",
+    "FoodMealSlotAssignment",
     "FoodRestaurantSelectionService",
     "FoodSelectionAnchor",
     "FoodSelectionBatch",

@@ -3,6 +3,24 @@ from app.modules.itinerary_planner.tests.optimizer_fixtures import (
     base_payload,
     solve_payload,
 )
+from app.modules.itinerary_planner.optimizer.config import SolverConfig
+
+
+def test_default_solver_is_deterministic_and_time_bounded() -> None:
+    config = SolverConfig()
+
+    assert config.num_search_workers == 1
+    assert config.priority_timeout_seconds == 2
+    assert config.utility_timeout_seconds == 5
+    assert config.utility_relative_gap_limit == 0.05
+
+
+def test_utility_gap_does_not_claim_exact_optimality() -> None:
+    result, _, _ = solve_payload(base_payload())
+
+    assert result.passes[0].optimality_proven
+    assert not result.passes[1].optimality_proven
+    assert not result.optimality_proven
 
 
 def test_relationship_is_counted_once_and_repeated_tags_are_penalized() -> None:
@@ -20,6 +38,7 @@ def test_relationship_is_counted_once_and_repeated_tags_are_penalized() -> None:
         "specialExperienceValue",
         "preferenceValue",
         "placeQualityValue",
+        "popularityValue",
         "timeFitValue",
         "relationshipValue",
     }
@@ -38,7 +57,9 @@ def test_vietnamese_knowledge_graph_tags_drive_diversity_penalty() -> None:
     result, prepared, _ = solve_payload(base_payload(places=[first, second]))
 
     assert prepared.candidate_by_id["temple_a"].tags == [
-        "tâm_linh", "văn_hóa", "kiến_trúc"
+        "tâm_linh",
+        "văn_hóa",
+        "kiến_trúc",
     ]
     assert result.objective_components["activityDiversityCost"] > 0
 

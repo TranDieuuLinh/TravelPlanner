@@ -1,5 +1,9 @@
 from app.modules.itinerary_planner.contract import (
+    FoodCoverageFeasibility,
     ItineraryPlannerInput,
+    MealSlotAssignment,
+    MissingMealSlot,
+    PlannerPreflightFailure,
 )
 from app.modules.itinerary_planner.output_contract import ItineraryPlannerOutput
 from app.modules.itinerary_planner.adapters import (
@@ -37,6 +41,10 @@ def build_valhalla_itinerary_planner_graph(
 
 __all__ = [
     "ItineraryPlannerInput",
+    "FoodCoverageFeasibility",
+    "MealSlotAssignment",
+    "MissingMealSlot",
+    "PlannerPreflightFailure",
     "ItineraryPlannerOutput",
     "build_itinerary_planner_graph",
     "build_valhalla_itinerary_planner_graph",

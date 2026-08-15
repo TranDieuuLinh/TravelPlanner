@@ -2,8 +2,13 @@ import asyncio
 from functools import partial
 from time import monotonic
 
-from app.modules.itinerary_planner.contract import ItineraryPlannerInput
+from app.modules.itinerary_planner.contract import (
+    ItineraryPlannerInput,
+    MissingMealSlot,
+    PlannerPreflightFailure,
+)
 from app.modules.itinerary_planner.finalization import finalize_itinerary
+from app.modules.itinerary_planner.hybrid import optimize_hybrid_itinerary
 from app.modules.itinerary_planner.optimizer import (
     ObjectiveWeights,
     SolverConfig,
@@ -41,7 +46,16 @@ async def prepare_problem_node(state: ItineraryPlannerState) -> dict:
     try:
         prepared = prepare_planning_problem(payload)
     except PlanningPreflightError as exc:
-        return {"error": str(exc)}
+        return {
+            "error": str(exc),
+            "error_code": "missing_meal_coverage",
+            "preflight_failure": PlannerPreflightFailure(
+                missing=[
+                    MissingMealSlot(day=item.day, meal=item.meal)
+                    for item in exc.missing_meals
+                ]
+            ),
+        }
     return {
         "prepared_problem": prepared,
         "warnings": list(prepared.warnings),
@@ -99,7 +113,7 @@ def create_optimize_itinerary_node(
                 "optimizer.solve",
                 lambda: asyncio.to_thread(
                     partial(
-                        optimize_itinerary,
+                        optimize_hybrid_itinerary,
                         problem,
                         routing,
                         config=config,
@@ -119,7 +133,10 @@ def create_optimize_itinerary_node(
                     "passCount": len(value.passes),
                     "optimalityProven": value.optimality_proven,
                 },
-                metadata={"provider": "ortools", "solver": "cp_sat"},
+                metadata={
+                    "provider": "ortools",
+                    "solver": "hybrid_greedy_local_cp_sat",
+                },
             )
         except OptimizationError as exc:
             return {

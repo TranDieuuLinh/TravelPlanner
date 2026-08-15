@@ -1,10 +1,15 @@
 import type {
+  OpeningHourEntry,
   PlanItem,
+  PlanSourceNote,
+  TransportOption,
   TransportLeg,
   TravelPlan,
 } from "@/features/planner/api/plans";
+import { WALKING_DISPLAY_THRESHOLD_METERS } from "./transport-options.ts";
 
 export type PlannerOutputStop = {
+  itemId?: string;
   placeId: string;
   name: string;
   kind: "place" | "food";
@@ -15,9 +20,16 @@ export type PlannerOutputStop = {
   mealType?: string | null;
   coordinates: { latitude: number; longitude: number };
   address?: string | null;
-  notes?: string | null;
+  notes?: PlanSourceNote | string | null;
+  personalNotes?: string | null;
   tags?: string[];
   imageUrls?: string[];
+  rating?: number | null;
+  reviewCount?: number | null;
+  openingHours?: Record<
+    string,
+    Array<{ startMinute: number; endMinute: number }> | null
+  > | null;
   costPerPerson: number;
 };
 
@@ -92,6 +104,89 @@ function formatMinute(value: number): string {
   return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 }
 
+const WALKING_METERS_PER_MINUTE = 5_000 / 60;
+
+function plannerLegToTransportLeg(
+  leg: PlannerOutputLeg,
+  fromItemId: string | null,
+  toItemId: string | null,
+  fromPlace: string,
+  toPlace: string,
+): TransportLeg {
+  const geometryCoordinates = decodeValhallaPolyline(leg.encodedPolyline);
+  const car: TransportOption = {
+    mode: "car",
+    distanceMeters: leg.distanceMeters,
+    estimatedDurationMinutes: leg.durationMinutes,
+    geometryCoordinates,
+    source: leg.provider,
+    verified: leg.geometryAvailable && geometryCoordinates.length >= 2,
+  };
+
+  if (leg.distanceMeters >= WALKING_DISPLAY_THRESHOLD_METERS) {
+    return {
+      ...car,
+      fromItemId,
+      toItemId,
+      fromPlace,
+      toPlace,
+      alternatives: [],
+    };
+  }
+
+  return {
+    ...car,
+    fromItemId,
+    toItemId,
+    fromPlace,
+    toPlace,
+    mode: "walk",
+    estimatedDurationMinutes: Math.max(
+      1,
+      Math.ceil(leg.distanceMeters / WALKING_METERS_PER_MINUTE),
+    ),
+    source: "post_planner_walking_estimate",
+    verified: false,
+    alternatives: [car],
+  };
+}
+
+function plannerOpeningHoursToEntries(
+  openingHours: PlannerOutputStop["openingHours"],
+  days: ItineraryPlannerOutput["days"],
+): OpeningHourEntry[] {
+  if (!openingHours) return [];
+
+  return Object.entries(openingHours).flatMap<OpeningHourEntry>(
+    ([dayNumber, intervals]) => {
+      const day = days.find((candidate) => String(candidate.day) === dayNumber);
+      if (!day) return [];
+      const date = new Date(`${day.date}T12:00:00`);
+      if (Number.isNaN(date.getTime())) return [];
+      const jsDay = date.getDay();
+      const dayOfWeek = jsDay === 0 ? 7 : jsDay;
+
+      if (intervals === null) return [];
+      if (intervals.length === 0) {
+        return [{ dayOfWeek, rawTimeSlots: "Đóng cửa" }];
+      }
+      const is24Hours = intervals.some(
+        ({ startMinute, endMinute }) => startMinute === 0 && endMinute === 1440,
+      );
+      return [{
+        dayOfWeek,
+        is24Hours,
+        rawTimeSlots: is24Hours
+          ? null
+          : intervals
+              .map(({ startMinute, endMinute }) =>
+                `${formatMinute(startMinute)}–${formatMinute(endMinute)}`)
+              .join(", "),
+      }];
+    },
+  );
+}
+
 // Valhalla uses Google's encoded-polyline algorithm with six-digit precision.
 function decodeValhallaPolyline(encoded: string | null | undefined): [number, number][] {
   if (!encoded) return [];
@@ -136,9 +231,13 @@ export function plannerOutputToTravelPlan(
 
   const days = output.days.map((day) => {
     const itemIdByPlace = new Map<string, string>();
-    const nameByPlace = new Map<string, string>();
+    const nameByPlace = new Map<string, string>(
+      output.accommodation
+        ? [[output.accommodation.placeId, output.accommodation.name]]
+        : [],
+    );
     const items: PlanItem[] = day.stops.map((stop, index) => {
-      const itemId = `planner-${day.day}-${index + 1}-${stop.placeId}`;
+      const itemId = stop.itemId ?? `planner-${day.day}-${index + 1}-${stop.placeId}`;
       itemIdByPlace.set(stop.placeId, itemId);
       nameByPlace.set(stop.placeId, stop.name);
       return {
@@ -155,26 +254,23 @@ export function plannerOutputToTravelPlan(
         tags: stop.tags ?? [],
         imageUrls: stop.imageUrls ?? [],
         notes: stop.notes ?? null,
+        personalNotes: stop.personalNotes ?? null,
+        rating: stop.rating ?? null,
+        reviewCount: stop.reviewCount ?? null,
+        openingHours: plannerOpeningHoursToEntries(stop.openingHours, output.days),
         latitude: stop.coordinates.latitude,
         longitude: stop.coordinates.longitude,
       };
     });
-    const transportLegs: TransportLeg[] = day.legs.map((leg) => {
-      const geometryCoordinates = decodeValhallaPolyline(leg.encodedPolyline);
-      return {
-        fromItemId: itemIdByPlace.get(leg.fromPlaceId) ?? null,
-        toItemId: itemIdByPlace.get(leg.toPlaceId) ?? null,
-        fromPlace: nameByPlace.get(leg.fromPlaceId) ?? leg.fromPlaceId,
-        toPlace: nameByPlace.get(leg.toPlaceId) ?? leg.toPlaceId,
-        mode: "car",
-        distanceMeters: leg.distanceMeters,
-        estimatedDurationMinutes: leg.durationMinutes,
-        geometryCoordinates,
-        source: leg.provider,
-        verified: leg.geometryAvailable && geometryCoordinates.length >= 2,
-        alternatives: [],
-      };
-    });
+    const transportLegs: TransportLeg[] = day.legs.map((leg) =>
+      plannerLegToTransportLeg(
+        leg,
+        itemIdByPlace.get(leg.fromPlaceId) ?? null,
+        itemIdByPlace.get(leg.toPlaceId) ?? null,
+        nameByPlace.get(leg.fromPlaceId) ?? leg.fromPlaceId,
+        nameByPlace.get(leg.toPlaceId) ?? leg.toPlaceId,
+      )
+    );
     return { day: day.day, items, transportLegs };
   });
 
@@ -189,6 +285,10 @@ export function plannerOutputToTravelPlan(
           placeId: output.accommodation.placeId,
           name: output.accommodation.name,
           address: output.accommodation.address,
+          latitude: output.accommodation.coordinates.latitude,
+          longitude: output.accommodation.coordinates.longitude,
+          rating: output.accommodation.rating,
+          reviewCount: output.accommodation.reviewCount,
           pricePerNight: output.accommodation.pricePerNight.cost,
           currency: output.accommodation.pricePerNight.currency,
           nights: output.accommodationNights ?? 0,

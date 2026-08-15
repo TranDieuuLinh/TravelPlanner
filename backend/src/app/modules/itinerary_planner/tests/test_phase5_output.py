@@ -27,9 +27,8 @@ from app.modules.itinerary_planner.tests.routing_fakes import (
 )
 
 FAST_CONFIG = SolverConfig(
-    pass1_timeout_seconds=2,
-    pass2_timeout_seconds=2,
-    pass3_timeout_seconds=4,
+    priority_timeout_seconds=2,
+    utility_timeout_seconds=4,
 )
 
 
@@ -39,6 +38,7 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
             "lake",
             priority="user_input",
             image_urls=["https://example.test/lake.jpg"],
+            opening_hours={"1": [{"startMinute": 480, "endMinute": 1020}]},
         ),
         *continuity_candidates(),
     ]
@@ -52,6 +52,11 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
             "latitude": 21.02 + index / 1000,
             "longitude": 105.84,
         }
+    places[0]["notes"] = {
+        "text": "Đến trước 8 giờ",
+        "sourceType": "url",
+        "sourceUrl": "https://example.test/video",
+    }
     provider = GeneratedRouteDetailProvider()
     graph = build_itinerary_planner_graph(
         GeneratedMatrixProvider(),
@@ -90,6 +95,18 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
     assert output.unscheduled == []
     lake = next(stop for stop in output.days[0].stops if stop.place_id == "lake")
     assert lake.image_urls == ["https://example.test/lake.jpg"]
+    assert lake.rating == 4.7
+    assert lake.review_count == 100
+    assert lake.item_id == "planner:1:lake"
+    assert lake.notes is not None
+    assert lake.notes.source_type == "url"
+    assert lake.personal_notes is None
+    assert {
+        day: [interval.model_dump(by_alias=True) for interval in intervals or []]
+        for day, intervals in (lake.opening_hours or {}).items()
+    } == {
+        "1": [{"startMinute": 480, "endMinute": 1020}]
+    }
     assert [item.period for item in output.source_mix] == ["morning", "evening"]
 
 

@@ -13,6 +13,10 @@ from app.modules.itinerary_planner.optimizer.locks import (
     RepairLocks,
     apply_repair_locks,
 )
+from app.modules.itinerary_planner.optimizer.hints import (
+    InitialSolutionHint,
+    apply_initial_hint,
+)
 from app.modules.itinerary_planner.optimizer.objective import build_objective
 from app.modules.itinerary_planner.optimizer.result import (
     OptimizationResult,
@@ -44,14 +48,25 @@ def optimize_itinerary(
     config: SolverConfig | None = None,
     weights: ObjectiveWeights | None = None,
     repair_locks: RepairLocks | None = None,
+    initial_hint: InitialSolutionHint | None = None,
 ) -> OptimizationResult:
     selected_config = config or SolverConfig()
     selected_weights = weights or ObjectiveWeights()
     model = cp_model.CpModel()
     variables = create_schedule_variables(model, problem)
-    add_routing_and_budget_constraints(model, problem, routing, variables)
+    add_routing_and_budget_constraints(
+        model,
+        problem,
+        routing,
+        variables,
+        max_inter_stop_wait_minutes=(
+            selected_config.max_inter_stop_wait_minutes
+        ),
+    )
     if repair_locks is not None:
         apply_repair_locks(model, problem, variables, repair_locks)
+    if initial_hint is not None:
+        apply_initial_hint(model, variables, initial_hint)
     objective = build_objective(model, problem, routing, variables, selected_weights)
 
     user_vars = [
@@ -66,41 +81,35 @@ def optimize_itinerary(
     ]
     passes: list[SolverPassResult] = []
 
-    model.Maximize(sum(user_vars))
-    pass1_solver, pass1 = _solve(
+    user_count = sum(user_vars)
+    url_count = sum(url_vars)
+    priority_objective = user_count * (len(url_vars) + 1) + url_count
+    model.Maximize(priority_objective)
+    priority_solver, priority_pass = _solve(
         model,
-        "user_input",
-        selected_config.pass1_timeout_seconds,
+        "priority",
+        selected_config.priority_timeout_seconds,
         selected_config,
-        sum(user_vars),
+        priority_objective,
+        relative_gap_limit=0,
     )
-    passes.append(pass1)
-    best_user_count = sum(pass1_solver.Value(variable) for variable in user_vars)
-    model.Add(sum(user_vars) == best_user_count)
-    _add_hints(model, variables, pass1_solver)
-
-    model.Maximize(sum(url_vars))
-    pass2_solver, pass2 = _solve(
-        model,
-        "url",
-        selected_config.pass2_timeout_seconds,
-        selected_config,
-        sum(url_vars),
-    )
-    passes.append(pass2)
-    best_url_count = sum(pass2_solver.Value(variable) for variable in url_vars)
-    model.Add(sum(url_vars) == best_url_count)
-    _add_hints(model, variables, pass2_solver)
+    passes.append(priority_pass)
+    best_user_count = sum(priority_solver.Value(variable) for variable in user_vars)
+    best_url_count = sum(priority_solver.Value(variable) for variable in url_vars)
+    model.Add(user_count == best_user_count)
+    model.Add(url_count == best_url_count)
+    _add_hints(model, variables, priority_solver)
 
     model.Maximize(objective.utility)
-    final_solver, pass3 = _solve(
+    final_solver, utility_pass = _solve(
         model,
         "utility",
-        selected_config.pass3_timeout_seconds,
+        selected_config.utility_timeout_seconds,
         selected_config,
         objective.utility,
+        relative_gap_limit=selected_config.utility_relative_gap_limit,
     )
-    passes.append(pass3)
+    passes.append(utility_pass)
     return extract_result(
         final_solver,
         problem,
@@ -114,12 +123,17 @@ def optimize_itinerary(
 def _solve(
     model: cp_model.CpModel,
     name: str,
-    timeout_seconds: float,
+    timeout_seconds: float | None,
     config: SolverConfig,
     reported_objective: cp_model.LinearExpr,
+    *,
+    relative_gap_limit: float,
 ) -> tuple[cp_model.CpSolver, SolverPassResult]:
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = timeout_seconds
+    if timeout_seconds is not None:
+        solver.parameters.max_time_in_seconds = timeout_seconds
+    if relative_gap_limit:
+        solver.parameters.relative_gap_limit = relative_gap_limit
     solver.parameters.num_search_workers = config.num_search_workers
     solver.parameters.random_seed = config.random_seed
     solver.parameters.log_search_progress = config.log_search_progress
@@ -134,7 +148,7 @@ def _solve(
         status=status,
         objective_value=solver.Value(reported_objective),
         wall_time_ms=elapsed_ms,
-        optimality_proven=status_code == cp_model.OPTIMAL,
+        optimality_proven=(status_code == cp_model.OPTIMAL and relative_gap_limit == 0),
     )
 
 

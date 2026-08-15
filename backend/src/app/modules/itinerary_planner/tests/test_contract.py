@@ -26,6 +26,42 @@ def test_camel_case_input_round_trips_with_aliases() -> None:
     assert dumped["places"][0]["timeSource"] == "unknown"
 
 
+def test_accepts_place_checker_unique_meal_matching_feasibility() -> None:
+    raw = payload(days=2)
+    raw["foodCoverage"] = {
+        "days": 2,
+        "hardComplete": True,
+        "reserveComplete": False,
+        "hardAssignments": [
+            {"day": 1, "meal": "breakfast", "restaurantId": "food:breakfast"}
+        ],
+        "hardMissingSlots": [],
+        "reserveAssignments": [],
+        "reserveMissingSlots": [
+            {"day": 2, "meal": "dinner"},
+        ],
+    }
+
+    parsed = ItineraryPlannerInput.model_validate(raw)
+    dumped = parsed.model_dump(mode="json", by_alias=True)
+
+    assert parsed.food_coverage.days == 2
+    assert parsed.food_coverage.hard_assignments[0].restaurant_id == (
+        "food:breakfast"
+    )
+    assert dumped["foodCoverage"]["reserveMissingSlots"] == [
+        {"day": 2, "meal": "dinner"}
+    ]
+
+
+def test_rejects_food_coverage_for_a_different_trip_length() -> None:
+    raw = payload(days=2)
+    raw["foodCoverage"] = {"days": 3}
+
+    with pytest.raises(ValidationError, match="foodCoverage days must match"):
+        ItineraryPlannerInput.model_validate(raw)
+
+
 def test_accepts_estimated_budget_metadata_from_place_checker() -> None:
     raw = payload()
     raw["trip"]["budget"] = {
@@ -65,6 +101,22 @@ def test_candidate_price_cost_is_required() -> None:
         ItineraryPlannerInput.model_validate(payload(places=[place]))
 
     assert error.value.errors()[0]["loc"] == ("places", 0, "price", "cost")
+
+
+def test_candidate_accepts_structured_source_note() -> None:
+    place = candidate("source_note")
+    place["notes"] = {
+        "text": "Đến trước 8 giờ",
+        "sourceType": "url",
+        "sourceUrl": "https://example.test/video",
+    }
+
+    parsed = ItineraryPlannerInput.model_validate(payload(places=[place]))
+    dumped = parsed.model_dump(mode="json", by_alias=True)
+
+    assert parsed.places[0].notes is not None
+    assert parsed.places[0].notes.source_type == "url"
+    assert dumped["places"][0]["notes"] == place["notes"]
 
 
 @pytest.mark.parametrize(

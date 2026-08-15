@@ -1,22 +1,26 @@
 from dataclasses import dataclass
 
+from app.modules.itinerary_planner.policies import MAX_INTER_STOP_WAIT_MINUTES
+
 
 @dataclass(frozen=True, slots=True)
 class SolverConfig:
     num_search_workers: int = 1
-    pass1_timeout_seconds: float = 30
-    pass2_timeout_seconds: float = 30
-    pass3_timeout_seconds: float = 30
+    priority_timeout_seconds: float | None = 2
+    utility_timeout_seconds: float | None = 5
+    utility_relative_gap_limit: float = 0.05
     random_seed: int = 42
     log_search_progress: bool = False
+    max_inter_stop_wait_minutes: int | None = MAX_INTER_STOP_WAIT_MINUTES
 
 
 @dataclass(frozen=True, slots=True)
 class ObjectiveWeights:
-    policy_version: str = "itinerary-utility-v2-source-mix"
-    special_experience: int = 800
+    policy_version: str = "itinerary-utility-v4-special-popularity"
+    special_experience: int = 1_200
     preference_max: int = 600
     quality_max: int = 300
+    popularity_max: int = 250
     time_fit: int = 200
     relationship: int = 250
     diversity_strong: int = 180
@@ -39,24 +43,60 @@ class ObjectiveWeights:
 
 STRONG_TAGS = frozenset(
     {
-        "museum", "shopping", "nightlife", "spa", "sightseeing", "hands_on",
-        "tâm_linh", "mua_sắm", "nghỉ_dưỡng", "thư_giãn", "rượu_bia",
-        "drunk", "18", "quân_sự", "thể_thao",
+        "museum",
+        "shopping",
+        "nightlife",
+        "spa",
+        "sightseeing",
+        "hands_on",
+        "tâm_linh",
+        "mua_sắm",
+        "nghỉ_dưỡng",
+        "thư_giãn",
+        "rượu_bia",
+        "drunk",
+        "18",
+        "quân_sự",
+        "thể_thao",
     }
 )
 MEDIUM_TAGS = frozenset(
     {
-        "indoor", "outdoor", "walking", "performance", "photography",
-        "kiến_trúc", "chụp_ảnh", "núi", "biển", "di_tích", "gia_đình",
-        "sang_trọng", "sinh_thái", "cảnh_quan", "kiến_thức",
+        "indoor",
+        "outdoor",
+        "walking",
+        "performance",
+        "photography",
+        "kiến_trúc",
+        "chụp_ảnh",
+        "núi",
+        "biển",
+        "di_tích",
+        "gia_đình",
+        "sang_trọng",
+        "sinh_thái",
+        "cảnh_quan",
+        "kiến_thức",
     }
 )
 LIGHT_TAGS = frozenset(
     {
-        "culture", "history", "nature", "local_experience", "văn_hóa",
-        "lịch_sử", "thiên_nhiên", "địa_phương", "ẩm_thực", "đồ_uống",
-        "phong_cách_việt", "phong_cách_thái", "phong_cách_nhật",
-        "phong_cách_hàn", "phong_cách_trung_hoa", "phong_cách_phương_tây",
+        "culture",
+        "history",
+        "nature",
+        "local_experience",
+        "văn_hóa",
+        "lịch_sử",
+        "thiên_nhiên",
+        "địa_phương",
+        "ẩm_thực",
+        "đồ_uống",
+        "phong_cách_việt",
+        "phong_cách_thái",
+        "phong_cách_nhật",
+        "phong_cách_hàn",
+        "phong_cách_trung_hoa",
+        "phong_cách_phương_tây",
         "giá_rẻ",
     }
 )

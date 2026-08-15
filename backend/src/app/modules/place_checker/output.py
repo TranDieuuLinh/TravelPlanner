@@ -27,7 +27,10 @@ from app.modules.place_checker.enums import (
 )
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
 from app.modules.place_checker.item_contract import ItemResolutionBatch
-from app.modules.place_checker.food_selection_contract import FoodSelectionBatch
+from app.modules.place_checker.food_selection_contract import (
+    FoodMealCoverage,
+    FoodSelectionBatch,
+)
 from app.modules.place_checker.output_contract import (
     CheckedPlace,
     PlaceCheckerExecutionMetadata,
@@ -127,6 +130,11 @@ class PlaceCheckerOutputAssembler:
             food_restaurant_selections=(
                 food_selection.selections if food_selection else []
             ),
+            food_meal_coverage=(
+                food_selection.meal_coverage
+                if food_selection
+                else FoodMealCoverage(days=context.days)
+            ),
             budget_analysis=analysis.budget,
             capacity_analysis=analysis.capacity,
             coverage_analysis=analysis.coverage,
@@ -220,6 +228,7 @@ class PlaceCheckerOutputAssembler:
             image_urls=metadata.image_urls if metadata else [],
             rating=metadata.rating if metadata else None,
             review_count=metadata.review_count if metadata else None,
+            provider_note=metadata.source_note if metadata else None,
             duration=CheckedDuration(
                 minimum_minutes=metadata.minimum_duration_minutes if metadata else None,
                 typical_minutes=metadata.typical_duration_minutes if metadata else None,

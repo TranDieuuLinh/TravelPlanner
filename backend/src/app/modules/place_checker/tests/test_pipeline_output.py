@@ -248,6 +248,8 @@ def test_pipeline_builds_rich_output_and_planning_projection() -> None:
     assert projection.destination_adm_id == ADM_ID
     assert result.metadata.correlation_id == "correlation-1"
     assert metrics.records
+    assert result.status.value == "blocked"
+    assert any("Planner candidate pools are incomplete" in item for item in result.warnings)
 
 
 def test_pipeline_graph_exposes_result_without_day_or_route_fields() -> None:
@@ -288,7 +290,7 @@ def test_pipeline_graph_accepts_raw_camel_case_payload() -> None:
     assert state["result"].trip_context.destination.adm_id == ADM_ID
 
 
-def test_orchestration_projects_ready_explorer_output_into_rich_pipeline() -> None:
+def test_orchestration_blocks_incomplete_candidate_pools_before_planner() -> None:
     raw = payload().model_dump(
         mode="json", by_alias=True, exclude={"validation_issues"}
     )
@@ -328,17 +330,9 @@ def test_orchestration_projects_ready_explorer_output_into_rich_pipeline() -> No
     )
 
     assert isinstance(update["place_output"], PlaceCheckerResult)
-    assert any(
-        place.place_id == "kg:mausoleum"
-        for place in update["planner_input"].places
-    )
-    assert update["planner_input"].trip.start_date == explorer_output.start_date
-    assert update["planner_input"].trip.timezone == "Asia/Ho_Chi_Minh"
-    assert all(
-        place.priority.value
-        in {"user_input", "url", "special_experience", "special_near"}
-        for place in update["planner_input"].places
-    )
+    assert update["place_output"].status.value == "blocked"
+    assert "planner_input" not in update
+    assert any("Planner candidate pools are incomplete" in item for item in update["warnings"])
     assert update["place_output"].trip_context.destination.adm_id == ADM_ID
     assert update["place_output"].schema_version == "place_checker.v1"
 

@@ -1,5 +1,7 @@
 "use client";
 
+import "@/styles/global/explore.css";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";

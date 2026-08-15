@@ -18,6 +18,7 @@ from app.modules.place_checker.enums import (
     SimilarityMethod,
 )
 from app.shared.contracts.place import Coordinates
+from app.shared.contracts.source_note import SourceNote
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 from app.shared.tools.search_places import ProviderAttempt
 
@@ -103,6 +104,7 @@ class PlaceMetadata(ContractModel):
     image_urls: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
+    source_note: SourceNote | None = None
     minimum_duration_minutes: int | None = Field(default=None, ge=1, le=1440)
     typical_duration_minutes: int | None = Field(default=None, ge=1, le=1440)
     maximum_duration_minutes: int | None = Field(default=None, ge=1, le=1440)

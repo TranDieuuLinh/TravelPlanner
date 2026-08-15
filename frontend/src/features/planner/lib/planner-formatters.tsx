@@ -2,8 +2,6 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type {
   ExplorerContext,
   PlaceCategory,
-  TransportOption,
-  TravelPlan,
 } from "@/features/planner/api/plans";
 import { dateKeyForTripDay } from "@/features/planner/utils/plannerCoordinates";
 import {

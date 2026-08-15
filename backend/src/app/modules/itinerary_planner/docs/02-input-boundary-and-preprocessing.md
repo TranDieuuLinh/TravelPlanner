@@ -8,7 +8,7 @@ và CP-SAT được triển khai.
 ## Phạm vi
 
 Phase này bắt đầu khi FinalItineraryPlanner nhận JSON `trip + places +
-food`. Module coi dữ liệu upstream là input duy nhất và không:
+food + foodCoverage`. Module coi dữ liệu upstream là input duy nhất và không:
 
 - query database hoặc Knowledge Graph;
 - search thêm place/food;
@@ -17,6 +17,13 @@ food`. Module coi dữ liệu upstream là input duy nhất và không:
 
 Root orchestration sau này chỉ được map public contract. Mọi fallback,
 validation và business rule của Planner phải nằm trong module này.
+
+Với chuyến từ ba ngày và đủ TravelPlace làm geographic anchors, preprocessing
+dùng deterministic farthest-first centers rồi giới hạn optional candidate vào
+tối đa hai ngày có center gần nhất. `user_input` và URL giữ nguyên mọi ngày
+khả thi. Restaurant có relationship đi theo day-domain của TravelPlace liên
+kết; sau projection, meal coverage được kiểm tra và tự mở lại food-day gần nhất
+nếu thiếu breakfast/lunch/dinner.
 
 ## Public input contract
 
@@ -35,6 +42,15 @@ JSON bên ngoài dùng camelCase; Pydantic/Python dùng snake_case với alias.
   },
   "places": [],
   "food": [],
+  "foodCoverage": {
+    "days": 3,
+    "hardComplete": true,
+    "reserveComplete": false,
+    "hardAssignments": [],
+    "hardMissingSlots": [],
+    "reserveAssignments": [],
+    "reserveMissingSlots": []
+  },
   "upstreamWarnings": []
 }
 ```
@@ -49,6 +65,11 @@ openingHours, preferredTimeWindows, price, relationships
 Mỗi food dùng cùng shape và thêm `supportedMeals`. Planner chỉ dùng
 `tags`; không có field `styles` và không tính Style riêng.
 
+Candidate có thể mang source-owned
+`notes={text,sourceType,sourceUrl}`. Planner truyền object này nguyên vẹn sang
+stop output, gắn `itemId` ổn định và khởi tạo `personalNotes=null`; Trip Chat
+quản lý mutation ghi chú cá nhân sau khi snapshot đã được tạo.
+
 ## Pydantic models đã triển khai
 
 Trong `contract.py`, tách các model sau:
@@ -62,8 +83,9 @@ PlannerPrice(cost, currency)
 PlannerCandidate(...)
 PlannerFoodCandidate(..., supportedMeals)
 PlannerAccommodation(..., coordinates, pricePerNight)
+FoodCoverageFeasibility(... hard/reserve assignments và missing slots)
 UpstreamCandidateExclusion(..., reasonCode, message)
-ItineraryPlannerInput(trip, places, food, accommodations, excludedCandidates, upstreamWarnings)
+ItineraryPlannerInput(trip, places, food, foodCoverage, accommodations, excludedCandidates, upstreamWarnings)
 ```
 
 `PlannerBudget` còn nhận `source`, `dailyEstimate` và `profileVersion`.
@@ -218,6 +240,10 @@ giờ mục tiêu trong miền khả thi.
 
 Preflight phải phát hiện nếu một ngày/meal không có food candidate nào
 khả thi, thay vì chờ solver trả `INFEASIBLE` không rõ lý do.
+Graph trả thêm `errorCode=missing_meal_coverage` và `preflightFailure.missing[]`
+gồm `day` cùng `meal`. Đây là public diagnostic để orchestration có thể yêu cầu
+PlaceChecker mở rộng đúng phần thiếu; runtime hiện không tự lặp lại toàn bộ
+PlaceChecker nếu chưa có expansion provider riêng.
 
 ## Tags, preference và relationship index
 

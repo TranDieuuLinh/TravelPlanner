@@ -1,168 +1,174 @@
 SPECIAL_FOOD_RESTAURANT_SQL = """
-WITH special_foods AS (
+WITH RECURSIVE adm_descendants(id) AS (
+    SELECT $1::text
+    UNION
+    SELECT child.from_entity_id
+    FROM knowledge_relationships child
+    JOIN adm_descendants parent ON parent.id = child.to_entity_id
+    JOIN knowledge_entities entity ON entity.id = child.from_entity_id
+    WHERE child.relationship_type = 'Located_In'
+      AND entity.entity_type IN ('ADM0', 'ADM1', 'ADM2')
+), scoped_restaurants AS (
+    SELECT DISTINCT restaurant.id, restaurant.canonical_name
+    FROM knowledge_entities restaurant
+    JOIN knowledge_relationships location
+      ON location.from_entity_id = restaurant.id
+     AND location.relationship_type = 'Located_In'
+    WHERE restaurant.entity_type = 'Restaurant'
+      AND restaurant.status <> 'rejected'
+      AND location.to_entity_id IN (SELECT id FROM adm_descendants)
+      AND NOT (restaurant.id = ANY($5::text[]))
+), anchor_coordinates AS (
+    SELECT anchor.anchor_place_id,
+           NULLIF(max(property.value) FILTER (
+               WHERE property.key = 'latitude'
+           ), '')::double precision AS latitude,
+           NULLIF(max(property.value) FILTER (
+               WHERE property.key = 'longitude'
+           ), '')::double precision AS longitude
+    FROM unnest($2::text[]) AS anchor(anchor_place_id)
+    LEFT JOIN knowledge_properties property
+      ON property.entity_id = anchor.anchor_place_id
+    GROUP BY anchor.anchor_place_id
+), restaurant_coordinates AS (
+    SELECT restaurant.id AS restaurant_id,
+           restaurant.canonical_name AS restaurant_name,
+           NULLIF(max(property.value) FILTER (
+               WHERE property.key = 'latitude'
+           ), '')::double precision AS latitude,
+           NULLIF(max(property.value) FILTER (
+               WHERE property.key = 'longitude'
+           ), '')::double precision AS longitude
+    FROM scoped_restaurants restaurant
+    LEFT JOIN knowledge_properties property
+      ON property.entity_id = restaurant.id
+    GROUP BY restaurant.id, restaurant.canonical_name
+), distance_pairs AS (
+    SELECT anchor.anchor_place_id,
+           restaurant.restaurant_id,
+           restaurant.restaurant_name,
+           6371.0 * 2.0 * asin(sqrt(LEAST(1.0,
+               power(sin(radians(
+                   (restaurant.latitude - anchor.latitude) / 2.0
+               )), 2)
+               + cos(radians(anchor.latitude))
+               * cos(radians(restaurant.latitude))
+               * power(sin(radians(
+                   (restaurant.longitude - anchor.longitude) / 2.0
+               )), 2)
+           ))) AS distance_km
+    FROM anchor_coordinates anchor
+    CROSS JOIN restaurant_coordinates restaurant
+    WHERE anchor.latitude IS NOT NULL
+      AND anchor.longitude IS NOT NULL
+      AND restaurant.latitude IS NOT NULL
+      AND restaurant.longitude IS NOT NULL
+), proximity_evidence AS (
+    SELECT pair.*,
+           edge.has_special_near,
+           edge.edge_threshold_km,
+           row_number() OVER (
+               PARTITION BY pair.anchor_place_id
+               ORDER BY pair.distance_km, pair.restaurant_id
+           ) AS proximity_rank
+    FROM distance_pairs pair
+    LEFT JOIN LATERAL (
+        SELECT bool_or(true) AS has_special_near,
+               min(NULLIF(
+                   relation.recommendations::jsonb->>'threshold_km', ''
+               )::double precision) AS edge_threshold_km
+        FROM knowledge_relationships relation
+        WHERE relation.relationship_type = 'Special_Near'
+          AND (
+              (relation.from_entity_id = pair.anchor_place_id
+               AND relation.to_entity_id = pair.restaurant_id)
+              OR
+              (relation.to_entity_id = pair.anchor_place_id
+               AND relation.from_entity_id = pair.restaurant_id)
+          )
+    ) edge ON true
+    WHERE $3::double precision IS NULL OR pair.distance_km <= $3
+), nearby_restaurants AS (
+    SELECT *
+    FROM proximity_evidence
+    WHERE proximity_rank <= $4
+), special_foods AS (
     SELECT food.id AS food_item_id,
            food.canonical_name AS food_item_name,
-           COALESCE(
-               NULLIF(special.recommendations::jsonb->>'priority', '')::double precision,
-               50
-           ) AS food_priority,
-           COALESCE(
+           LEAST(1.0, GREATEST(0.0, COALESCE(
+               NULLIF(special.recommendations::jsonb->>'priority', '')::double precision
+                   / 100.0,
+               0.50
+           ))) AS food_priority,
+           LEAST(1.0, GREATEST(0.0, COALESCE(
                NULLIF(special.recommendations::jsonb->>'confidence', '')::double precision,
                0.70
-           ) AS food_confidence
+           ))) AS food_confidence
     FROM knowledge_relationships special
     JOIN knowledge_entities food ON food.id = special.to_entity_id
     WHERE special.from_entity_id = $1
       AND special.relationship_type = 'Special_Experience'
       AND food.entity_type = 'FoodItem'
       AND COALESCE(special.recommendations::jsonb->>'status', 'verified') <> 'rejected'
-), nearby_restaurants AS (
-    SELECT anchor.anchor_place_id,
-           restaurant.id AS restaurant_id,
-           restaurant.canonical_name AS restaurant_name,
-           NULLIF(near_edge.recommendations::jsonb->>'distance_km', '')::double precision
-               AS distance_km,
-           NULLIF(near_edge.recommendations::jsonb->>'threshold_km', '')::double precision
-               AS threshold_km,
-           row_number() OVER (
-               PARTITION BY anchor.anchor_place_id, restaurant.id
-               ORDER BY NULLIF(
-                   near_edge.recommendations::jsonb->>'distance_km', ''
-               )::double precision NULLS LAST, near_edge.id
-           ) AS edge_rank
-    FROM unnest($2::text[]) AS anchor(anchor_place_id)
-    JOIN knowledge_relationships near_edge
-      ON near_edge.relationship_type = 'Special_Near'
-     AND (
-         near_edge.from_entity_id = anchor.anchor_place_id
-         OR near_edge.to_entity_id = anchor.anchor_place_id
-     )
-    JOIN knowledge_entities restaurant
-      ON restaurant.id = CASE
-          WHEN near_edge.from_entity_id = anchor.anchor_place_id
-              THEN near_edge.to_entity_id
-          ELSE near_edge.from_entity_id
-      END
-     AND restaurant.entity_type = 'Restaurant'
-), special_pairs AS (
-    SELECT nearby.anchor_place_id,
-           nearby.restaurant_id,
-           nearby.restaurant_name,
-           nearby.distance_km,
-           nearby.threshold_km,
-           food.food_item_id,
-           food.food_item_name,
-           food.food_priority,
-           food.food_confidence,
-           food.food_item_id AS offered_food_item_id,
-           food.food_item_name AS offered_food_item_name,
+), food_evidence AS (
+    SELECT relation.from_entity_id AS restaurant_id,
+           special_food.food_item_id,
+           special_food.food_item_name,
+           special_food.food_priority,
+           special_food.food_confidence,
+           special_food.food_item_id AS offered_food_item_id,
+           special_food.food_item_name AS offered_food_item_name,
            'direct_id'::text AS food_match_type,
            1.0::double precision AS food_match_confidence,
-           COALESCE(
-               CASE jsonb_typeof(restaurant_special.recommendations::jsonb)
-                   WHEN 'array' THEN (
-                       SELECT max(NULLIF(evidence->>'confidence', '')::double precision)
-                       FROM jsonb_array_elements(
-                           restaurant_special.recommendations::jsonb
-                       ) AS evidence
-                   )
-                   WHEN 'object' THEN NULLIF(
-                       restaurant_special.recommendations::jsonb->>'confidence', ''
-                   )::double precision
-               END,
-               0.70
-           ) AS offer_confidence
-    FROM nearby_restaurants nearby
-    JOIN knowledge_relationships restaurant_special
-      ON restaurant_special.from_entity_id = nearby.restaurant_id
-     AND restaurant_special.relationship_type = 'Special_Experience'
-    JOIN special_foods food
-      ON food.food_item_id = restaurant_special.to_entity_id
-    WHERE nearby.edge_rank = 1
-      AND COALESCE(
-          restaurant_special.recommendations::jsonb->>'status',
-          'verified'
-      ) <> 'rejected'
-), restaurant_offers AS (
-    SELECT nearby.anchor_place_id,
-           nearby.restaurant_id,
-           nearby.restaurant_name,
-           nearby.distance_km,
-           nearby.threshold_km,
-           food.id AS offered_food_item_id,
-           food.canonical_name AS offered_food_item_name,
-           COALESCE(
-               CASE jsonb_typeof(offer.recommendations::jsonb)
-                   WHEN 'array' THEN (
-                       SELECT max(NULLIF(evidence->>'confidence', '')::double precision)
-                       FROM jsonb_array_elements(
-                           offer.recommendations::jsonb
-                       ) AS evidence
-                   )
-                   WHEN 'object' THEN NULLIF(
-                       offer.recommendations::jsonb->>'confidence', ''
-                   )::double precision
-               END,
-               0.70
-           ) AS offer_confidence
-    FROM nearby_restaurants nearby
-    JOIN knowledge_relationships offer
-      ON offer.from_entity_id = nearby.restaurant_id
-     AND offer.relationship_type = 'Offer_Item'
+           0.70::double precision AS offer_confidence
+    FROM knowledge_relationships relation
+    JOIN special_foods special_food
+      ON special_food.food_item_id = relation.to_entity_id
+    WHERE relation.relationship_type = 'Special_Experience'
+      AND COALESCE(relation.recommendations::jsonb->>'status', 'verified') <> 'rejected'
+    UNION ALL
+    SELECT offer.from_entity_id,
+           food.id,
+           food.canonical_name,
+           0.35::double precision,
+           0.70::double precision,
+           food.id,
+           food.canonical_name,
+           'offer_item_fallback'::text,
+           1.0::double precision,
+           0.70::double precision
+    FROM knowledge_relationships offer
     JOIN knowledge_entities food
       ON food.id = offer.to_entity_id
      AND food.entity_type = 'FoodItem'
-    WHERE nearby.edge_rank = 1
+    WHERE offer.relationship_type = 'Offer_Item'
       AND COALESCE(offer.recommendations::jsonb->>'status', 'verified') <> 'rejected'
-), fallback_pairs AS (
-    SELECT offered.anchor_place_id,
-           offered.restaurant_id,
-           offered.restaurant_name,
-           offered.distance_km,
-           offered.threshold_km,
-           offered.offered_food_item_id AS food_item_id,
-           offered.offered_food_item_name AS food_item_name,
-           0.35::double precision AS food_priority,
-           offered.offer_confidence AS food_confidence,
-           offered.offered_food_item_id,
-           offered.offered_food_item_name,
-           'offer_item_fallback'::text AS food_match_type,
-           1.0::double precision AS food_match_confidence,
-           offered.offer_confidence
-    FROM restaurant_offers offered
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM special_pairs special
-        WHERE special.anchor_place_id = offered.anchor_place_id
-    )
-), pairs AS (
-    SELECT * FROM special_pairs
-    UNION ALL
-    SELECT * FROM fallback_pairs
 )
-SELECT pairs.anchor_place_id,
-       pairs.restaurant_id,
-       pairs.restaurant_name,
-       pairs.distance_km,
-       pairs.threshold_km,
-       pairs.food_item_id,
-       pairs.food_item_name,
-       pairs.offered_food_item_id,
-       pairs.offered_food_item_name,
-       pairs.food_match_type,
-       LEAST(1.0, GREATEST(0.0, pairs.food_match_confidence))
-           AS food_match_confidence,
-       LEAST(1.0, GREATEST(
-           0.0,
-           CASE WHEN pairs.food_priority <= 1.0
-                THEN pairs.food_priority ELSE pairs.food_priority / 100.0 END
-       )) AS food_priority,
-       LEAST(1.0, GREATEST(0.0, pairs.food_confidence)) AS food_confidence,
-       LEAST(1.0, GREATEST(0.0, pairs.offer_confidence)) AS offer_confidence
-FROM pairs
-ORDER BY pairs.anchor_place_id,
-         pairs.food_priority DESC,
-         pairs.distance_km ASC NULLS LAST,
-         pairs.restaurant_id,
-         pairs.food_item_id
+SELECT nearby.anchor_place_id,
+       nearby.restaurant_id,
+       nearby.restaurant_name,
+       nearby.distance_km,
+       COALESCE(nearby.edge_threshold_km, $3, 5.0) AS threshold_km,
+       evidence.food_item_id,
+       evidence.food_item_name,
+       evidence.offered_food_item_id,
+       evidence.offered_food_item_name,
+       evidence.food_match_type,
+       evidence.food_match_confidence,
+       evidence.food_priority,
+       evidence.food_confidence,
+       evidence.offer_confidence,
+       CASE
+           WHEN $3::double precision IS NULL THEN 'general_adm'
+           WHEN nearby.has_special_near THEN 'both'
+           ELSE 'computed_distance'
+       END AS proximity_source
+FROM nearby_restaurants nearby
+JOIN food_evidence evidence ON evidence.restaurant_id = nearby.restaurant_id
+ORDER BY nearby.anchor_place_id,
+         nearby.distance_km,
+         evidence.food_priority DESC,
+         evidence.offer_confidence DESC,
+         nearby.restaurant_id,
+         evidence.food_item_id
 """

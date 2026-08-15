@@ -1,4 +1,4 @@
-import type { PlanNoteSource } from "../api/plans";
+import type { PlanNoteSource, PlanSourceNote } from "../api/plans";
 
 const EMPTY_NOTE_VALUES = new Set([
   "nan",
@@ -73,6 +73,9 @@ export function formatSourceNoteForDisplay(value: unknown): string | null {
 
 const NOTE_SOURCE_LABELS: Record<string, string> = {
   url: "Gợi ý từ nguồn tham khảo",
+  google_maps: "Thông tin từ Google Maps",
+  knowledge_graph: "Thông tin địa điểm",
+  backend: "Gợi ý cho lịch trình",
   image: "Chi tiết từ ảnh tham khảo",
   creator: "Từ creator"
 };
@@ -115,11 +118,12 @@ export type PresentedSourceNote = {
   type: string;
   label: string;
   text: string;
+  sourceUrl?: string | null;
 };
 
 type NoteBearingItem = {
   name?: string;
-  notes?: string | null;
+  notes?: PlanSourceNote | string | null;
   noteSources?: PlanNoteSource[];
   personalNotes?: string | null;
   sourceActivity?: string | null;
@@ -130,11 +134,12 @@ type NoteBearingItem = {
 export function planItemNotePresentation(
   item: NoteBearingItem
 ): PlanItemNotePresentation {
+  const selectedSourceNote = presentedItemSourceNote(item.notes);
   const sources = item.noteSources?.length
     ? item.noteSources
     : inferredNoteSources(item);
 
-  const sourceNotes = sources
+  const legacySourceNotes = sources
     // Provider facts already have dedicated UI (address, rating, hours and
     // links). Repeating them as prose makes the note area look informative
     // without adding any planning value.
@@ -156,7 +161,9 @@ export function planItemNotePresentation(
       ) {
         return null;
       }
-      return text ? { type: source.type, label, text } : null;
+      return text
+        ? { type: source.type, label, text, sourceUrl: safeSourceUrl(source.ref) }
+        : null;
     })
     .filter((note): note is PresentedSourceNote => Boolean(note))
     .filter(
@@ -167,6 +174,10 @@ export function planItemNotePresentation(
         ) === index
     );
 
+  const sourceNotes = selectedSourceNote
+    ? [selectedSourceNote]
+    : legacySourceNotes;
+
   const firstSourceNote = sourceNotes[0] ?? null;
   return {
     sourceNotes,
@@ -175,6 +186,33 @@ export function planItemNotePresentation(
     sourceText: firstSourceNote?.text ?? null,
     personalText: formatPlanNote(item.personalNotes)
   };
+}
+
+function presentedItemSourceNote(
+  note: PlanSourceNote | string | null | undefined
+): PresentedSourceNote | null {
+  if (!note || typeof note === "string") return null;
+  const text = formatSourceNoteForDisplay(note.text);
+  if (!text) return null;
+  return {
+    type: note.sourceType,
+    label: NOTE_SOURCE_LABELS[note.sourceType] ?? "Nguồn tham khảo",
+    text,
+    sourceUrl: safeSourceUrl(note.sourceUrl),
+  };
+}
+
+function safeSourceUrl(value: string | null | undefined): string | null {
+  const url = value?.trim();
+  return url && /^https?:\/\//i.test(url) ? url : null;
+}
+
+export function sourceNoteTextForDisplay(
+  note: PlanSourceNote | string | null | undefined
+): string | null {
+  return formatSourceNoteForDisplay(
+    typeof note === "string" ? note : note?.text
+  );
 }
 
 function fallbackSourceNote(
@@ -193,7 +231,7 @@ function fallbackSourceNote(
   if (sourceType === "image") {
     return `Ảnh tham khảo có thông tin về ${name}.`;
   }
-  return formatPlanNote(item.notes);
+  return formatPlanNote(typeof item.notes === "string" ? item.notes : null);
 }
 
 function isUsefulCreatorStory(value: string, placeName: string): boolean {
