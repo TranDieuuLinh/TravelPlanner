@@ -10,10 +10,11 @@ from app.modules.itinerary_planner.routing import build_routing_problem
 from app.modules.itinerary_planner.tests.factories import candidate, food, payload
 from app.modules.itinerary_planner.tests.routing_fakes import GeneratedMatrixProvider
 
-
 FAST_CONFIG = SolverConfig(
     priority_timeout_seconds=2,
     utility_timeout_seconds=4,
+    utility_parallel_workers=1,
+    max_utility_no_improvement_rounds=0,
 )
 
 
@@ -52,7 +53,7 @@ def continuity_candidates(days: int = 1) -> list[dict]:
     return result
 
 
-def solve_payload(raw: dict, *, matrix_provider=None):
+def solve_payload(raw: dict, *, matrix_provider=None, config: SolverConfig = FAST_CONFIG):
     prepared = prepare_planning_problem(ItineraryPlannerInput.model_validate(raw))
     routing = asyncio.run(
         build_routing_problem(
@@ -61,7 +62,7 @@ def solve_payload(raw: dict, *, matrix_provider=None):
             XanhSmTransportCostEstimator(),
         )
     )
-    return optimize_itinerary(prepared, routing, config=FAST_CONFIG), prepared, routing
+    return optimize_itinerary(prepared, routing, config=config), prepared, routing
 
 
 def base_payload(*, days: int = 1, places: list[dict] | None = None) -> dict:

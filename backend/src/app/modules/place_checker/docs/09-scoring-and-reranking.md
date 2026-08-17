@@ -32,9 +32,10 @@ Chuẩn hóa mỗi component về 0-1 và giữ lại component value để audi
 duplicate experience, low verification và stale operational data. Optional
 candidate có avoid conflict được đánh dấu hard violation và loại trước ranking;
 avoid penalty chỉ còn là thông tin chẩn đoán, không thể giúp candidate quay lại.
-Candidate không tính được giá dùng được từ `price_min`, `price_max`,
-`typical_cost` hoặc tier `free` cũng là hard violation `missing_cost`; candidate
-này không được chiếm quota reranking hoặc đi tiếp sang Planner.
+Food, entertainment hoặc accommodation không tính được giá dùng được từ
+`price_min`, `price_max`, `typical_cost` hoặc tier `free` là hard violation
+`missing_cost`. TravelPlace không bị loại vì thiếu giá: scoring xem giá Planner
+mặc định là miễn phí và compact projection gửi `0 VND`.
 
 Độ liên quan theo Knowledge Graph được ưu tiên cao trong điểm tìm kiếm.
 Candidate có edge `Special_Near`, `Special_Experience`, `Offer_Item` hoặc

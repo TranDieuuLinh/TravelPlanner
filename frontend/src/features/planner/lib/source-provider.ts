@@ -4,6 +4,15 @@ export type SourceProviderKind =
   | "instagram"
   | "url";
 
+type ItinerarySourceItem = {
+  sourceRefs?: string[];
+  notes?: { sourceUrl?: string | null } | string | null;
+  noteSources?: Array<{
+    type: string;
+    ref?: string | null;
+  }>;
+};
+
 const WEB_PAGE_PROVIDERS = new Set([
   "url",
   "web",
@@ -16,6 +25,26 @@ const PLACE_PROVIDER_HOSTS = new Set([
   "maps.google.com",
   "maps.app.goo.gl",
 ]);
+
+/** Collect every user-facing origin URL that may survive into a plan item. */
+export function itinerarySourceUrls(item: ItinerarySourceItem): string[] {
+  const noteUrl =
+    item.notes && typeof item.notes !== "string"
+      ? item.notes.sourceUrl
+      : null;
+  const noteSourceUrls = (item.noteSources ?? [])
+    .filter((source) => source.type === "url")
+    .map((source) => source.ref);
+
+  // The selected note is the item's direct provenance. Prefer it over broader
+  // place references so an official/map URL cannot mask a social import URL.
+  return [noteUrl, ...noteSourceUrls, ...(item.sourceRefs ?? [])]
+    .map((value) => value?.trim() ?? "")
+    .filter(
+      (value, index, values) =>
+        /^https?:\/\//i.test(value) && values.indexOf(value) === index
+    );
+}
 
 /**
  * Resolve only source types that have an icon in the itinerary UI.

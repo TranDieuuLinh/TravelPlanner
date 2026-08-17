@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import pairwise
+from typing import Mapping
 
 from app.modules.itinerary_planner.contract import (
     CandidatePriority,
@@ -11,6 +12,7 @@ from app.modules.itinerary_planner.contract import (
     PlannerCandidate,
     PlannerFoodCandidate,
 )
+from app.modules.itinerary_planner.optimizer.tag_diversity import meaningful_tags
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.quality import (
     bayesian_quality_by_id,
@@ -25,6 +27,7 @@ SPECIAL_EXPERIENCE_SCORE = 4_000
 PREFERENCE_MATCH_SCORE = 2_000
 POPULARITY_SCORE_MAX = 1_500
 RELATIONSHIP_SCORE = 250
+TRIP_TAG_REPEAT_SCORE = 10_000
 PRIORITY_VALUES = {CandidatePriority.user_input, CandidatePriority.url}
 
 
@@ -41,6 +44,7 @@ def build_day_shortlist(
     day: int,
     used_ids: frozenset[str],
     quality_max: int = DEFAULT_QUALITY_MAX,
+    trip_tag_counts: Mapping[str, int] | None = None,
 ) -> DayShortlist:
     quality_by_id = bayesian_quality_by_id(problem.candidate_by_id.values())
     popularity = popularity_by_id(problem.candidate_by_id.values())
@@ -65,6 +69,7 @@ def build_day_shortlist(
         quality_by_id,
         popularity,
         quality_max,
+        trip_tag_counts or {},
     )
     improved_activities = _improve_activity_order(
         tuple(item.place_id for item in selected_activities), routing
@@ -153,6 +158,7 @@ def _select_activities(
     quality_by_id: dict[str, float],
     popularity: dict[str, float],
     quality_max: int,
+    trip_tag_counts: Mapping[str, int],
 ) -> tuple[PlannerCandidate, ...]:
     priority = [item for item in candidates if item.priority in PRIORITY_VALUES]
     optional = [item for item in candidates if item.priority not in PRIORITY_VALUES]
@@ -169,13 +175,30 @@ def _select_activities(
                     popularity,
                     quality_max,
                 )
-                - 25 * _cluster_travel_minutes(item.place_id, selected, routing),
+                - 25 * _cluster_travel_minutes(item.place_id, selected, routing)
+                - _trip_tag_repeat_penalty(item, trip_tag_counts),
                 item.place_id,
             ),
         )
         selected.append(chosen)
         optional.remove(chosen)
     return tuple(selected)
+
+
+def _trip_tag_repeat_penalty(
+    candidate: PlannerCandidate,
+    trip_tag_counts: Mapping[str, int],
+) -> int:
+    if not trip_tag_counts:
+        return 0
+    groups = meaningful_tags(candidate.tags)
+    if not groups:
+        return TRIP_TAG_REPEAT_SCORE
+    if any(not trip_tag_counts.get(tag, 0) for tag in groups):
+        return 0
+    return TRIP_TAG_REPEAT_SCORE * sum(
+        trip_tag_counts.get(tag, 0) for tag in groups
+    )
 
 
 def _cluster_travel_minutes(

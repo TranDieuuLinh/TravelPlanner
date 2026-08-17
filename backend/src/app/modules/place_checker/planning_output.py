@@ -8,29 +8,32 @@ from app.modules.place_checker.food_planning_output import (
 )
 from app.modules.place_checker.output_contract import (
     PlaceCheckerPlannerOutput,
-    PlannerExcludedCandidate,
     PlaceCheckerResult,
+    PlannerExcludedCandidate,
+    PlannerOutputEntertainment,
     PlannerOutputFood,
     PlannerOutputPlace,
     PlannerOutputTrip,
     PlannerParty,
     PlannerPreferences,
 )
-from app.modules.place_checker.planner_semantics import split_trip_preferences
 from app.modules.place_checker.planner_budget import (
     AdmCandidateBudgetEstimator,
     build_planner_budget,
 )
-from app.modules.place_checker.planner_exclusions import build_excluded_candidate
 from app.modules.place_checker.planner_eligibility import is_planner_eligible
+from app.modules.place_checker.planner_exclusions import build_excluded_candidate
+from app.modules.place_checker.planner_semantics import split_trip_preferences
 from app.modules.place_checker.planning_place_projection import PlannerPlaceProjector
 from app.modules.place_checker.planning_projection import PlaceCheckerPlanningProjector
 from app.modules.place_checker.planning_time_windows import meals_for_hours
 from app.modules.place_checker.pool_policy import (
+    activity_pool_target_for_days,
+    entertainment_pool_target_for_days,
     food_pool_target_for_days,
     planner_pool_shortfall,
 )
-from app.modules.place_checker.price_policy import has_usable_cost
+from app.modules.place_checker.price_policy import has_planner_cost
 
 __all__ = ["PlaceCheckerPlannerOutputBuilder", "PlaceCheckerPlanningProjector"]
 
@@ -51,7 +54,7 @@ class PlaceCheckerPlannerOutputBuilder:
         start_date: str,
         timezone: str,
     ) -> PlaceCheckerPlannerOutput:
-        places, food, excluded_candidates = self._candidate_pools(result)
+        places, food, entertainment, excluded_candidates = self._candidate_pools(result)
         accommodations = select_accommodations(result)
         preference_tags, avoid_tags, styles = split_trip_preferences(
             result.trip_context.preferences,
@@ -88,6 +91,7 @@ class PlaceCheckerPlannerOutputBuilder:
             ),
             places=places,
             food=food,
+            entertainment=entertainment or None,
             food_coverage=result.food_meal_coverage,
             accommodations=accommodations,
             excluded_candidates=excluded_candidates,
@@ -95,7 +99,7 @@ class PlaceCheckerPlannerOutputBuilder:
 
     def pool_shortfall(self, result: PlaceCheckerResult) -> tuple[int, int, int, int]:
         """Measure the exact eligible pools that would be sent to Planner."""
-        places, food, _ = self._candidate_pools(result)
+        places, food, _, _ = self._candidate_pools(result)
         shortfall = planner_pool_shortfall(
             days=result.trip_context.days,
             travel_place_count=len(places),
@@ -114,7 +118,7 @@ class PlaceCheckerPlannerOutputBuilder:
 
     def unpaired_travel_place_ids(self, result: PlaceCheckerResult) -> list[str]:
         """Return travel places without a linked special-near restaurant."""
-        places, food, _ = self._candidate_pools(result)
+        places, food, _, _ = self._candidate_pools(result)
         paired_place_ids = {
             related_place_id
             for restaurant in food
@@ -129,10 +133,12 @@ class PlaceCheckerPlannerOutputBuilder:
     ) -> tuple[
         list[PlannerOutputPlace],
         list[PlannerOutputFood],
+        list[PlannerOutputEntertainment],
         list[PlannerExcludedCandidate],
     ]:
         places: list[PlannerOutputPlace] = []
         food: list[PlannerOutputFood] = []
+        entertainment: list[PlannerOutputEntertainment] = []
         excluded_candidates: list[PlannerExcludedCandidate] = []
         for checked in result.checked_places:
             if checked.category == "accommodation":
@@ -144,7 +150,7 @@ class PlaceCheckerPlannerOutputBuilder:
                 }:
                     excluded_candidates.append(build_excluded_candidate(checked))
                 continue
-            if checked.category in {"restaurant", "drink_dessert"}:
+            if checked.category == "restaurant":
                 meals = meals_for_hours(checked.opening.hours)
                 if meals:
                     food.append(
@@ -152,17 +158,33 @@ class PlaceCheckerPlannerOutputBuilder:
                             checked, result.trip_context.days, meals
                         )
                     )
+            elif checked.category in {"drink_dessert", "entertainment"}:
+                entertainment.append(
+                    PlannerOutputEntertainment.model_validate(
+                        {
+                            **PlannerPlaceProjector.place(
+                                checked, result.trip_context.days
+                            ).model_dump(),
+                            "entity_type": checked.category,
+                        }
+                    )
+                )
             else:
                 places.append(
                     PlannerPlaceProjector.place(checked, result.trip_context.days)
                 )
-        seen = {place.place_id for place in [*places, *food] if place.place_id}
+        seen = {
+            place.place_id
+            for place in [*places, *food, *entertainment]
+            if place.place_id
+        }
         for item in result.resolved_items:
             if (
                 item.selected is None
                 or item.selected.coordinates is None
                 or item.selected.typical_duration_minutes is None
-                or not has_usable_cost(
+                or not has_planner_cost(
+                    category=item.selected.category,
                     minimum=item.selected.minimum_cost,
                     typical=item.selected.typical_cost,
                     maximum=item.selected.maximum_cost,
@@ -173,14 +195,28 @@ class PlaceCheckerPlannerOutputBuilder:
             if item.selected.place_id in seen:
                 places = self._promote_user_input(places, item.selected.place_id)
                 food = self._promote_user_input(food, item.selected.place_id)
+                entertainment = self._promote_user_input(
+                    entertainment, item.selected.place_id
+                )
                 continue
-            if item.selected.category in {"restaurant", "drink_dessert"}:
+            if item.selected.category == "restaurant":
                 meals = meals_for_hours(item.selected.opening_hours)
                 if not meals:
                     continue
                 food.append(
                     PlannerPlaceProjector.item_food(
                         item, result.trip_context.days, meals
+                    )
+                )
+            elif item.selected.category in {"drink_dessert", "entertainment"}:
+                entertainment.append(
+                    PlannerOutputEntertainment.model_validate(
+                        {
+                            **PlannerPlaceProjector.item_place(
+                                item, result.trip_context.days
+                            ).model_dump(),
+                            "entity_type": item.selected.category,
+                        }
                     )
                 )
             else:
@@ -212,6 +248,61 @@ class PlaceCheckerPlannerOutputBuilder:
                     }
                 )
                 continue
+            existing_place_index = next(
+                (
+                    index
+                    for index, candidate in enumerate(places)
+                    if candidate.place_id == selection.restaurant_id
+                ),
+                None,
+            )
+            if existing_place_index is not None:
+                current = places[existing_place_index]
+                places[existing_place_index] = current.model_copy(
+                    update={
+                        "relationships": list(
+                            dict.fromkeys(
+                                [
+                                    *current.relationships,
+                                    *selection.related_anchor_place_ids,
+                                ]
+                            )
+                        ),
+                    }
+                )
+                continue
+            existing_entertainment_index = next(
+                (
+                    index
+                    for index, candidate in enumerate(entertainment)
+                    if candidate.place_id == selection.restaurant_id
+                ),
+                None,
+            )
+            if existing_entertainment_index is not None:
+                current = entertainment[existing_entertainment_index]
+                entertainment[existing_entertainment_index] = current.model_copy(
+                    update={
+                        "relationships": list(
+                            dict.fromkeys(
+                                [
+                                    *current.relationships,
+                                    *selection.related_anchor_place_ids,
+                                ]
+                            )
+                        )
+                    }
+                )
+                continue
+            if selection.metadata.category == "drink_dessert":
+                drink_place = SelectedFoodPlanningProjector.project_entertainment(
+                    selection,
+                    days=result.trip_context.days,
+                )
+                if drink_place is not None and drink_place.place_id not in seen:
+                    entertainment.append(drink_place)
+                    seen.add(drink_place.place_id)
+                continue
             pairing = SelectedFoodPlanningProjector.project(
                 selection,
                 days=result.trip_context.days,
@@ -223,7 +314,7 @@ class PlaceCheckerPlannerOutputBuilder:
             checked.place_id
             for checked in result.checked_places
             if checked.place_id
-            and checked.category in {"restaurant", "drink_dessert"}
+            and checked.category == "restaurant"
             and (
                 checked.mandatory
                 or checked.source_tier in {SourceTier.direct_user, SourceTier.url}
@@ -232,10 +323,12 @@ class PlaceCheckerPlannerOutputBuilder:
         required_food_ids.update(
             item.selected.place_id
             for item in result.resolved_items
-            if item.selected is not None
+            if item.selected is not None and item.selected.category == "restaurant"
         )
         paired_food_ids = {
-            selection.restaurant_id for selection in result.food_restaurant_selections
+            selection.restaurant_id
+            for selection in result.food_restaurant_selections
+            if selection.metadata.category == "restaurant"
         }
         food = limit_food_pool(
             food,
@@ -243,9 +336,27 @@ class PlaceCheckerPlannerOutputBuilder:
             required_ids=required_food_ids,
             paired_ids=paired_food_ids,
         )
-        return places, food, excluded_candidates
+        places = self._limit_optional_pool(
+            places, activity_pool_target_for_days(result.trip_context.days)
+        )
+        entertainment = self._limit_optional_pool(
+            entertainment,
+            entertainment_pool_target_for_days(result.trip_context.days),
+        )
+        return places, food, entertainment, excluded_candidates
 
     _limit_food_pool = staticmethod(limit_food_pool)
+
+    @staticmethod
+    def _limit_optional_pool(candidates: list, limit: int) -> list:
+        indexed = list(enumerate(candidates))
+        indexed.sort(
+            key=lambda entry: (
+                0 if entry[1].priority in {"user_input", "url"} else 1,
+                entry[0],
+            )
+        )
+        return [candidate for _, candidate in indexed[:limit]]
 
     @staticmethod
     def _promote_user_input(candidates: list, place_id: str) -> list:

@@ -1,6 +1,7 @@
 from app.modules.place_checker.food_selection_contract import SelectedFoodRestaurant
 from app.modules.place_checker.output_contract import (
     PlannerAudience,
+    PlannerOutputEntertainment,
     PlannerOutputFood,
     PlannerPrice,
     PlannerTimeWindow,
@@ -38,6 +39,24 @@ def limit_food_pool(
 
 class SelectedFoodPlanningProjector:
     @classmethod
+    def project_entertainment(
+        cls,
+        selection: SelectedFoodRestaurant,
+        *,
+        days: int,
+    ) -> PlannerOutputEntertainment | None:
+        """Project DrinkDessert selections into the optional entertainment pool."""
+        projected = cls.project(selection, days=days)
+        if projected is None:
+            return None
+        return PlannerOutputEntertainment.model_validate(
+            {
+                **projected.model_dump(exclude={"venue_type", "supported_meals"}),
+                "entity_type": "drink_dessert",
+            }
+        )
+
+    @classmethod
     def project(
         cls,
         selection: SelectedFoodRestaurant,
@@ -60,6 +79,8 @@ class SelectedFoodPlanningProjector:
         if not meals:
             return None
         tags, styles = candidate_semantics(metadata.tags, metadata.relationships)
+        if metadata.category == "drink_dessert" and "drink_dessert" not in tags:
+            tags.append("drink_dessert")
         adult_only, kid_suitable = audience_values(
             adults=True,
             children=metadata.children_suitable,
@@ -109,11 +130,7 @@ class SelectedFoodPlanningProjector:
                 currency=metadata.cost_currency or "VND",
             ),
             relationships=list(selection.related_anchor_place_ids),
-            venue_type=(
-                "drink_dessert"
-                if metadata.category == "drink_dessert"
-                else "restaurant"
-            ),
+            venue_type="restaurant",
             supported_meals=meals,
         )
 

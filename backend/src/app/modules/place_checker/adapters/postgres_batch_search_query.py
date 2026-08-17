@@ -12,8 +12,8 @@ _BATCH_PARAMETER = {
     2: "$2",
     3: "$3",
     4: "$4",
-    5: "NULL::text",
-    6: "$5",
+    5: "input.anchor_place_id",
+    6: "$6",
 }
 
 
@@ -27,7 +27,8 @@ def _batch_body() -> str:
 
 PLACE_BATCH_SEARCH_SQL = f"""
 SELECT input.ordinality - 1 AS batch_index, result.*
-FROM unnest($1::text[]) WITH ORDINALITY AS input(query, ordinality)
+FROM unnest($1::text[], $5::text[])
+     WITH ORDINALITY AS input(query, anchor_place_id, ordinality)
 CROSS JOIN LATERAL (
 {_batch_body()}
 ) AS result

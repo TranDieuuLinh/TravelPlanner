@@ -3,9 +3,8 @@ from __future__ import annotations
 from collections import defaultdict
 from math import ceil
 
-from app.modules.place_checker.avoid_policy import has_avoid_conflict
 from app.modules.place_checker.contract import TripEvaluationContext
-from app.modules.place_checker.enums import OperationalStatus
+from app.modules.place_checker.food_candidate_policy import FoodCandidatePolicy
 from app.modules.place_checker.food_selection_contract import (
     FoodRestaurantCandidate,
     FoodSelectionAnchor,
@@ -17,6 +16,10 @@ from app.modules.place_checker.food_meal_matching import (
     matched_restaurant_ids,
     missing_meals,
 )
+from app.modules.place_checker.food_item_diversity import (
+    coverage_shortfall,
+    select_style_item_candidates,
+)
 from app.modules.place_checker.food_pool_policy import (
     MAX_FOOD_POOL,
     MEALS,
@@ -24,17 +27,9 @@ from app.modules.place_checker.food_pool_policy import (
     aggregate_restaurants,
     select_food_pool,
 )
-from app.modules.place_checker.planning_time_windows import (
-    meals_for_hours,
-    parse_planner_windows,
-)
 from app.modules.place_checker.ports import SpecialFoodRestaurantSource
-from app.modules.place_checker.price_policy import has_usable_cost
 from app.shared.tools.bayesian_rating import (
     BayesianRatingPrior,
-    bayesian_prior,
-    bayesian_rating,
-    bayesian_review_quality,
 )
 
 
@@ -49,6 +44,9 @@ class FoodRestaurantSelectionService:
     ) -> None:
         self.source = source
         self.minimum_prior_reviews = max(0, minimum_prior_reviews)
+        self.policy = FoodCandidatePolicy(
+            minimum_prior_reviews=self.minimum_prior_reviews
+        )
 
     async def select(
         self,
@@ -83,22 +81,32 @@ class FoodRestaurantSelectionService:
         rejected: dict[str, int] = defaultdict(int)
         eligible: list[FoodRestaurantCandidate] = []
         for candidate in self._deduplicate(candidates, context):
-            reason = self._ineligible_reason(candidate, context)
+            reason = self.policy.ineligible_reason(candidate, context)
             if reason is not None:
                 rejected[reason] += 1
                 continue
             eligible.append(candidate)
-        priors = self._priors(eligible)
-        aggregates = aggregate_restaurants(eligible, priors, self._rank)
+        priors = self.policy.priors(eligible)
+        diverse, style_coverage = select_style_item_candidates(
+            eligible, context.days, priors, self.policy.rank
+        )
+        preferred = {item.restaurant_id: item for item in diverse}
+        aggregates = aggregate_restaurants(
+            eligible,
+            priors,
+            self.policy.rank,
+            preferred_by_restaurant=preferred,
+        )
         meal_coverage = build_food_meal_coverage(
             aggregates,
             context.days,
-            lambda item: self._rank(item.best, priors),
+            lambda item: self.policy.rank(item.best, priors),
         )
         reserve_deficit = len(meal_coverage.hard_missing_slots) + len(
             meal_coverage.reserve_missing_slots
         )
-        if reserve_deficit:
+        diversity_deficit = coverage_shortfall(style_coverage)
+        if reserve_deficit or diversity_deficit:
             excluded_ids = list(
                 dict.fromkeys(item.restaurant_id for item in candidates)
             )
@@ -109,7 +117,7 @@ class FoodRestaurantSelectionService:
                     radius_km=None,
                     per_anchor_limit=min(
                         12,
-                        max(3, ceil(reserve_deficit * 1.3)),
+                        max(3, ceil(max(reserve_deficit, diversity_deficit) * 1.3)),
                     ),
                     excluded_restaurant_ids=excluded_ids,
                     required_meals=missing_meals(meal_coverage),
@@ -117,29 +125,46 @@ class FoodRestaurantSelectionService:
             except Exception:
                 general = []
             for candidate in self._deduplicate(general, context):
-                reason = self._ineligible_reason(candidate, context)
+                reason = self.policy.ineligible_reason(candidate, context)
                 if reason is not None:
                     rejected[reason] += 1
                 else:
                     eligible.append(candidate)
-            priors = self._priors(eligible)
-            aggregates = aggregate_restaurants(eligible, priors, self._rank)
+            priors = self.policy.priors(eligible)
+            diverse, style_coverage = select_style_item_candidates(
+                eligible, context.days, priors, self.policy.rank
+            )
+            preferred = {item.restaurant_id: item for item in diverse}
+            aggregates = aggregate_restaurants(
+                eligible,
+                priors,
+                self.policy.rank,
+                preferred_by_restaurant=preferred,
+            )
             meal_coverage = build_food_meal_coverage(
                 aggregates,
                 context.days,
-                lambda item: self._rank(item.best, priors),
+                lambda item: self.policy.rank(item.best, priors),
             )
 
         selected_pool = select_food_pool(
             aggregates,
             context.days,
             priors,
-            self._rank,
-            required_ids=matched_restaurant_ids(meal_coverage),
+            self.policy.rank,
+            required_ids=(
+                matched_restaurant_ids(meal_coverage)
+                | {item.restaurant_id for item in diverse}
+            ),
         )
         anchor_names = {anchor.place_id: anchor.name for anchor in anchors}
         selections = [
-            self._to_selection(item, anchor_names, priors)
+            self._to_selection(
+                item,
+                anchor_names,
+                priors,
+                diversity_restaurant_ids={item.restaurant_id for item in diverse},
+            )
             for item in selected_pool
         ]
         matched = {
@@ -177,12 +202,27 @@ class FoodRestaurantSelectionService:
                 if meal_coverage.hard_missing_slots
                 else []
             ),
+            *(
+                [
+                    "Food style diversity còn thiếu: "
+                    + ", ".join(
+                        f"{item.style_name}={item.selected_restaurants}/"
+                        f"{item.target_items}"
+                        for item in style_coverage
+                        if not item.complete
+                    )
+                    + "."
+                ]
+                if any(not item.complete for item in style_coverage)
+                else []
+            ),
         ]
         return FoodSelectionBatch(
             selections=selections,
             unmatched_anchor_place_ids=unmatched,
             warnings=warnings,
             meal_coverage=meal_coverage,
+            style_coverage=style_coverage,
         )
 
     def _to_selection(
@@ -190,11 +230,15 @@ class FoodRestaurantSelectionService:
         aggregate: RestaurantAggregate,
         anchor_names: dict[str, str],
         priors: dict[str, BayesianRatingPrior],
+        *,
+        diversity_restaurant_ids: set[str],
     ) -> SelectedFoodRestaurant:
         selected = aggregate.best
-        bayesian = self._bayesian(selected, priors)
+        bayesian = self.policy.bayesian(selected, priors)
         reason = (
-            "sole_candidate_for_food"
+            "style_item_diversity"
+            if selected.restaurant_id in diversity_restaurant_ids
+            else "sole_candidate_for_food"
             if aggregate.food_peer_count == 1
             else "bayesian_ranked"
             if bayesian is not None
@@ -208,6 +252,8 @@ class FoodRestaurantSelectionService:
             food_item_name=selected.food_item_name,
             offered_food_item_id=selected.offered_food_item_id,
             offered_food_item_name=selected.offered_food_item_name,
+            style_id=selected.style_id,
+            style_name=selected.style_name,
             food_match_type=selected.food_match_type,
             food_match_confidence=selected.food_match_confidence,
             restaurant_id=selected.restaurant_id,
@@ -216,34 +262,12 @@ class FoodRestaurantSelectionService:
             rating=selected.metadata.rating,
             review_count=selected.metadata.review_count,
             bayesian_rating=bayesian,
-            pair_score=self._pair_score(selected, priors),
+            pair_score=self.policy.pair_score(selected, priors),
             selection_reason=reason,
             proximity_source=selected.proximity_source,
             evidence_types=list(aggregate.evidence_types),
             metadata=selected.metadata,
         )
-
-    def _priors(
-        self,
-        candidates: list[FoodRestaurantCandidate],
-    ) -> dict[str, BayesianRatingPrior]:
-        observations: dict[str, list[tuple[float | None, int | None]]] = defaultdict(list)
-        seen: set[tuple[str, str]] = set()
-        for candidate in candidates:
-            key = (candidate.food_item_id, candidate.restaurant_id)
-            if candidate.metadata.rating is None or key in seen:
-                continue
-            seen.add(key)
-            observations[candidate.food_item_id].append(
-                (candidate.metadata.rating, candidate.metadata.review_count)
-            )
-        return {
-            food_item_id: bayesian_prior(
-                values,
-                minimum_weight=self.minimum_prior_reviews,
-            )
-            for food_item_id, values in observations.items()
-        }
 
     @classmethod
     def _deduplicate(
@@ -252,9 +276,14 @@ class FoodRestaurantSelectionService:
         context: TripEvaluationContext,
     ) -> list[FoodRestaurantCandidate]:
         """Keep one restaurant option per anchor without losing anchor coverage."""
-        selected: dict[tuple[str, str], FoodRestaurantCandidate] = {}
+        selected: dict[tuple[str, str, str, str], FoodRestaurantCandidate] = {}
         for candidate in candidates:
-            key = (candidate.anchor_place_id, candidate.restaurant_id)
+            key = (
+                candidate.anchor_place_id,
+                candidate.restaurant_id,
+                candidate.food_item_id,
+                candidate.style_id or "",
+            )
             current = selected.get(key)
             if current is None or cls._dedupe_rank(
                 candidate, context
@@ -269,7 +298,7 @@ class FoodRestaurantSelectionService:
         context: TripEvaluationContext,
     ) -> tuple[int, int, float, float, float, int, str]:
         return (
-            int(cls._ineligible_reason(candidate, context) is None),
+            int(FoodCandidatePolicy.ineligible_reason(candidate, context) is None),
             int(candidate.food_match_type == "direct_id"),
             candidate.food_priority,
             candidate.food_confidence,
@@ -277,105 +306,3 @@ class FoodRestaurantSelectionService:
             candidate.metadata.review_count or 0,
             candidate.food_item_id,
         )
-
-    def _bayesian(
-        self,
-        candidate: FoodRestaurantCandidate,
-        priors: dict[str, BayesianRatingPrior],
-    ) -> float | None:
-        prior = priors.get(
-            candidate.food_item_id,
-            BayesianRatingPrior(None, float(self.minimum_prior_reviews)),
-        )
-        return bayesian_rating(
-            rating=candidate.metadata.rating,
-            review_count=candidate.metadata.review_count,
-            prior_mean=prior.mean,
-            prior_weight=prior.weight,
-        )
-
-    def _rank(
-        self,
-        candidate: FoodRestaurantCandidate,
-        priors: dict[str, BayesianRatingPrior],
-    ) -> tuple[float, float, float, int, str]:
-        return (
-            self._pair_score(candidate, priors),
-            self._bayesian(candidate, priors) or 0.0,
-            -(candidate.distance_km if candidate.distance_km is not None else 999.0),
-            candidate.metadata.review_count or 0,
-            candidate.restaurant_id,
-        )
-
-    def _pair_score(
-        self,
-        candidate: FoodRestaurantCandidate,
-        priors: dict[str, BayesianRatingPrior],
-    ) -> float:
-        prior = priors.get(
-            candidate.food_item_id,
-            BayesianRatingPrior(None, float(self.minimum_prior_reviews)),
-        )
-        quality = bayesian_review_quality(
-            rating=candidate.metadata.rating,
-            review_count=candidate.metadata.review_count,
-            prior=prior,
-        ).quality
-        proximity = self._proximity(candidate)
-        value = (
-            0.35 * candidate.food_priority
-            + 0.10 * candidate.food_confidence
-            + 0.10 * candidate.offer_confidence
-            + 0.10 * candidate.food_match_confidence
-            + 0.25 * quality
-            + 0.10 * proximity
-        )
-        return round(min(1.0, max(0.0, value)), 6)
-
-    @staticmethod
-    def _proximity(candidate: FoodRestaurantCandidate) -> float:
-        if candidate.distance_km is None:
-            return 0.4
-        threshold = candidate.threshold_km or 2.0
-        return max(0.0, 1.0 - candidate.distance_km / threshold)
-
-    @staticmethod
-    def _ineligible_reason(
-        candidate: FoodRestaurantCandidate,
-        context: TripEvaluationContext,
-    ) -> str | None:
-        metadata = candidate.metadata
-        if metadata.operational_status == OperationalStatus.permanently_closed:
-            return "permanently_closed"
-        if context.people.children and metadata.children_suitable is False:
-            return "children_unsuitable"
-        if context.people.infants and metadata.infants_suitable is False:
-            return "infants_unsuitable"
-        if has_avoid_conflict(
-            context.avoids,
-            [
-                candidate.food_item_name,
-                candidate.restaurant_name,
-                metadata.category or "",
-                *metadata.tags,
-            ],
-        ):
-            return "avoid_conflict"
-        if metadata.coordinates is None:
-            return "missing_coordinates"
-        if metadata.typical_duration_minutes is None:
-            return "missing_duration"
-        if not has_usable_cost(
-            minimum=metadata.minimum_cost,
-            typical=metadata.typical_cost,
-            maximum=metadata.maximum_cost,
-            tier=metadata.cost_tier,
-        ):
-            return "missing_cost"
-        if not metadata.opening_hours or not parse_planner_windows(
-            metadata.opening_hours
-        ):
-            return "missing_meal_window"
-        if not meals_for_hours(metadata.opening_hours):
-            return "unsupported_meal_window"
-        return None

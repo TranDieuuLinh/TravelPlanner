@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import hashlib
 
-from app.modules.place_checker.analysis_contract import AnalysisGap, GapAnalysis
+from app.modules.place_checker.analysis_contract import (
+    AnalysisGap,
+    CoverageAnalysis,
+    GapAnalysis,
+)
 from app.modules.place_checker.contract import TripEvaluationContext
 from app.modules.place_checker.enums import (
     GapStatus,
@@ -22,6 +26,10 @@ from app.modules.place_checker.ports import (
     PromotionOutbox,
 )
 from app.modules.place_checker.retrieval_enrichment import RetrievalMetadataEnricher
+from app.modules.place_checker.retrieval_batch import TargetedRetrievalBatchMixin
+from app.modules.place_checker.retrieval_pool_selection import (
+    select_adaptive_pool_specs,
+)
 from app.modules.place_checker.retrieval_contract import (
     GapRetrievalResult,
     PromotionEvent,
@@ -33,6 +41,7 @@ from app.modules.place_checker.retrieval_contract import (
 )
 from app.modules.place_checker.pool_policy import (
     activity_pool_target_for_days,
+    entertainment_pool_target_for_days,
     per_gap_pool_target,
     pool_query_limit_for_days,
 )
@@ -76,6 +85,11 @@ INTENT_BY_GAP = {
 POOL_QUERY_SPECS = {
     "pool:food_alternatives": (GapType.food_coverage, "restaurant", "restaurant"),
     "pool:drink_alternatives": (GapType.food_coverage, "cafe", "cafe"),
+    "pool:entertainment_alternatives": (
+        GapType.time_of_day,
+        "entertainment show games",
+        "entertainment",
+    ),
     "pool:culture_alternatives": (
         GapType.experience_coverage,
         "culture museum heritage",
@@ -200,7 +214,7 @@ POOL_RELATION_TERMS = {
 }
 
 
-class TargetedRetrievalService:
+class TargetedRetrievalService(TargetedRetrievalBatchMixin):
     def __init__(
         self,
         knowledge_graph: GapCandidateSource,
@@ -231,6 +245,7 @@ class TargetedRetrievalService:
         items: ItemResolutionBatch | None = None,
         anchor_place_ids: list[str] | None = None,
         excluded_gap_types: set[GapType] | None = None,
+        coverage: CoverageAnalysis | None = None,
     ) -> RetrievalBatch:
         results: list[GapRetrievalResult] = []
         event_ids: list[str] = []
@@ -241,10 +256,17 @@ class TargetedRetrievalService:
         # The final planner still needs enough restaurants, drinks and activities
         # to choose from day by day. Different intents prevent one broad query
         # from returning the same small group of places repeatedly.
-        pool_specs = {
-            **(CORE_POOL_QUERY_SPECS if self.ensure_core_pools else {}),
-            **(POOL_QUERY_SPECS if self.expand_pool else {}),
-        }
+        excluded_gap_types = excluded_gap_types or set()
+        pool_specs = select_adaptive_pool_specs(
+            {
+                **(CORE_POOL_QUERY_SPECS if self.ensure_core_pools else {}),
+                **(POOL_QUERY_SPECS if self.expand_pool else {}),
+            },
+            gaps.gaps,
+            coverage,
+            days=context.days,
+            excluded_gap_types=excluded_gap_types,
+        )
         for gap_id, (gap_type, intent, category) in pool_specs.items():
             if gap_id in existing_gap_ids:
                 continue
@@ -283,11 +305,12 @@ class TargetedRetrievalService:
             if gap.status == GapStatus.open
         )
         per_gap_limit = per_gap_pool_target(context.days, discovery_gap_count)
-        external_calls_remaining = self.external_call_budget
+        pending_queries: list[TargetedRetrievalQuery] = []
+        static_results: list[GapRetrievalResult] = []
         for gap in retrieval_gaps:
             if gap.status != GapStatus.open:
                 continue
-            if gap.gap_type in (excluded_gap_types or set()):
+            if gap.gap_type in excluded_gap_types:
                 continue
             query = self._query(
                 gap,
@@ -297,7 +320,7 @@ class TargetedRetrievalService:
                 limit=per_gap_limit,
             )
             if gap.gap_type not in DISCOVERY_GAPS:
-                results.append(
+                static_results.append(
                     GapRetrievalResult(
                         gap_id=gap.gap_id,
                         query=query,
@@ -307,19 +330,13 @@ class TargetedRetrievalService:
                     )
                 )
                 continue
-            result = await self._retrieve_gap(
-                query,
-                allow_external=external_calls_remaining > 0,
-            )
-            if any(
-                attempt.source_kind == RetrievalSourceKind.external
-                for attempt in result.attempts
-            ):
-                external_calls_remaining -= 1
-            queued, queue_warnings = await self._queue_promotions(result.candidates)
-            event_ids.extend(queued)
-            warnings.extend(queue_warnings)
-            results.append(result)
+            pending_queries.append(query)
+        retrieved, queued, queue_warnings = await self._retrieve_queries(
+            pending_queries
+        )
+        results.extend([*static_results, *retrieved])
+        event_ids.extend(queued)
+        warnings.extend(queue_warnings)
         return RetrievalBatch(
             gaps=results,
             promotion_event_ids=list(dict.fromkeys(event_ids)),
@@ -671,6 +688,11 @@ class TargetedRetrievalService:
             query_limit = pool_query_limit_for_days(context.days)
         elif gap.gap_type == GapType.food_coverage:
             query_limit = max(query_limit, min(60, context.days * 3))
+        elif gap.gap_id == "pool:entertainment_alternatives":
+            query_limit = max(
+                query_limit,
+                min(60, entertainment_pool_target_for_days(context.days)),
+            )
         elif category == "travel_place" and query_text == "travel place":
             query_limit = max(
                 query_limit,

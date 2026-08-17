@@ -41,6 +41,27 @@ def test_projected_pool_preflight_rejects_missing_candidate_window() -> None:
     ]
 
 
+def test_projected_pool_allows_small_preferred_pool_when_reserve_is_feasible() -> None:
+    problem = _viable_problem()
+    preferred = dict(problem.preferred_days)
+    preferred["activity_2"] = frozenset()
+
+    validate_projected_pool(replace(problem, preferred_days=preferred))
+
+
+def test_projected_pool_requires_two_places_in_full_feasible_reserve() -> None:
+    problem = _viable_problem()
+    feasible = dict(problem.feasible_days)
+    feasible["activity_2"] = frozenset()
+
+    with pytest.raises(ProjectedPoolPreflightError) as error:
+        validate_projected_pool(replace(problem, feasible_days=feasible))
+
+    assert [(item.code, item.available) for item in error.value.violations] == [
+        ("insufficient_activity_separators", 1)
+    ]
+
+
 def test_routing_connectivity_preflight_rejects_disconnected_pool() -> None:
     problem = _viable_problem()
     routing = RoutingProblem(

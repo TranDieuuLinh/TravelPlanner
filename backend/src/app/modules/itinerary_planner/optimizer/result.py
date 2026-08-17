@@ -41,6 +41,9 @@ class SolverPassResult:
     objective_value: int
     wall_time_ms: int
     optimality_proven: bool
+    attempt_count: int = 1
+    round_count: int = 1
+    no_improvement_rounds: int = 0
 
 
 @dataclass(frozen=True, slots=True)

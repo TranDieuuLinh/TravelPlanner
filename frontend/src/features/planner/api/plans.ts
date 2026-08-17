@@ -63,6 +63,7 @@ export type KnowledgePlaceType =
   | "TravelPlace"
   | "Restaurant"
   | "DrinkDessert"
+  | "Entertainment"
   | "Accommodation";
 
 export type PlanItem = {

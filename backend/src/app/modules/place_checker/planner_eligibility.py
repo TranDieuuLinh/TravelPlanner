@@ -4,7 +4,7 @@ from app.modules.place_checker.planning_time_windows import (
     meals_for_hours,
     parse_planner_windows,
 )
-from app.modules.place_checker.price_policy import has_usable_cost
+from app.modules.place_checker.price_policy import has_planner_cost
 
 
 def is_planner_eligible(checked: CheckedPlace) -> bool:
@@ -13,7 +13,8 @@ def is_planner_eligible(checked: CheckedPlace) -> bool:
         and checked.canonical_name
         and checked.coordinates
         and checked.duration.typical_minutes
-        and has_usable_cost(
+        and has_planner_cost(
+            category=checked.category,
             minimum=checked.cost.minimum,
             typical=checked.cost.typical,
             maximum=checked.cost.maximum,

@@ -47,6 +47,7 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
         "trip",
         "places",
         "food",
+        "entertainment",
         "foodCoverage",
         "accommodations",
         "excludedCandidates",
@@ -164,6 +165,47 @@ def test_compact_output_adds_selected_special_food_near_anchor() -> None:
     assert "Bún chả" in selected.notes.text
 
 
+def test_compact_output_projects_drink_dessert_as_entertainment_not_meal() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-drink-place"))
+    anchor = result.checked_places[0]
+    drink_metadata = metadata(
+        "drink:cafe",
+        category="drink_dessert",
+        cost_tier=CostTier.low,
+        latitude=21.031,
+    )
+    selection = SelectedFoodRestaurant(
+        anchor_place_id=anchor.place_id,
+        anchor_name=anchor.canonical_name,
+        food_item_id="drink:coffee",
+        food_item_name="Cà phê",
+        offered_food_item_id="drink:coffee",
+        offered_food_item_name="Cà phê",
+        food_match_type="direct_id",
+        food_match_confidence=1,
+        restaurant_id="drink:cafe",
+        restaurant_name="Cafe Test",
+        distance_km=0.2,
+        rating=4.5,
+        review_count=100,
+        pair_score=0.8,
+        selection_reason="style_item_diversity",
+        metadata=drink_metadata,
+    )
+    result = result.model_copy(update={"food_restaurant_selections": [selection]})
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+
+    assert output.entertainment is not None
+    assert "drink:cafe" in {place.place_id for place in output.entertainment}
+    assert "drink:cafe" not in {place.place_id for place in output.places}
+    assert "drink:cafe" not in {food.place_id for food in output.food}
+
+
 def test_resolved_item_promotes_duplicate_pool_candidate_to_user_input() -> None:
     result = asyncio.run(pipeline().check(payload(), request_id="request-item-overlap"))
     optional = next(place for place in result.checked_places if not place.mandatory)
@@ -255,7 +297,7 @@ def test_compact_output_keeps_conflicting_user_input_but_drops_optional() -> Non
     assert optional.place_id not in output_ids
 
 
-def test_compact_output_drops_checked_place_without_price() -> None:
+def test_compact_output_defaults_checked_place_without_price_to_free() -> None:
     result = asyncio.run(pipeline().check(payload(), request_id="request-no-price"))
     first = result.checked_places[0]
     result.checked_places[0] = first.model_copy(
@@ -279,10 +321,12 @@ def test_compact_output_drops_checked_place_without_price() -> None:
         timezone="Asia/Ho_Chi_Minh",
     )
 
-    assert first.place_id not in {place.place_id for place in output.places}
-    assert [
-        (item.place_id, item.reason_code) for item in output.excluded_candidates
-    ] == [(first.place_id, "missing_cost")]
+    projected = next(
+        place for place in output.places if place.place_id == first.place_id
+    )
+    assert projected.price.cost == 0
+    assert projected.price.currency == "VND"
+    assert output.excluded_candidates == []
 
 
 def test_compact_output_calculates_typical_cost_from_range() -> None:

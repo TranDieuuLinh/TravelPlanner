@@ -189,6 +189,46 @@ def test_greedy_shortlist_allows_sixteen_optional_activities() -> None:
     assert len(shortlist.candidate_ids & activity_ids) == 16
 
 
+def test_shortlist_prefers_a_new_experience_group_across_trip_days() -> None:
+    spiritual = [candidate(f"temple_{index}") for index in range(16)]
+    for item in spiritual:
+        item["tags"] = ["temple", "culture"]
+    museum = candidate("museum")
+    museum["tags"] = ["museum", "culture"]
+    museum["rating"] = 1.0
+    museum["reviewCount"] = 2_000
+    museum["sourceKind"] = "generic"
+    problem = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(
+            base_payload(places=[*spiritual, museum])
+        )
+    )
+    routing = asyncio.run(
+        build_routing_problem(
+            problem,
+            GeneratedMatrixProvider(),
+            XanhSmTransportCostEstimator(),
+        )
+    )
+
+    baseline = build_day_shortlist(
+        problem,
+        routing,
+        day=1,
+        used_ids=frozenset(),
+    )
+    diversified = build_day_shortlist(
+        problem,
+        routing,
+        day=1,
+        used_ids=frozenset(),
+        trip_tag_counts={"spiritual": 2},
+    )
+
+    assert "museum" not in baseline.candidate_ids
+    assert "museum" in diversified.candidate_ids
+
+
 def test_meal_placeholder_prefers_food_on_the_activity_corridor() -> None:
     raw = base_payload()
     raw["food"].append(

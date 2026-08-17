@@ -7,8 +7,8 @@ và CP-SAT được triển khai.
 
 ## Phạm vi
 
-Phase này bắt đầu khi FinalItineraryPlanner nhận JSON `trip + places +
-food + foodCoverage`. Module coi dữ liệu upstream là input duy nhất và không:
+Phase này bắt đầu khi FinalItineraryPlanner nhận JSON `trip + places + food +
+entertainment + foodCoverage`. Module coi dữ liệu upstream là input duy nhất và không:
 
 - query database hoặc Knowledge Graph;
 - search thêm place/food;
@@ -20,10 +20,10 @@ validation và business rule của Planner phải nằm trong module này.
 
 Với chuyến từ ba ngày và đủ TravelPlace làm geographic anchors, preprocessing
 dùng heuristic chọn tâm theo normalized KNN density với
-`K=min(10, valid_places - 1)` và Bayesian review quality, sau đó
+`K=min(10, activities - 1)` và Bayesian review quality, sau đó
 greedy gán mỗi optional candidate vào ngày gần nhất và rebalance đúng một lần.
 Mỗi ngày giữ preferred activity pool bằng giá trị lớn hơn giữa hai separator
-và giá trị nhỏ hơn giữa 14 với `floor(valid_places / days)`. Candidate có thể
+và giá trị nhỏ hơn giữa 14 với `floor((places + entertainment) / days)`. Candidate có thể
 được thêm vào ngày gần thứ hai khi cần rebalance; các ngày khả thi còn lại
 không bị xóa mà được giữ làm reserve fallback. Candidate cô lập không được làm
 center nếu KNN neighborhood quanh nó quá thưa. `user_input` và URL giữ nguyên
@@ -59,6 +59,7 @@ JSON bên ngoài dùng camelCase; Pydantic/Python dùng snake_case với alias.
   },
   "places": [],
   "food": [],
+  "entertainment": null,
   "foodCoverage": {
     "days": 3,
     "hardComplete": true,
@@ -72,10 +73,10 @@ JSON bên ngoài dùng camelCase; Pydantic/Python dùng snake_case với alias.
 }
 ```
 
-Mỗi phần tử `food` có `venueType=restaurant|drink_dessert`; giá trị mặc định
-`restaurant` chỉ phục vụ backward compatibility. Runtime PlaceChecker luôn gửi
-loại venue rõ ràng để constraint đồ uống/tráng miệng không phụ thuộc tên hoặc
-tag tự do.
+PlaceChecker chỉ gửi `Restaurant` trong `food`. `DrinkDessert` và
+`Entertainment` đi qua pool nullable `entertainment`
+như một stop thường và không đáp ứng meal coverage. Contract vẫn nhận
+`venueType=drink_dessert` cho backward compatibility.
 
 Mỗi place bắt buộc có:
 
@@ -124,7 +125,7 @@ CandidatePriority = user_input | url | special_experience | special_near
 MealType = breakfast | lunch | dinner
 ```
 
-`placeId` là ID duy nhất trong toàn bộ `places + food`. Relationship chỉ
+`placeId` là ID duy nhất trong toàn bộ `places + food + entertainment`. Relationship chỉ
 chứa ID thuộc tập này. Nếu tương lai có nhiều activity khác nhau tại
 cùng physical place thì mới bổ sung `candidateId`; không thêm sớm khi chưa
 có use case thật.
@@ -225,6 +226,11 @@ Opening hours không biết được coi là mở 24 giờ, nhưng cửa sổ Pl
 candidate. Planner gắn cờ `unknown_opening=True` và warning; không ghi ngược
 vào input.
 
+Sau opening-hours normalization, candidate có tag nightlife/night-market bị
+clamp start sớm nhất tại 18:00. Candidate có tên semantic
+`Weekend Night Market` (hoặc tag `weekend_only`) chỉ giữ feasible day rơi vào
+Thứ Sáu, Thứ Bảy hoặc Chủ Nhật, tính từ `trip.startDate`.
+
 ## Feasible-day preprocessing
 
 Với candidate `i`, ngày `d` chỉ khả thi nếu tồn tại opening interval:
@@ -269,11 +275,13 @@ gồm `day` cùng `meal`. Đây là public diagnostic để orchestration có th
 PlaceChecker mở rộng đúng phần thiếu; runtime hiện không tự lặp lại toàn bộ
 PlaceChecker nếu chưa có expansion provider riêng.
 
-Sau geographic day-domain projection, Planner chạy thêm gate chỉ-đọc. Activity
-assignment đã tự cân bằng reserve; gate xác nhận mỗi ngày đạt giá trị nhỏ hơn
-giữa 14 và `floor(valid_places / days)`, tối thiểu hai activity để tách ba bữa,
-một phép ghép breakfast/lunch/dinner với ba restaurant `placeId` khác nhau, và
-opening window còn tồn tại cho mọi candidate-day. Vi phạm trả
+Sau geographic day-domain projection, Planner chạy thêm gate chỉ-đọc. Projection
+cân bằng reserve bằng tổng `places + entertainment`; Entertainment/DrinkDessert
+không chiếm mất quota hard của Place. Gate chỉ hard-fail activity khi toàn bộ
+`feasible_days` không còn tối thiểu hai Place để tách ba bữa. Preferred pool
+thiếu vẫn được phép đi tiếp để daily solver dùng full-day reserve fallback.
+Gate cũng yêu cầu một phép ghép breakfast/lunch/dinner với ba restaurant
+`placeId` khác nhau và opening window cho mọi candidate-day. Vi phạm trả
 `errorCode=projected_pool_preflight_failed` trước khi dựng routing matrix.
 
 Sau khi sparse routing graph được dựng, gate connectivity yêu cầu ít nhất một

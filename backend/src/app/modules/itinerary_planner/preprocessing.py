@@ -9,11 +9,13 @@ from app.modules.itinerary_planner.candidate_semantics import (
     normalize_tags,
     normalize_trip,
 )
+from app.modules.itinerary_planner.activity_time_policy import apply_activity_time_policy  # noqa: E501
 from app.modules.itinerary_planner.contract import (
     CandidatePriority,
     ItineraryPlannerInput,
     MealType,
     PlannerCandidate,
+    PlannerEntertainmentCandidate,
     PlannerFoodCandidate,
     PlannerTrip,
 )
@@ -113,7 +115,6 @@ def _prepare_place(
                 "Candidate price currency does not match the trip budget currency.",
             ),
         )
-
     feasible: dict[int, tuple[PlanningWindow, ...]] = {}
     unknown_days: set[int] = set()
     had_open_window = False
@@ -124,6 +125,7 @@ def _prepare_place(
     )
     for day in range(1, trip.days + 1):
         opening, unknown = _opening_windows(normalized, day, latest_end)
+        opening = apply_activity_time_policy(normalized, trip, day, opening)
         unknown_days.update({day} if unknown else set())
         had_open_window = had_open_window or bool(opening)
         fitting = windows_fitting_duration(opening, normalized.duration_minutes)
@@ -221,6 +223,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
     trip = normalize_trip(payload.trip)
     valid_places: list[PlannerCandidate] = []
     valid_food: list[PlannerFoodCandidate] = []
+    valid_entertainment: list[PlannerEntertainmentCandidate] = []
     feasible_days: dict[str, frozenset[int]] = {}
     feasible_windows: dict[CandidateDay, tuple[PlanningWindow, ...]] = {}
     meal_eligibility: dict[MealSlot, tuple[PlanningWindow, ...]] = {}
@@ -280,7 +283,20 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         if unknown_days:
             unknown_days_by_id[normalized.place_id] = unknown_days
 
-    candidates: list[Candidate] = [*valid_places, *valid_food]
+    for candidate in payload.entertainment or []:
+        normalized, windows, unknown_days, exclusion = _prepare_place(candidate, trip)
+        if exclusion:
+            _store_exclusion(exclusion, unscheduled, discarded)
+            continue
+        valid_entertainment.append(normalized)
+        feasible_days[normalized.place_id] = frozenset(windows)
+        feasible_windows.update(
+            {(normalized.place_id, day): value for day, value in windows.items()}
+        )
+        if unknown_days:
+            unknown_days_by_id[normalized.place_id] = unknown_days
+
+    candidates: list[Candidate] = [*valid_places, *valid_food, *valid_entertainment]
     late_night_eligible_ids = frozenset(
         candidate.place_id
         for candidate in valid_places
@@ -304,7 +320,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
 
     day_domains = project_optional_day_domains(
         days=trip.days,
-        places=valid_places,
+        places=[*valid_places, *valid_entertainment],
         food=valid_food,
         feasible_days=feasible_days,
         feasible_windows=feasible_windows,
@@ -361,6 +377,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         accommodation_by_id=MappingProxyType(accommodation_by_id),
         valid_places=tuple(valid_places),
         valid_food=tuple(valid_food),
+        valid_entertainment=tuple(valid_entertainment),
         candidate_by_id=MappingProxyType(candidate_by_id),
         feasible_days=MappingProxyType(feasible_days),
         preferred_days=MappingProxyType(preferred_days),

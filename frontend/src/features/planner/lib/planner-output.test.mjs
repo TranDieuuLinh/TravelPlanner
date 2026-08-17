@@ -233,3 +233,40 @@ test("rejects planner outputs without a scheduled stop on every day", () => {
     null,
   );
 });
+
+test("maps entertainment stops without treating them as TravelPlace", () => {
+  const plan = plannerOutputToTravelPlan({
+    destination: "Hà Nội",
+    timezone: "Asia/Ho_Chi_Minh",
+    days: [{
+      day: 1,
+      date: "2026-08-15",
+      stops: [{
+        placeId: "entertainment-show",
+        name: "Water Puppet Show",
+        kind: "entertainment",
+        priority: "special_experience",
+        startMinute: 1140,
+        endMinute: 1200,
+        durationMinutes: 60,
+        coordinates: { latitude: 21.03, longitude: 105.85 },
+        costPerPerson: 100_000,
+      }],
+      legs: [],
+      activityMinutes: 60,
+      travelMinutes: 0,
+      costPerPerson: 100_000,
+    }],
+    totalCostPerPerson: 100_000,
+    currency: "VND",
+    solver: {},
+    unscheduled: [],
+    discardedOptionalCount: 0,
+    warnings: [],
+    phaseTimingsMs: {},
+  });
+
+  assert.equal(plan.days[0].items[0].placeType, "entertainment");
+  assert.equal(plan.days[0].items[0].timelineCategory, "activity");
+  assert.equal(plan.days[0].items[0].ontologyType, "Entertainment");
+});

@@ -9,7 +9,7 @@ from app.modules.place_checker.output_contract import (
     PlaceCheckerResult,
     PlannerPlaceContext,
 )
-from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
+from app.modules.place_checker.price_policy import has_planner_cost, planner_cost
 
 
 class PlaceCheckerPlanningProjector:
@@ -41,7 +41,8 @@ class PlaceCheckerPlanningProjector:
                     f"Bỏ qua {checked.canonical_name} do thiếu tọa độ/provenance."
                 )
                 continue
-            if not has_usable_cost(
+            if not has_planner_cost(
+                category=metadata.category,
                 minimum=metadata.minimum_cost,
                 typical=metadata.typical_cost,
                 maximum=metadata.maximum_cost,
@@ -89,7 +90,8 @@ class PlaceCheckerPlanningProjector:
             maximum_duration_minutes=metadata.maximum_duration_minutes,
             cost_tier=metadata.cost_tier,
             minimum_cost=metadata.minimum_cost,
-            typical_cost=typical_cost(
+            typical_cost=planner_cost(
+                category=metadata.category,
                 minimum=metadata.minimum_cost,
                 typical=metadata.typical_cost,
                 maximum=metadata.maximum_cost,

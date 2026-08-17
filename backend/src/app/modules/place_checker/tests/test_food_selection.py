@@ -52,6 +52,8 @@ def candidate(
     distance: float = 0.5,
     match_type: str = "direct_id",
     match_confidence: float = 1.0,
+    style_id: str | None = None,
+    style_name: str | None = None,
 ) -> FoodRestaurantCandidate:
     food_name = "Phở" if food == "food:pho" else "Bún chả"
     return FoodRestaurantCandidate(
@@ -62,6 +64,8 @@ def candidate(
         food_confidence=0.9,
         offered_food_item_id=food,
         offered_food_item_name=food_name,
+        style_id=style_id,
+        style_name=style_name,
         food_match_type=match_type,
         food_match_confidence=match_confidence,
         restaurant_id=restaurant,

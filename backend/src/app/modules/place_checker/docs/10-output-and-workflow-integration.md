@@ -115,12 +115,13 @@ FinalItineraryPlanner trong checkpoint này.
   },
   "places": [],
   "food": [],
+  "entertainment": null,
   "excludedCandidates": []
 }
 ```
 
 Contract gọn dùng camelCase và gồm `trip.timezone`, `startDate`, tách
-`places`/`food`, biểu diễn giờ bằng `startMinute`/`endMinute`, thêm
+`places`/`food`/`entertainment`, biểu diễn giờ bằng `startMinute`/`endMinute`, thêm
 `supportedMeals` cho food. Candidate giữ tag phẳng, tách `styles`, và gửi
 `audience={adultOnly,kidSuitable}`. `priority` phân biệt `user_input`,
 `special_experience`, `special_near`; `relationships` chứa canonical place ID
@@ -165,10 +166,15 @@ ngay bằng public `ItineraryPlannerInput`. Runtime FinalItineraryPlanner vẫn 
 compatibility planner cho tới khi routing và CP-SAT hoàn tất; compact payload đã
 sẵn sàng trong root state dưới `planner_input`.
 
-`restaurant` và `drink_dessert` được đưa vào `food`; các loại còn lại nằm trong
-`places`. Mỗi food giữ `venueType=restaurant|drink_dessert` để Planner áp policy
-theo ngày mà không phải đoán từ tên hoặc tag. Mỗi phần tử có tọa độ, địa chỉ,
+Chỉ `restaurant` được đưa vào `food`; `drink_dessert` và `entertainment` nằm
+trong pool `entertainment` để không chiếm breakfast/lunch/dinner hoặc quota
+TravelPlace. Pool optional này có target `4 × days` và trả `null` khi không có
+candidate. Mỗi food giữ `venueType=restaurant`. Mỗi phần tử có tọa độ, địa chỉ,
 rating, review count, thời lượng, giờ mở cửa, quan hệ và `price`.
+
+Giờ mở cửa trực tiếp của place là hard feasibility boundary. `time_windows` từ
+`Has_Style` hoặc `Offer_Item -> ActivityItem` chỉ tạo preferred timing; Style
+không được biến thành giờ mở cửa cứng khi place thiếu timing trực tiếp.
 
 Food query lấy một batch trong bán kính tính từ tọa độ tối đa 5 km. Cạnh
 `Special_Near` được giữ làm provenance nhưng không còn là điều kiện bắt buộc.

@@ -23,13 +23,15 @@ class PostgresCatalogBatchMixin:
         place_type_hint: str | None,
         limit: int,
         anchor_place_id: str | None = None,
+        anchor_place_ids: list[str | None] | None = None,
     ) -> list[list[PlaceProviderCandidate]]:
         if not lookup_name_batches:
             return []
         if len(lookup_name_batches) > MAX_SEARCH_BATCH_SIZE:
             raise ValueError("Place search batches are limited to 10 queries")
-        if anchor_place_id is not None:
-            raise ValueError("Batch named-place search does not support anchors")
+        anchors = anchor_place_ids or [anchor_place_id] * len(lookup_name_batches)
+        if len(anchors) != len(lookup_name_batches):
+            raise ValueError("Each batch query must have one anchor value")
 
         queries = [
             next(
@@ -51,6 +53,7 @@ class PostgresCatalogBatchMixin:
             input_adm.adm_id,
             requested_types,
             fetch_limit,
+            anchors,
             0.30,
         )
         grouped = defaultdict(list)

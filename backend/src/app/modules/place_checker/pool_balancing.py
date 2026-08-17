@@ -14,8 +14,14 @@ class CandidatePoolBalancer:
         *,
         activity_target: int,
         food_target: int,
+        entertainment_target: int,
     ) -> list[ScoredCandidate]:
-        existing = {"travel_place": 0, "restaurant": 0, "accommodation": 0}
+        existing = {
+            "travel_place": 0,
+            "restaurant": 0,
+            "entertainment": 0,
+            "accommodation": 0,
+        }
         for evaluation in existing_places.places:
             if not evaluation.planner_eligible or not evaluation.place.place_id:
                 continue
@@ -27,7 +33,12 @@ class CandidatePoolBalancer:
             existing[cls._entity_type(category)] += 1
 
         selected_keys: set[str] = set()
-        for entity_type in ("travel_place", "restaurant", "accommodation"):
+        for entity_type in (
+            "travel_place",
+            "restaurant",
+            "entertainment",
+            "accommodation",
+        ):
             candidates = [
                 item
                 for item in ranked
@@ -36,6 +47,7 @@ class CandidatePoolBalancer:
             target = {
                 "travel_place": activity_target,
                 "restaurant": food_target,
+                "entertainment": entertainment_target,
                 "accommodation": ACCOMMODATION_POOL_TARGET,
             }[entity_type]
             limit = max(0, target - existing[entity_type])
@@ -97,6 +109,8 @@ class CandidatePoolBalancer:
         normalized = normalize_text(category)
         if normalized == "restaurant":
             return "restaurant"
+        if normalized in {"drink dessert", "drink_dessert", "entertainment"}:
+            return "entertainment"
         if normalized == "accommodation":
             return "accommodation"
         return "travel_place"

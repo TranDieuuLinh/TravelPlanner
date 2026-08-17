@@ -10,10 +10,15 @@ PlaceChecker không gán ngày hoặc buổi. Module chỉ trả pool đã xác 
 - preference matches, avoid conflicts và suitability;
 - score, tọa độ, chi phí và data quality.
 
-Pool có hai quota độc lập: reserve 14 `TravelPlace`/ngày và 10 `Restaurant`/ngày.
-Food hard feasibility vẫn là unique matching cho ba meal slot/ngày; reserve 10
-không thay thế meal-window gate.
-Restaurant đi vào compact `food`, không bị trộn thành activity place. Đây là
+Pool có ba quota độc lập: reserve 14 `TravelPlace`/ngày, 12 `Restaurant`/ngày
+và 4 `DrinkDessert`/`Entertainment` mỗi ngày.
+Food reserve chọn Item trước theo sáu Style food/drink, target mềm `2 × days`
+cho mỗi Style, rồi truy ngược `Offer_Item` sang `Restaurant`/`DrinkDessert`.
+Trong từng anchor region, Item và quán chưa dùng được ưu tiên; Item chỉ được lặp
+khi lựa chọn khác đã cạn. Food hard feasibility vẫn là unique matching cho ba
+meal slot/ngày; Style coverage không thay thế meal-window gate.
+Restaurant đi vào compact `food`; DrinkDessert/Entertainment đi vào compact
+`entertainment`, không bị trộn thành activity place. Đây là
 candidate reserve; FinalItineraryPlanner vẫn chỉ xếp số stop khả thi theo thời
 gian, bữa ăn và route.
 Khi food selection bổ sung quán ghép với TravelPlace, compact builder ưu tiên

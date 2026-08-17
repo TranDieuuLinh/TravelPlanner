@@ -8,13 +8,13 @@ from app.modules.itinerary_planner.optimizer.result import OptimizationResult
 from app.modules.itinerary_planner.ports import RouteDetailProvider
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import (
+    STRAIGHT_LINE_PROVIDER,
+    STRAIGHT_LINE_WARNING,
     RouteDetail,
     RouteLegRequest,
     RoutingPhaseError,
     RoutingProblem,
     SafeTravel,
-    STRAIGHT_LINE_PROVIDER,
-    STRAIGHT_LINE_WARNING,
 )
 from app.shared.tools.transport_cost import TransportCostEstimator
 
@@ -50,6 +50,7 @@ async def enrich_selected_routes(
     concurrency: int = 6,
     repair_tolerance_minutes: int = 2,
     days: frozenset[int] | None = None,
+    detail_cache: dict[tuple[str, str], RouteDetail] | None = None,
 ) -> RouteEnrichmentResult:
     del problem  # Candidate metadata is already represented by routing mappings.
     location_by_node = {location.node_id: location for location in routing.locations}
@@ -60,6 +61,9 @@ async def enrich_selected_routes(
             return None
         origin_node = routing.candidate_to_matrix_node[origin_id]
         destination_node = routing.candidate_to_matrix_node[destination_id]
+        cache_key = (origin_node, destination_node)
+        if detail_cache is not None and cache_key in detail_cache:
+            return detail_cache[cache_key]
         if origin_node == destination_node:
             return RouteDetail(origin_node, destination_node, 0, 0, None, "same_location")
         request = RouteLegRequest(
@@ -69,7 +73,10 @@ async def enrich_selected_routes(
         try:
             async with semaphore:
                 details = await provider.route((request,), routing.matrix.profile)
-            return details[0] if details else None
+            detail = details[0] if details else None
+            if detail is not None and detail_cache is not None:
+                detail_cache[cache_key] = detail
+            return detail
         except (RoutingPhaseError, IndexError):
             return None
 
@@ -192,6 +199,18 @@ def apply_route_corrections(
         routing,
         travel_by_candidate_pair=corrected,
         sparse_arcs=sparse,
+    )
+
+
+def route_correction_pairs(
+    routing: RoutingProblem,
+    enrichment: RouteEnrichmentResult,
+) -> frozenset[tuple[str, str]]:
+    return frozenset(
+        pair
+        for pair, actual_minutes in enrichment.actual_minutes_by_pair.items()
+        if pair in routing.travel_by_candidate_pair
+        and actual_minutes > routing.travel_by_candidate_pair[pair].safe_minutes
     )
 
 

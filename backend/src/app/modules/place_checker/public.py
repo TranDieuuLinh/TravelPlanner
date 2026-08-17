@@ -80,6 +80,7 @@ from app.modules.place_checker.food_selection_contract import (
     FoodRestaurantCandidate,
     FoodSelectionAnchor,
     FoodSelectionBatch,
+    FoodStyleCoverage,
     SelectedFoodRestaurant,
 )
 from app.shared.tools.bayesian_rating import bayesian_rating
@@ -110,6 +111,7 @@ __all__ = [
     "FoodRestaurantSelectionService",
     "FoodSelectionAnchor",
     "FoodSelectionBatch",
+    "FoodStyleCoverage",
     "GapCandidateSource",
     "NamedPlaceSearchTool",
     "PlaceCheckerInput",

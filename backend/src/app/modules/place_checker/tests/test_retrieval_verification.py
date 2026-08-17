@@ -15,6 +15,7 @@ from app.modules.place_checker.enums import (
 )
 from app.modules.place_checker.errors import CandidateSourceTimeout
 from app.modules.place_checker.promotion import PromotionWorker
+from app.modules.place_checker.ports import GapSourceBatchItem
 from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.modules.place_checker.retrieval import TargetedRetrievalService
 from app.modules.place_checker.retrieval_contract import (
@@ -86,6 +87,39 @@ class FakeMetadataRepository:
                 typical_duration_minutes=60,
             )
         }
+
+
+class RecordingBatchMetadataRepository:
+    def __init__(self) -> None:
+        self.calls = []
+
+    async def get_many(self, place_ids):
+        self.calls.append(place_ids)
+        return {
+            place_id: PlaceMetadata(place_id=place_id)
+            for place_id in place_ids
+        }
+
+
+class FakeBatchGapSource:
+    provider_name = "knowledge_graph"
+    source_kind = RetrievalSourceKind.knowledge_graph
+
+    def __init__(self) -> None:
+        self.batch_sizes = []
+
+    async def search_many(self, queries, *, max_concurrency):
+        self.batch_sizes.append((len(queries), max_concurrency))
+        return [
+            GapSourceBatchItem(
+                evidence=[evidence(
+                    name=f"Place {index}",
+                    entity_id=f"kg:place-{index}",
+                )],
+                outcome="candidates",
+            )
+            for index, _ in enumerate(queries)
+        ]
 
 
 def gap(gap_type: GapType = GapType.food_coverage) -> GapAnalysis:
@@ -161,6 +195,31 @@ def test_any_kg_result_short_circuits_external_source() -> None:
 
     assert result.gaps[0].candidates[0].place_id == "kg:pho"
     assert external.calls == 0
+
+
+def test_retrieval_batches_gaps_and_enriches_metadata_once() -> None:
+    source = FakeBatchGapSource()
+    metadata = RecordingBatchMetadataRepository()
+    service = TargetedRetrievalService(source, metadata_repository=metadata)
+    gaps = GapAnalysis(
+        gaps=[
+            AnalysisGap(
+                gap_id=f"gap:experience:{index}",
+                gap_type=GapType.experience_coverage,
+                severity=IssueSeverity.high,
+                trigger="missing coverage",
+                suggested_action="search",
+            )
+            for index in range(3)
+        ],
+        open_count=3,
+    )
+
+    result = asyncio.run(service.retrieve(gaps, analysis_context()))
+
+    assert source.batch_sizes == [(3, 2)]
+    assert metadata.calls == [["kg:place-0", "kg:place-1", "kg:place-2"]]
+    assert len(result.gaps) == 3
 
 
 def test_one_external_source_is_provisional_and_not_eligible() -> None:

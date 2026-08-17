@@ -12,7 +12,7 @@ export type PlannerOutputStop = {
   itemId?: string;
   placeId: string;
   name: string;
-  kind: "place" | "food";
+  kind: "place" | "food" | "entertainment";
   priority: string;
   startMinute: number;
   endMinute: number;
@@ -274,9 +274,19 @@ export function plannerOutputToTravelPlan(
         name: stop.name,
         address: stop.address ?? null,
         timeWindow: `${formatMinute(stop.startMinute)} – ${formatMinute(stop.endMinute)}`,
-        placeType: stop.kind === "food" ? "restaurant" : "activity",
+        placeType:
+          stop.kind === "food"
+            ? "restaurant"
+            : stop.kind === "entertainment"
+              ? "entertainment"
+              : "activity",
         timelineCategory: stop.kind === "food" ? "food" : "activity",
-        ontologyType: stop.kind === "food" ? "Restaurant" : "TravelPlace",
+        ontologyType:
+          stop.kind === "food"
+            ? "Restaurant"
+            : stop.kind === "entertainment"
+              ? "Entertainment"
+              : "TravelPlace",
         source: "itinerary_planner",
         sourceRefs: [],
         tags: stop.tags ?? [],

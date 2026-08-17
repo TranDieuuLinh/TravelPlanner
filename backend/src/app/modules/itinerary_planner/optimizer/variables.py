@@ -20,6 +20,8 @@ from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 CandidateDay = tuple[str, int]
 MealKey = tuple[str, int, MealType]
 SourceMixKey = tuple[str, int, str]
+MIN_PLACES_PER_DAY = 2
+MAX_ENTERTAINMENT_PER_DAY = 3
 
 
 @dataclass(slots=True)
@@ -36,12 +38,8 @@ class PlannerVariables:
         default_factory=dict
     )
     arc: dict[tuple[str, str, int], cp_model.IntVar] = field(default_factory=dict)
-    night_arc: dict[tuple[str, str, int], cp_model.IntVar] = field(
-        default_factory=dict
-    )
-    waiting: dict[tuple[str, str, int], cp_model.IntVar] = field(
-        default_factory=dict
-    )
+    night_arc: dict[tuple[str, str, int], cp_model.IntVar] = field(default_factory=dict)
+    waiting: dict[tuple[str, str, int], cp_model.IntVar] = field(default_factory=dict)
     source_period: dict[SourceMixKey, cp_model.IntVar] = field(default_factory=dict)
     source_special: dict[SourceMixKey, cp_model.IntVar] = field(default_factory=dict)
     source_offer: dict[SourceMixKey, cp_model.IntVar] = field(default_factory=dict)
@@ -49,9 +47,9 @@ class PlannerVariables:
     accommodation_transfer: dict[tuple[str, str, int, str], cp_model.IntVar] = field(
         default_factory=dict
     )
-    accommodation_night_transfer: dict[
-        tuple[str, str, int, str], cp_model.IntVar
-    ] = field(default_factory=dict)
+    accommodation_night_transfer: dict[tuple[str, str, int, str], cp_model.IntVar] = (
+        field(default_factory=dict)
+    )
     first_start: dict[int, cp_model.IntVar] = field(default_factory=dict)
     last_end: dict[int, cp_model.IntVar] = field(default_factory=dict)
     total_cost: cp_model.IntVar | None = None
@@ -112,6 +110,19 @@ def create_schedule_variables(
 
     for day in range(1, problem.trip.days + 1):
         model.AddNoOverlap(variables.intervals_by_day[day])
+        place_assignments = [
+            variables.assigned[(candidate.place_id, day)]
+            for candidate in problem.valid_places
+            if (candidate.place_id, day) in variables.assigned
+        ]
+        model.Add(sum(place_assignments) >= MIN_PLACES_PER_DAY)
+        entertainment_assignments = [
+            variables.assigned[(candidate.place_id, day)]
+            for candidate in problem.valid_entertainment
+            if (candidate.place_id, day) in variables.assigned
+        ]
+        if entertainment_assignments:
+            model.Add(sum(entertainment_assignments) <= MAX_ENTERTAINMENT_PER_DAY)
         for meal_type, policy in MEAL_POLICIES.items():
             choices = [
                 variable
@@ -172,11 +183,17 @@ def _add_drink_dessert_constraints(
     variables: PlannerVariables,
     day: int,
 ) -> None:
-    drink_ids = {
+    drink_food_ids = {
         food.place_id
         for food in problem.valid_food
         if food.venue_type == FoodVenueType.drink_dessert
     }
+    drink_place_ids = {
+        place.place_id
+        for place in problem.valid_places
+        if "drink_dessert" in place.tags
+    }
+    drink_ids = drink_food_ids | drink_place_ids
     daily_assignments = [
         variables.assigned[(food_id, day)]
         for food_id in drink_ids
@@ -189,7 +206,9 @@ def _add_drink_dessert_constraints(
         adjacent_choices = [
             variable
             for (food_id, meal_day, meal), variable in variables.meal.items()
-            if food_id in drink_ids and meal_day == day and meal in {earlier, later}
+            if food_id in drink_food_ids
+            and meal_day == day
+            and meal in {earlier, later}
         ]
         if adjacent_choices:
             model.Add(sum(adjacent_choices) <= 1)

@@ -31,6 +31,7 @@ from app.modules.place_checker.enums import (
 from app.modules.place_checker.evaluation_contract import PlannerConstraint
 from app.modules.place_checker.food_selection_contract import (
     FoodMealCoverage,
+    FoodStyleCoverage,
     SelectedFoodRestaurant,
 )
 from app.modules.place_checker.item_contract import ResolvedInputItem, SpecialExperience
@@ -88,6 +89,7 @@ class PlaceCheckerResult(ContractModel):
         default_factory=list
     )
     food_meal_coverage: FoodMealCoverage = Field(default_factory=FoodMealCoverage)
+    food_style_coverage: list[FoodStyleCoverage] = Field(default_factory=list)
     budget_analysis: BudgetAnalysis
     capacity_analysis: CapacityAnalysis
     coverage_analysis: CoverageAnalysis
@@ -250,8 +252,12 @@ class PlannerOutputPlace(ContractModel):
 
 
 class PlannerOutputFood(PlannerOutputPlace):
-    venue_type: Literal["restaurant", "drink_dessert"] = "restaurant"
+    venue_type: Literal["restaurant"] = "restaurant"
     supported_meals: list[Literal["breakfast", "lunch", "dinner"]] = Field(min_length=1)
+
+
+class PlannerOutputEntertainment(PlannerOutputPlace):
+    entity_type: Literal["drink_dessert", "entertainment"]
 
 
 class PlannerOutputAccommodation(ContractModel):
@@ -298,6 +304,7 @@ class PlaceCheckerPlannerOutput(ContractModel):
     trip: PlannerOutputTrip
     places: list[PlannerOutputPlace] = Field(default_factory=list)
     food: list[PlannerOutputFood] = Field(default_factory=list)
+    entertainment: list[PlannerOutputEntertainment] | None = None
     food_coverage: FoodMealCoverage = Field(default_factory=FoodMealCoverage)
     accommodations: list[PlannerOutputAccommodation] = Field(
         default_factory=list,

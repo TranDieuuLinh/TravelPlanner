@@ -53,6 +53,10 @@ source/place không thể làm crash request vẫn còn dữ liệu sử dụng 
   chỉ dùng anchor đầu tiên.
 - Targeted KG retrieval chỉ dùng 1 anchor đại diện mỗi gap, tránh số SQL
   call tăng theo phép nhân giữa toàn bộ place đầu vào và toàn bộ gap.
+- Runtime dùng coverage hiện có để chỉ tạo reserve query theo shortfall, thay vì
+  luôn chạy toàn bộ core/theme pool. Các query cùng ADM, type và top-K được gom
+  tối đa 10 query mỗi SQL batch, chạy tối đa 2 batch đồng thời. Candidate từ
+  tất cả gap được deduplicate và load metadata trong một lượt `get_many`.
 - Retrieval chỉ giữ top-K, tối đa hai external provider và dừng khi đã đủ
   candidate verify. Kết quả top-K từ KG được dùng ngay; external Playwright chỉ
   chạy khi KG không trả candidate phù hợp nào. Không có distance matrix N x N.

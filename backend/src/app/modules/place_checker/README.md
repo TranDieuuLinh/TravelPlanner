@@ -23,13 +23,15 @@ PostgreSQL adapter đọc quan hệ Knowledge Graph theo ngữ nghĩa hiện hà
 `FoodItem`, `Offer_Item` và `Has_Style` từ place tới thuộc tính. Evidence quan hệ giữ trạng
 thái, nguồn, confidence/priority và khoảng cách để phục vụ audit và scoring.
 
-Nhánh food lấy một batch Restaurant trong bán kính tính toán tối đa 5 km quanh
-8-12 TravelPlace anchor đại diện. `Special_Near` là evidence bổ sung, không phải
-điều kiện vào query; `Offer_Item`, `Special_Experience` và `Has_Style` được giữ
-độc lập. Service dedup theo Restaurant, gộp mọi anchor/evidence, loại metadata
-không dùng được, dựng các slot `day × breakfast/lunch/dinner` và chạy unique
-bipartite matching. Khi hard matching hoặc reserve matching thứ hai còn thiếu,
-service chỉ query general ADM một lần cho đúng meal type thiếu rồi match lại.
+Nhánh food bắt đầu từ sáu Style food/drink, lấy các `FoodItem`/`DrinkItem` qua
+`Has_Style`, rồi truy ngược `Offer_Item` để tìm `Restaurant`/`DrinkDessert`
+trong bán kính tối đa 5 km quanh TravelPlace anchor. Mỗi Style có target mềm
+`2 × days`; selector ưu tiên Item và quán chưa dùng trong từng anchor region,
+chỉ quay vòng Item sau khi lựa chọn khác đã cạn. `Special_Near` là evidence bổ
+sung, không phải điều kiện vào query. Service vẫn loại metadata không dùng được,
+dựng các slot `day × breakfast/lunch/dinner` và chạy unique bipartite matching.
+Khi meal matching hoặc Style coverage còn thiếu, service query general ADM một
+lần rồi chọn lại.
 Hai matching không dùng chung Restaurant. PostgreSQL adapter chỉ đọc quan hệ;
 module không sở hữu migration Knowledge Graph. Công thức Bayesian nằm trong
 `shared/tools/bayesian_rating.py` để FinalItineraryPlanner dùng cùng policy.
@@ -41,7 +43,8 @@ Knowledge Graph làm Google/KG fallback. Output là object
 
 Candidate pool gửi sang Planner có hard gate độc lập: 14 TravelPlace/ngày và
 3 Restaurant/ngày với một Restaurant duy nhất cho mỗi meal slot. Food reserve
-được over-fetch riêng theo target 10/ngày. Chỉ candidate vượt đủ
+được over-fetch riêng theo target 12/ngày để chứa `2 × days` candidate cho sáu
+Style. Chỉ candidate vượt đủ
 verification, metadata và compact-output policy mới được tính. Thiếu một pool
 làm kết quả `blocked`; root không tạo `planner_input`. Thiếu relationship gần
 chỉ tạo warning vì Planner vẫn có thể dùng general food pool theo route. Compact
@@ -153,7 +156,9 @@ Tỷ lệ bốc pool theo buổi và sở thích được mô tả tại
   provider production. Những phần này không được xem là đã chạy production.
 - Checkpoint 6 đã có `PlaceCheckerPipeline`, rich output V1, pipeline subgraph,
   projection Explorer legacy -> input canonical và projection riêng cho
-  downstream. Contract projection giữ unknown cost/duration thay vì ép thành 0.
+  downstream. KG vẫn giữ unknown cost; riêng TravelPlace thiếu giá được compact
+  projection thành `0 VND` để Planner không loại địa điểm. Food, entertainment
+  và accommodation vẫn cần giá dùng được.
 - Checkpoint 6 cũng có phase timing, correlation metadata, metrics port, cache
   wrapper và giới hạn concurrency/call budget. Root graph mặc định vẫn dùng
   compatibility graph cho đến khi production provider được cấu hình.

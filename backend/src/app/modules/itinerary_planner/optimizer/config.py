@@ -9,6 +9,8 @@ class SolverConfig:
     priority_timeout_seconds: float | None = None
     utility_timeout_seconds: float | None = None
     utility_relative_gap_limit: float = 0.05
+    utility_parallel_workers: int = 3
+    max_utility_no_improvement_rounds: int = 10
     random_seed: int = 42
     log_search_progress: bool = False
     max_inter_stop_wait_minutes: int | None = MAX_INTER_STOP_WAIT_MINUTES
@@ -16,7 +18,8 @@ class SolverConfig:
 
 @dataclass(frozen=True, slots=True)
 class ObjectiveWeights:
-    policy_version: str = "itinerary-utility-v5-tags-styles"
+    policy_version: str = "itinerary-utility-v6-gap-fill"
+    activity_coverage: int = 350
     special_experience: int = 1_200
     preference_max: int = 600
     style_max: int = 400

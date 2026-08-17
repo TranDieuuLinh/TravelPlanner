@@ -92,7 +92,6 @@ WITH RECURSIVE adm_descendants(id) AS (
       AND entity.entity_type = 'TravelPlace'
       AND props.latitude IS NOT NULL
       AND props.longitude IS NOT NULL
-      AND (props.price_min IS NOT NULL OR props.price_max IS NOT NULL)
       AND (
           props.time_duration IS NOT NULL
           OR EXISTS (
