@@ -226,4 +226,5 @@ class PostgresDraftPlaceStore:
             "restaurant": "Restaurant",
             "drink_dessert": "DrinkDessert",
             "accommodation": "Accommodation",
+            "entertainment": "Entertainment",
         }.get(canonical_type or "", "TravelPlace")

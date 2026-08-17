@@ -14,6 +14,7 @@ from app.modules.place_checker.planner_candidate_metadata import (
     source_metadata,
     time_source,
 )
+from app.modules.place_checker.planner_category import planner_category
 from app.modules.place_checker.planner_notes import select_planner_source_note
 from app.modules.place_checker.planner_semantics import (
     audience_values,
@@ -31,7 +32,7 @@ class PlannerPlaceProjector:
             checked.relationship_evidence
         )
         tags, styles = candidate_semantics(checked.tags, checked.relationship_evidence)
-        if checked.category == "drink_dessert" and "drink_dessert" not in tags:
+        if planner_category(checked.category) == "drink_dessert" and "drink_dessert" not in tags:
             tags.append("drink_dessert")
         adult_only, kid_suitable = audience_values(
             adults=checked.suitability.adults,
@@ -74,7 +75,7 @@ class PlannerPlaceProjector:
     ) -> PlannerOutputFood:
         return PlannerOutputFood(
             **cls.place(checked, days).model_dump(),
-            venue_type=checked.category,
+            venue_type=planner_category(checked.category),
             supported_meals=supported_meals,
         )
 
@@ -84,7 +85,7 @@ class PlannerPlaceProjector:
         relations = option.relationships
         source_kind, offered_activity_ids = source_metadata(relations)
         tags, styles = candidate_semantics(option.tags, relations)
-        if option.category == "drink_dessert" and "drink_dessert" not in tags:
+        if planner_category(option.category) == "drink_dessert" and "drink_dessert" not in tags:
             tags.append("drink_dessert")
         adult_only, kid_suitable = audience_values(
             adults=True,
@@ -122,7 +123,7 @@ class PlannerPlaceProjector:
             ),
             price=PlannerPrice(
                 cost=planner_cost(
-                    category=option.category,
+                    category=planner_category(option.category),
                     minimum=option.minimum_cost,
                     typical=option.typical_cost,
                     maximum=option.maximum_cost,
@@ -146,7 +147,7 @@ class PlannerPlaceProjector:
     ) -> PlannerOutputFood:
         return PlannerOutputFood(
             **cls.item_place(item, days).model_dump(),
-            venue_type=item.selected.category,
+            venue_type=planner_category(item.selected.category),
             supported_meals=supported_meals,
         )
 
@@ -190,7 +191,7 @@ class PlannerPlaceProjector:
     def _price(checked: CheckedPlace) -> PlannerPrice:
         return PlannerPrice(
             cost=planner_cost(
-                category=checked.category,
+                category=planner_category(checked.category),
                 minimum=checked.cost.minimum,
                 typical=checked.cost.typical,
                 maximum=checked.cost.maximum,

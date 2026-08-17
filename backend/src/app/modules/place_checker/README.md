@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai PlaceChecker
 
-Cập nhật lần cuối: 2026-08-17.
+Cập nhật lần cuối: 2026-08-18.
 
 Thư mục này chứa kế hoạch triển khai stage PlaceChecker. Các module Python
 production sẽ được thêm bên cạnh `docs/` khi từng task được thực hiện.
@@ -34,17 +34,19 @@ Khi meal matching hoặc Style coverage còn thiếu, service query general ADM 
 lần rồi chọn lại.
 Hai matching không dùng chung Restaurant. PostgreSQL adapter chỉ đọc quan hệ;
 module không sở hữu migration Knowledge Graph. Công thức Bayesian nằm trong
-`shared/tools/bayesian_rating.py` để FinalItineraryPlanner dùng cùng policy.
+`shared/tools/bayesian_rating.py`. PlaceChecker benchmark `rating` và
+`reviewCount` riêng theo từng category; TravelPlace có hệ số cao nhất,
+Restaurant ở mức trung bình, còn DrinkDessert/Entertainment chỉ là tín hiệu
+phụ để review volume của quán ăn không lấn át địa điểm tham quan.
 
 Planner projection chọn đúng một source note cho mỗi candidate: `urlNotes`
 được ưu tiên; nếu không có thì dùng `description` và `url_google_map` đọc từ
 Knowledge Graph làm Google/KG fallback. Output là object
 `notes={text,sourceType,sourceUrl}`; ghi chú cá nhân không thuộc Place Checker.
 
-Candidate pool gửi sang Planner có hard gate độc lập: 14 TravelPlace/ngày và
-3 Restaurant/ngày với một Restaurant duy nhất cho mỗi meal slot. Food reserve
-được over-fetch riêng theo target 12/ngày để chứa `2 × days` candidate cho sáu
-Style. Chỉ candidate vượt đủ
+Candidate pool gửi sang Planner có hard gate độc lập: 20 TravelPlace/ngày,
+16 Restaurant/ngày và 6 DrinkDessert/Entertainment/ngày. Food reserve
+được over-fetch riêng để chứa `2 × days` candidate cho sáu Style. Chỉ candidate vượt đủ
 verification, metadata và compact-output policy mới được tính. Thiếu một pool
 làm kết quả `blocked`; root không tạo `planner_input`. Thiếu relationship gần
 chỉ tạo warning vì Planner vẫn có thể dùng general food pool theo route. Compact
@@ -55,9 +57,14 @@ TravelPlace reserve chạy các query khám phá độc lập cho culture, natur
 shopping, nightlife, workshop, performance, outdoor, family, special
 experience và local activity. Đây là query intent, không phải theme của place.
 Selection giữ một đại diện cho mỗi tag KG có ý nghĩa trước khi bù theo tỷ lệ
-tham chiếu 6/14 candidate có evidence
-`Special_Experience`, 4/14 candidate có Bayesian popularity signal và phần còn
-lại theo ranking. `pool_category` chỉ lưu provenance và không tạo diversity.
+tham chiếu theo tỷ lệ 6/14 candidate có evidence `Special_Experience`,
+4/14 candidate có Bayesian popularity signal và phần còn lại theo ranking.
+Khi fill phần còn lại, selector ưu tiên tag ít xuất hiện và soft-cap một tag
+rộng ở tối đa 3 candidate nếu còn tag khác để thay thế. `pool_category` chỉ lưu
+provenance và không tạo diversity.
+Category đưa sang Planner được chuẩn hóa từ `entity_type`; các alias như
+`cafe`, `coffee` và `DrinkDessert` đi vào pool `drink_dessert`, không rơi vào
+TravelPlace. `place_id` chỉ là định danh và không bị đổi theo category.
 Query khám phá bắt buộc match relation/style term; một `Special_Experience`
 không liên quan không được dùng để lấp mọi query.
 `Special_Experience` trạng thái `pending` không được tính là special. Bucket

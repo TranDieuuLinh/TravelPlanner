@@ -312,6 +312,7 @@ def finalize_itinerary(
             ],
             planning_time_ms=solver_time,
         ),
+        evaluation=optimization.evaluation,
         source_mix=[
             SourceMixAudit(
                 period=item.period,

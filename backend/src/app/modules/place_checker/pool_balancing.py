@@ -1,8 +1,8 @@
 from app.modules.place_checker.activity_pool_selection import select_activity_coverage
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
+from app.modules.place_checker.planner_category import planner_category
 from app.modules.place_checker.pool_policy import ACCOMMODATION_POOL_TARGET
 from app.modules.place_checker.scoring_contract import ScoredCandidate
-from app.shared.tools.search_places.normalization import normalize_text
 
 
 class CandidatePoolBalancer:
@@ -106,10 +106,10 @@ class CandidatePoolBalancer:
 
     @staticmethod
     def _entity_type(category: str | None) -> str:
-        normalized = normalize_text(category)
+        normalized = planner_category(category)
         if normalized == "restaurant":
             return "restaurant"
-        if normalized in {"drink dessert", "drink_dessert", "entertainment"}:
+        if normalized in {"drink_dessert", "entertainment"}:
             return "entertainment"
         if normalized == "accommodation":
             return "accommodation"

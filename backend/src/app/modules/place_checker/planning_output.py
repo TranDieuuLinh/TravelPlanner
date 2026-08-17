@@ -22,6 +22,7 @@ from app.modules.place_checker.planner_budget import (
     build_planner_budget,
 )
 from app.modules.place_checker.planner_eligibility import is_planner_eligible
+from app.modules.place_checker.planner_category import planner_category
 from app.modules.place_checker.planner_exclusions import build_excluded_candidate
 from app.modules.place_checker.planner_semantics import split_trip_preferences
 from app.modules.place_checker.planning_place_projection import PlannerPlaceProjector
@@ -141,7 +142,8 @@ class PlaceCheckerPlannerOutputBuilder:
         entertainment: list[PlannerOutputEntertainment] = []
         excluded_candidates: list[PlannerExcludedCandidate] = []
         for checked in result.checked_places:
-            if checked.category == "accommodation":
+            category = planner_category(checked.category)
+            if category == "accommodation":
                 continue
             if not is_planner_eligible(checked):
                 if checked.mandatory or checked.source_tier in {
@@ -150,7 +152,7 @@ class PlaceCheckerPlannerOutputBuilder:
                 }:
                     excluded_candidates.append(build_excluded_candidate(checked))
                 continue
-            if checked.category == "restaurant":
+            if category == "restaurant":
                 meals = meals_for_hours(checked.opening.hours)
                 if meals:
                     food.append(
@@ -158,14 +160,14 @@ class PlaceCheckerPlannerOutputBuilder:
                             checked, result.trip_context.days, meals
                         )
                     )
-            elif checked.category in {"drink_dessert", "entertainment"}:
+            elif category in {"drink_dessert", "entertainment"}:
                 entertainment.append(
                     PlannerOutputEntertainment.model_validate(
                         {
                             **PlannerPlaceProjector.place(
                                 checked, result.trip_context.days
                             ).model_dump(),
-                            "entity_type": checked.category,
+                            "entity_type": category,
                         }
                     )
                 )
@@ -199,7 +201,8 @@ class PlaceCheckerPlannerOutputBuilder:
                     entertainment, item.selected.place_id
                 )
                 continue
-            if item.selected.category == "restaurant":
+            category = planner_category(item.selected.category)
+            if category == "restaurant":
                 meals = meals_for_hours(item.selected.opening_hours)
                 if not meals:
                     continue
@@ -208,14 +211,14 @@ class PlaceCheckerPlannerOutputBuilder:
                         item, result.trip_context.days, meals
                     )
                 )
-            elif item.selected.category in {"drink_dessert", "entertainment"}:
+            elif category in {"drink_dessert", "entertainment"}:
                 entertainment.append(
                     PlannerOutputEntertainment.model_validate(
                         {
                             **PlannerPlaceProjector.item_place(
                                 item, result.trip_context.days
                             ).model_dump(),
-                            "entity_type": item.selected.category,
+                            "entity_type": category,
                         }
                     )
                 )
@@ -294,7 +297,7 @@ class PlaceCheckerPlannerOutputBuilder:
                     }
                 )
                 continue
-            if selection.metadata.category == "drink_dessert":
+            if planner_category(selection.metadata.category) == "drink_dessert":
                 drink_place = SelectedFoodPlanningProjector.project_entertainment(
                     selection,
                     days=result.trip_context.days,
@@ -314,7 +317,7 @@ class PlaceCheckerPlannerOutputBuilder:
             checked.place_id
             for checked in result.checked_places
             if checked.place_id
-            and checked.category == "restaurant"
+            and planner_category(checked.category) == "restaurant"
             and (
                 checked.mandatory
                 or checked.source_tier in {SourceTier.direct_user, SourceTier.url}
@@ -323,12 +326,13 @@ class PlaceCheckerPlannerOutputBuilder:
         required_food_ids.update(
             item.selected.place_id
             for item in result.resolved_items
-            if item.selected is not None and item.selected.category == "restaurant"
+            if item.selected is not None
+            and planner_category(item.selected.category) == "restaurant"
         )
         paired_food_ids = {
             selection.restaurant_id
             for selection in result.food_restaurant_selections
-            if selection.metadata.category == "restaurant"
+            if planner_category(selection.metadata.category) == "restaurant"
         }
         food = limit_food_pool(
             food,

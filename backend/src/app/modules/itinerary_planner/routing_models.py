@@ -40,6 +40,9 @@ class MatrixCell:
     duration_seconds: float | None
     distance_meters: float | None
     reachable: bool
+    # Derived after PlaceChecker candidates are normalized.  Providers do not
+    # need to know application-level venue types.
+    food_to_food: bool = False
 
 
 @dataclass(frozen=True, slots=True)

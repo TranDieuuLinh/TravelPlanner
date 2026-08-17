@@ -15,6 +15,7 @@ from app.modules.itinerary_planner.contract import (
     PlannerDailyBudgetEstimate,
 )
 from app.shared.contracts.source_note import SourceNote
+from app.modules.itinerary_planner.beam_search.evaluation import BeamSearchEvaluation
 
 
 class ItineraryStop(PlannerContractModel):
@@ -147,6 +148,7 @@ class ItineraryPlannerOutput(PlannerContractModel):
     budget_profile_version: str | None = None
     currency: str
     solver: SolverMetadata
+    evaluation: BeamSearchEvaluation | None = None
     source_mix: list[SourceMixAudit] = Field(default_factory=list)
     unscheduled: list[UnscheduledPriority]
     discarded_optional_count: int = Field(ge=0)

@@ -1,5 +1,7 @@
 # Task 10: Output và tích hợp workflow
 
+Cập nhật lần cuối: 2026-08-18
+
 ## Mục tiêu
 
 Đưa ra PlaceChecker output hướng production và chèn stage sau Explorer mà
@@ -128,15 +130,20 @@ Contract gọn dùng camelCase và gồm `trip.timezone`, `startDate`, tách
 liên quan thay vì tên tag.
 
 Trước boundary Planner, builder đếm đúng candidate sau toàn bộ filter. Travel
-pool phải đạt target `days * 14` (tối đa 420 cho contract 30 ngày); food pool chỉ hard-require
+pool phải đạt target `days * 20` (tối đa 420 cho contract 30 ngày); food pool chỉ hard-require
 `days * 3` candidate meal-capable để tương ứng ba meal slot mỗi ngày. Thiếu
 hard minimum làm `PlaceCheckerResult.status=blocked`; orchestration không tạo
 hoặc chuyển `planner_input` xuống FinalItineraryPlanner.
 
 Scoring tạo TravelPlace reserve bằng coverage mềm: ưu tiên candidate có evidence
 `Special_Experience`, sau đó một phần popular theo Bayesian quality kết hợp
-`log(reviewCount)`, rồi fill bằng ranking diversity. Candidate chỉ được chọn một
-lần và bucket thiếu tự fallback; Planner vẫn sở hữu geographic/day selection.
+`log(reviewCount)`, rồi fill bằng ranking diversity. Phần fill soft-cap một tag
+rộng ở tối đa 3 candidate khi còn tag khác để thay thế. Candidate chỉ được chọn
+một lần và bucket thiếu tự fallback; Planner vẫn sở hữu geographic/day selection.
+Rating và review count được chuẩn hóa trong từng category trước khi tính điểm:
+TravelPlace được ưu tiên cao nhất, Restaurant thấp hơn, còn
+DrinkDessert/Entertainment thấp nhất vì review volume thường lớn nhưng không
+phải mục tiêu chính của lịch tham quan.
 
 `special_near` là ưu tiên, không phải hard gate. Coverage dựa trên relationship
 thực tế, không dựa riêng vào `priority`: restaurant đã tồn tại trong food pool

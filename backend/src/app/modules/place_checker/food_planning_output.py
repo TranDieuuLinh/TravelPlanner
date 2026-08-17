@@ -10,6 +10,7 @@ from app.modules.place_checker.planner_semantics import (
     audience_values,
     candidate_semantics,
 )
+from app.modules.place_checker.planner_category import planner_category
 from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
 from app.shared.contracts.source_note import SourceNote
 
@@ -79,7 +80,7 @@ class SelectedFoodPlanningProjector:
         if not meals:
             return None
         tags, styles = candidate_semantics(metadata.tags, metadata.relationships)
-        if metadata.category == "drink_dessert" and "drink_dessert" not in tags:
+        if planner_category(metadata.category) == "drink_dessert" and "drink_dessert" not in tags:
             tags.append("drink_dessert")
         adult_only, kid_suitable = audience_values(
             adults=True,

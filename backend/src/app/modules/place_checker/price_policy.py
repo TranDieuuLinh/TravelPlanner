@@ -1,4 +1,5 @@
 from app.modules.place_checker.enums import CostTier
+from app.modules.place_checker.planner_category import planner_category
 
 COST_REQUIRED_CATEGORIES = frozenset(
     {"restaurant", "drink_dessert", "entertainment", "accommodation"}
@@ -7,9 +8,7 @@ COST_REQUIRED_CATEGORIES = frozenset(
 
 def place_defaults_to_free(category: str | None) -> bool:
     """Return whether a missing price should be projected as free for Planner."""
-    normalized = (
-        (category or "").strip().casefold().replace("-", "_").replace(" ", "_")
-    )
+    normalized = planner_category(category)
     return normalized not in COST_REQUIRED_CATEGORIES
 
 

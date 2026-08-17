@@ -12,6 +12,11 @@ ADM, đạt ngưỡng score và có exact/alias, address hoặc semantic evidenc
 output là `conditional` và có constraint xác minh trước khi chốt lịch.
 Retrieval/system provisional vẫn không planner-eligible.
 
+Ontology có node place-like `Entertainment`, dùng cùng required/optional
+properties với `TravelPlace` gồm tọa độ, địa chỉ, giờ mở cửa, style và các
+quan hệ graph. Hint `entertainment` hoặc `wellness` chỉ truy vấn
+`Entertainment`; hint `travel place` vẫn chỉ truy vấn `TravelPlace`.
+
 ## Ranh giới API
 
 | Endpoint | Input | Output |
@@ -39,7 +44,7 @@ Retrieval/system provisional vẫn không planner-eligible.
 | `GET /admin/observability/sessions` | Admin session + `page`, `limit` | Requests grouped by graph thread |
 | `GET /admin/observability/traces/{traceId}` | Admin session | One request with its captured steps |
 | `GET /admin/knowledge-graph/stats` | Admin session | Knowledge Graph counts |
-| `GET /admin/knowledge-graph/ontology` | Admin session | Node types, property keys, and relationship types from `trung-plans/plans-for-new-version/knowledge/schema.yml` |
+| `GET /admin/knowledge-graph/ontology` | Admin session | Node types, property keys, and relationship types from the backend ontology mirror; the intended source is `trung-plans/plans-for-new-version/knowledge/schema.yml` |
 | `GET /admin/knowledge-graph/entities` | Admin session + filters | Paginated entities; `search`, `excludeNames`, and `missingProperties` support comma-separated keywords |
 | `GET /admin/knowledge-graph/entities/filters` | Admin session | Distinct entity types/statuses from `knowledge_entities`, property keys from `knowledge_properties`, and relationship types from `knowledge_relationships` |
 | `GET /admin/knowledge-graph/relationships` | Admin session + filters | Paginated relationships |
@@ -355,6 +360,13 @@ morning 70/30 và evening 60/40. Quota source là soft penalty có fallback, cò
 opening hours vẫn là hard constraint. `InvokeResponse.itinerary` vẫn là
 contract legacy phục vụ PlanEditor; output mới được trả riêng qua
 `plannerOutput` để biểu diễn overnight, geometry và solver metadata.
+Ngoài graph hybrid CP-SAT mặc định, module có factory Beam Search chạy song song
+để thử nghiệm rollout. Beam áp hard rule không nối restaurant-to-restaurant,
+kiểm tra distance Q3, rating tối thiểu 3.0, review count từ Q2/P50,
+opening window và khoảng chờ tối đa 60 phút.
+Khi dùng Beam, output có thêm `evaluation` gồm min/max/median rating,
+reviewCount, distanceMeters; counter tags/styles/items; và các count
+restaurant, drinkDessert, entertainment, travelPlace cùng totalPrice.
 Trip Chat cho phép user sửa/xóa accommodation và lưu `personalNotes` trên
 chính accommodation trong snapshot. Đổi `placeId` cập nhật các ordered route
 leg tham chiếu nơi lưu trú; xóa nơi lưu trú đồng thời bỏ transfer leg và phần

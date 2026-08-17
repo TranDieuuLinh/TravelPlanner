@@ -10,8 +10,8 @@ PlaceChecker không gán ngày hoặc buổi. Module chỉ trả pool đã xác 
 - preference matches, avoid conflicts và suitability;
 - score, tọa độ, chi phí và data quality.
 
-Pool có ba quota độc lập: reserve 14 `TravelPlace`/ngày, 12 `Restaurant`/ngày
-và 4 `DrinkDessert`/`Entertainment` mỗi ngày.
+Pool có ba quota độc lập: reserve 20 `TravelPlace`/ngày, 16 `Restaurant`/ngày
+và 6 `DrinkDessert`/`Entertainment` mỗi ngày.
 Food reserve chọn Item trước theo sáu Style food/drink, target mềm `2 × days`
 cho mỗi Style, rồi truy ngược `Offer_Item` sang `Restaurant`/`DrinkDessert`.
 Trong từng anchor region, Item và quán chưa dùng được ưu tiên; Item chỉ được lặp
@@ -77,6 +77,10 @@ nghĩa khi giới hạn pool cho phép. Tag kỹ thuật và generic `travel_pla
 tạo diversity group. `pool_category` chỉ ghi query intent đã tìm ra candidate,
 không được coi là category/tag thật và không tham gia diversity. `Has_Style`
 được tách thành `styles` ở compact boundary thay vì dùng làm tag diversity.
+Phần fill cuối ưu tiên tag ít xuất hiện và soft-cap một tag rộng ở tối đa 3
+candidate khi còn tag khác để thay thế. Category được chuẩn hóa từ `entity_type`
+trước khi chia pool; alias `cafe`/`coffee`/`DrinkDessert` được xem là
+`drink_dessert`, còn `place_id` vẫn giữ nguyên để truy vết.
 Relationship `Special_Experience` pending không tạo special slot. Query khám
 phá chỉ nhận relationship candidate khi relation/style term khớp; Special
 Experience chung không bypass điều kiện này.

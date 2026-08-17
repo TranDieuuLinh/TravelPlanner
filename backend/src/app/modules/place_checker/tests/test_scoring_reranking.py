@@ -149,6 +149,38 @@ def test_component_arithmetic_uses_documented_weights() -> None:
     assert result.base_score == round(expected, 6)
 
 
+def test_reputation_is_benchmarked_per_category_and_travel_has_highest_weight() -> None:
+    def rated(item, reviews: int):
+        return item.model_copy(
+            update={
+                "metadata": item.metadata.model_copy(
+                    update={"rating": 4.5, "review_count": reviews}
+                )
+            }
+        )
+
+    result = CandidateScoringService(now=NOW).rank(
+        retrieval(
+            rated(candidate("travel", category="travel_place"), 1_000),
+            rated(candidate("restaurant", category="restaurant"), 100_000),
+            rated(candidate("drink", category="drink_dessert"), 100_000),
+        ),
+        analysis_context(),
+        empty_places(),
+    )
+    by_category = {item.candidate.category: item for item in result.ranked}
+
+    assert by_category["travel_place"].components.rating_quality > by_category[
+        "restaurant"
+    ].components.rating_quality
+    assert by_category["restaurant"].components.rating_quality > by_category[
+        "drink_dessert"
+    ].components.rating_quality
+    assert by_category["travel_place"].components.review_quality > by_category[
+        "restaurant"
+    ].components.review_quality
+
+
 def test_penalty_is_bounded() -> None:
     expensive_nightlife = candidate(
         "club",

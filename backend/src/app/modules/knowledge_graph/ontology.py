@@ -65,6 +65,7 @@ NODE_TYPES = [
     "ActivityItem",
     "DrinkDessert",
     "DrinkItem",
+    "Entertainment",
     "FoodItem",
     "ProductItem",
     "Restaurant",
@@ -126,6 +127,10 @@ NODE_TYPE_PROPERTIES.update(
         for node_type in ["Accommodation", "TravelPlace"]
     }
 )
+NODE_TYPE_PROPERTIES["Entertainment"] = {
+    "requiredProperties": PLACE_REQUIRED,
+    "optionalProperties": PLACE_OPTIONAL,
+}
 NODE_TYPE_PROPERTIES.update(
     {
         node_type: {

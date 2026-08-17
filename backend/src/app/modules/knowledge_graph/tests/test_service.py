@@ -95,6 +95,7 @@ def test_ontology_has_frontend_shape() -> None:
     payload = ontology_payload()
 
     assert "ADM1" in payload["nodeTypes"]
+    assert "Entertainment" in payload["nodeTypes"]
     assert "time_windows" in payload["propertyKeys"]
     assert "Located_In" in payload["relationshipTypes"]
     assert payload["nodeTypeProperties"]["Restaurant"]["requiredProperties"] == [
@@ -104,6 +105,7 @@ def test_ontology_has_frontend_shape() -> None:
         "latitude",
         "longitude",
     ]
+    assert payload["nodeTypeProperties"]["Entertainment"] == payload["nodeTypeProperties"]["TravelPlace"]
     assert "time_windows" in payload["nodeTypeProperties"]["ActivityItem"]["optionalProperties"]
 
 

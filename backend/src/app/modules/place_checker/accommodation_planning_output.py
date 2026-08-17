@@ -1,4 +1,5 @@
 from app.modules.place_checker.enums import VerificationStatus
+from app.modules.place_checker.planner_category import planner_category
 from app.modules.place_checker.output_contract import (
     PlaceCheckerResult,
     PlannerOutputAccommodation,
@@ -18,7 +19,7 @@ def select_accommodations(
     budget_currency = result.trip_context.budget.currency or "VND"
     for checked in result.checked_places:
         if (
-            checked.category != "accommodation"
+            planner_category(checked.category) != "accommodation"
             or not checked.place_id
             or not checked.canonical_name
             or checked.coordinates is None

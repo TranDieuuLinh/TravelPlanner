@@ -1,5 +1,7 @@
 # Task 12: Test plan và acceptance
 
+Cập nhật lần cuối: 2026-08-18
+
 ## Mục tiêu
 
 Xác minh PlaceChecker end-to-end và khóa boundary với Explorer, Knowledge Graph,
@@ -49,11 +51,11 @@ external adapter và downstream planning.
 30. Trả partial output sau provider timeout.
 31. Reject day/route field khỏi PlaceChecker output.
 32. Chỉ project planner-ready và conditional place xuống downstream.
-33. Travel pool phải có ít nhất 14 candidate mỗi ngày; food pool phải unique
+33. Travel pool phải có ít nhất 20 candidate mỗi ngày; food pool phải unique
     match được mọi slot `day × breakfast/lunch/dinner`; thiếu hard slot phải
     block trước Planner dù tổng số Restaurant đã bằng `days * 3`.
-33a. Travel reserve đủ dữ liệu phải giữ coverage mềm tối thiểu 6/14
-     `Special_Experience` và 4/14 popular; thiếu bucket phải fallback đủ pool.
+33a. Travel reserve đủ dữ liệu phải giữ coverage mềm tối thiểu 6/20
+     `Special_Experience` và 4/20 popular; thiếu bucket phải fallback đủ pool.
 34. TravelPlace thiếu Restaurant `special_near` không block nếu general food
     pool đã qua eligibility filter vẫn đủ hard minimum.
 35. Restaurant đã có trong food pool vẫn được tính paired theo anchor

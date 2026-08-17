@@ -14,6 +14,10 @@ from app.modules.itinerary_planner.adapters import (
 )
 from app.modules.itinerary_planner.directions import DirectionsService, router
 from app.modules.itinerary_planner.graph import build_itinerary_planner_graph
+from app.modules.itinerary_planner.beam_search.graph import (
+    build_beam_search_itinerary_planner_graph,
+)
+from app.modules.itinerary_planner.beam_search.config import BeamSearchConfig
 from app.modules.itinerary_planner.optimizer import SolverConfig
 from app.shared.tools.transport_cost import XanhSmTransportCostEstimator
 
@@ -34,6 +38,27 @@ def build_valhalla_itinerary_planner_graph(
         adapter,
         provider_namespace=f"valhalla:{provider_version}",
         solver_config=SolverConfig(log_search_progress=log_search_progress),
+    )
+
+
+def build_valhalla_beam_search_itinerary_planner_graph(
+    base_url: str,
+    *,
+    timeout_seconds: float | None = None,
+    provider_version: str = "local",
+    beam_config: BeamSearchConfig | None = None,
+):
+    valhalla = ValhallaAdapter(
+        base_url, timeout_seconds=timeout_seconds, provider_version=provider_version
+    )
+    adapter = FallbackRoutingAdapter(valhalla, StraightLineRoutingAdapter())
+    return build_beam_search_itinerary_planner_graph(
+        adapter,
+        XanhSmTransportCostEstimator(),
+        InMemoryMatrixCache(),
+        adapter,
+        provider_namespace=f"valhalla:{provider_version}",
+        beam_config=beam_config,
     )
 
 
@@ -59,6 +84,8 @@ __all__ = [
     "ItineraryPlannerOutput",
     "build_itinerary_planner_graph",
     "build_valhalla_itinerary_planner_graph",
+    "build_beam_search_itinerary_planner_graph",
+    "build_valhalla_beam_search_itinerary_planner_graph",
     "build_valhalla_directions_service",
     "router",
 ]

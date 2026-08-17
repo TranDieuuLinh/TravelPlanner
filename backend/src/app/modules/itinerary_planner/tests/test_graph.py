@@ -1,8 +1,16 @@
 import asyncio
 
 from app.modules.itinerary_planner.contract import ItineraryPlannerInput
-from app.modules.itinerary_planner.public import build_itinerary_planner_graph
-from app.modules.itinerary_planner.tests.factories import candidate, food, payload
+from app.modules.itinerary_planner.public import (
+    build_beam_search_itinerary_planner_graph,
+    build_itinerary_planner_graph,
+)
+from app.modules.itinerary_planner.tests.factories import (
+    candidate,
+    entertainment,
+    food,
+    payload,
+)
 from app.modules.itinerary_planner.tests.routing_fakes import (
     FixedCostEstimator,
     GeneratedMatrixProvider,
@@ -102,3 +110,51 @@ def test_graph_returns_preflight_error_without_three_meals() -> None:
         "missing": [{"day": 1, "meal": "breakfast"}],
     }
     assert "prepared_problem" not in result
+
+
+def test_beam_graph_returns_evaluation_without_using_cp_sat_graph() -> None:
+    graph = build_beam_search_itinerary_planner_graph(
+        GeneratedMatrixProvider(), FixedCostEstimator()
+    )
+    planner_input = ItineraryPlannerInput.model_validate(
+        payload(
+            places=[candidate("museum"), candidate("park")],
+            foods=[
+                food("breakfast", supported_meals=["breakfast"]),
+                food("lunch", supported_meals=["lunch"]),
+                food("dinner", supported_meals=["dinner"]),
+            ],
+        )
+    )
+
+    result = asyncio.run(graph.ainvoke({"input": planner_input}))
+
+    assert result.get("error") is None
+    assert result["optimization_result"].passes[0].name == "beam_search"
+    assert result["output"].evaluation.count_restaurant == 3
+    assert result["output"].evaluation.count_travelplace == 2
+
+
+def test_beam_graph_merges_places_food_and_entertainment_pools() -> None:
+    graph = build_beam_search_itinerary_planner_graph(
+        GeneratedMatrixProvider(), FixedCostEstimator()
+    )
+    planner_input = ItineraryPlannerInput.model_validate(
+        payload(
+            places=[candidate("museum"), candidate("park"), candidate("lake")],
+            foods=[
+                food("breakfast", supported_meals=["breakfast"], venue_type="drink_dessert"),
+                food("lunch", supported_meals=["lunch"], venue_type="drink_dessert"),
+                food("dinner", supported_meals=["dinner"]),
+            ],
+            entertainment_items=[entertainment("show")],
+        )
+    )
+
+    result = asyncio.run(graph.ainvoke({"input": planner_input}))
+
+    assert result.get("error") is None
+    evaluation = result["output"].evaluation
+    assert evaluation.count_travelplace >= 1
+    assert evaluation.count_drink_dessert == 2
+    assert evaluation.count_entertainment == 1

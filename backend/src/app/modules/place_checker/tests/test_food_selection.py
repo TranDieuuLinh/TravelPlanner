@@ -1,6 +1,7 @@
 import asyncio
 
 from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
+from app.modules.place_checker.food_candidate_policy import FoodCandidatePolicy
 from app.modules.place_checker.food_selection_contract import (
     FoodRestaurantCandidate,
     FoodSelectionAnchor,
@@ -161,6 +162,21 @@ def test_reliable_restaurant_beats_five_star_candidate_with_one_review() -> None
 
     assert result.selections[0].restaurant_id == "restaurant:reliable"
     assert result.selections[0].selection_reason == "bayesian_ranked"
+
+
+def test_food_reputation_is_separate_and_drinkdessert_is_downweighted() -> None:
+    restaurant = candidate("place:a", "restaurant:a", reviews=100_000)
+    drink = candidate("place:b", "drink:b", reviews=100_000).model_copy(
+        update={
+            "metadata": restaurant.metadata.model_copy(
+                update={"place_id": "drink:b", "category": "drink_dessert"}
+            )
+        }
+    )
+    policy = FoodCandidatePolicy()
+    priors = policy.priors([restaurant, drink])
+
+    assert policy.pair_score(restaurant, priors) > policy.pair_score(drink, priors)
 
 
 def test_restaurant_reuse_is_only_a_fallback_when_no_unused_option_exists() -> None:
