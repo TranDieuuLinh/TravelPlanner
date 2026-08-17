@@ -14,6 +14,14 @@ _NAVIGATION_MARKERS = (
     "site navigation",
     "theo dòng sự kiện",
 )
+_CONTENT_NOISE_MARKERS = (
+    "discover flight",
+    "@shutterstock",
+    "qua bài viết này",
+    "tham khảo thêm một số tour",
+    "tour du lịch hấp dẫn",
+    "mục lục",
+)
 _SEGMENT_BREAK = re.compile(r"(?<=[.!?。！？])\s+|\n+")
 _PROMOTIONAL_PHONE = re.compile(
     r"(?<!\d)(?:1900|0\d{2,3})(?:[\s().-]*\d){4,10}(?!\d)"
@@ -77,10 +85,17 @@ def select_relevant_excerpt(
 ) -> str:
     """Select a query-relevant source excerpt instead of blindly using its prefix."""
     normalized = _normalize_for_selection(content)
-    if len(normalized) <= max_chars:
-        return normalize_answer_text(normalized)
+    segments = [
+        segment
+        for segment in _segments(normalized)
+        if not _has_content_noise_marker(segment)
+    ]
+    if not segments:
+        return ""
+    cleaned = " ".join(segments)
+    if len(cleaned) <= max_chars:
+        return normalize_answer_text(cleaned)
 
-    segments = _segments(normalized)
     query_terms = _tokens(query)
     title_terms = _tokens(title)
     scored = [
@@ -171,6 +186,11 @@ def _score_segment(
 def _has_navigation_marker(segment: str) -> bool:
     folded = _fold(segment)
     return any(_fold(marker) in folded for marker in _NAVIGATION_MARKERS)
+
+
+def _has_content_noise_marker(segment: str) -> bool:
+    folded = _fold(segment)
+    return any(_fold(marker) in folded for marker in _CONTENT_NOISE_MARKERS)
 
 
 def _tokens(text: str) -> set[str]:

@@ -45,6 +45,7 @@ class PostgresTripChatRepository:
                 command_timeout=self.command_timeout,
                 min_size=1,
                 max_size=10,
+                max_inactive_connection_lifetime=45,
             )
         return self._pool
 

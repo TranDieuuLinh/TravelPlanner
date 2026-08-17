@@ -55,6 +55,7 @@ import {
   type TransportOption,
   type TransportLeg,
   type TripChat,
+  type TripChatSource,
   type TripIntent,
   type TripChatSummary,
   type UnscheduledPlace,
@@ -189,6 +190,8 @@ type ChatMessage = {
   id: number | string;
   role: "assistant" | "user";
   text: string;
+  sources?: TripChatSource[];
+  streaming?: boolean;
 };
 
 type PlannerToast = {
@@ -1357,7 +1360,7 @@ function Planner() {
               result.turn.chatId
             )
           ) {
-            applyTripChat(fresh);
+            applyTripChat(fresh, { streamLatestAssistant: true });
           }
         }
         setTripChats(await listTripChats());
@@ -3968,7 +3971,10 @@ function Planner() {
     }
   }
 
-  function applyTripChat(chat: TripChat) {
+  function applyTripChat(
+    chat: TripChat,
+    options?: { streamLatestAssistant?: boolean },
+  ) {
     setGuidedIntakeStep("complete");
     setGuidedIntakeOpen(false);
     setGuidedIntakeAnswers(
@@ -4019,7 +4025,13 @@ function Planner() {
     const conversationMessages = visibleConversationMessages(chat);
     setMessages(
       conversationMessages.length
-        ? conversationMessages
+        ? conversationMessages.map((message, index, allMessages) => ({
+            ...message,
+            streaming:
+              options?.streamLatestAssistant === true &&
+              index === allMessages.length - 1 &&
+              message.role === "assistant",
+          }))
         : [
             {
               id: `welcome-${chat.id}`,

@@ -497,7 +497,18 @@ export type TripChatMessage = {
   turnId?: string | null;
   messageKind?: string;
   contentBlocks?: Array<Record<string, unknown>>;
+  sources: TripChatSource[];
   createdAt: string;
+};
+
+export type TripChatSource = {
+  sourceId: string;
+  title: string;
+  url: string;
+  updatedAt?: string | null;
+  dateKind?: string | null;
+  reviewStatus?: string | null;
+  publishedAt?: string | null;
 };
 
 export type TripChatSummary = {
@@ -529,7 +540,6 @@ async function sendCurrentTripChatMessage(chatId: string, content: string): Prom
     {
       method: "POST",
       body: JSON.stringify({ content }),
-      signal: AbortSignal.timeout(120_000),
     },
   );
   return mapFullCurrentTripChat(response.chat);

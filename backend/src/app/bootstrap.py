@@ -147,8 +147,6 @@ def get_information_finder_service() -> InformationFinderService:
         search_query_planner=search_query_planner,
         entity_resolver=entity_resolver,
         options=InformationFinderOptions(
-            minimum_local_sources=settings.information_finder_min_local_sources,
-            similarity_threshold=settings.information_finder_similarity_threshold,
             provider_relevance_threshold=settings.information_finder_relevance_threshold,
             blocked_domains=blocked_domains,
             answer_fallback_enabled=(settings.information_finder_llm_fallback_enabled),

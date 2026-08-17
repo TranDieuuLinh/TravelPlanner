@@ -2,6 +2,7 @@ import type {
   TripChat,
   TripChatMessage,
   TripChatSummary,
+  TripChatSource,
   TravelPlan,
 } from "@/features/planner/api/plans";
 import type { ItineraryPlannerOutput } from "@/features/planner/lib/planner-output";
@@ -23,9 +24,29 @@ export type CurrentTripChat = CurrentTripChatSummary & {
     id: string;
     role: "assistant" | "user";
     content: string;
+    sources?: TripChatSource[];
     createdAt: string;
   }>;
 };
+
+function normalizeChatSources(value: unknown): TripChatSource[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const source = item as Record<string, unknown>;
+    const url = String(source.url ?? source.sourceUrl ?? "").trim();
+    if (!/^https?:\/\//i.test(url)) return [];
+    return [{
+      sourceId: String(source.sourceId ?? source.source_id ?? url),
+      title: String(source.title ?? "Nguồn tham khảo"),
+      url,
+      updatedAt: source.updatedAt as string | null | undefined,
+      dateKind: source.dateKind as string | null | undefined,
+      reviewStatus: source.reviewStatus as string | null | undefined,
+      publishedAt: source.publishedAt as string | null | undefined,
+    }];
+  });
+}
 
 function formatMinute(value: unknown): string {
   const minute = Number(value);
@@ -106,6 +127,7 @@ export function mapCurrentTripChat(
       id: message.id,
       role: message.role,
       content: message.content,
+      sources: normalizeChatSources(message.sources),
       attachmentNames: [],
       planRevision: plan ? chat.revision : null,
       createdAt: message.createdAt,

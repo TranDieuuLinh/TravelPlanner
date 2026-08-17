@@ -3,6 +3,21 @@
 from app.modules.explorer.public import ExplorerPlace, PlaceSource
 
 
+SUPERVISOR_CONTEXT_LIMIT = 6
+
+
+def supervisor_conversation_context(
+    recent_messages: list[str] | None,
+    previous_response: str | None,
+) -> list[str]:
+    """Keep a role-tagged, bounded transcript without repeating the current message."""
+    context = list(recent_messages or [])
+    tagged_response = f"Assistant: {previous_response}" if previous_response else None
+    if tagged_response and tagged_response not in context:
+        context.append(tagged_response)
+    return context[-SUPERVISOR_CONTEXT_LIMIT:]
+
+
 def memory_field(memory, name: str, default=None):
     if memory is None:
         return default

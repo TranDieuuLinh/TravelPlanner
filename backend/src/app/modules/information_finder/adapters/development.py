@@ -136,18 +136,36 @@ class InMemorySourceRepository:
 class ExtractiveAnswerGenerator:
     """Truthful development fallback that only quotes supplied source snippets."""
 
+    max_claims = 3
+    max_chars_per_claim = 280
+
     async def generate(
         self, query: str, sources: list[RetrievedSource]
     ) -> GeneratedAnswer:
         claims = []
-        for source in sources[:4]:
+        for source in sources:
             snippet = select_relevant_excerpt(
                 source.content,
                 query,
                 title=source.title,
-                max_chars=500,
+                max_chars=self.max_chars_per_claim,
             )
             if not snippet:
                 continue
-            claims.append(AnswerClaim(text=snippet, source_ids=[source.source_id]))
+            prefix = "## Thông tin nổi bật\n\n" if not claims else ""
+            claims.append(
+                AnswerClaim(
+                    text=f"{prefix}- {snippet}",
+                    source_ids=[source.source_id],
+                )
+            )
+            if len(claims) >= self.max_claims:
+                break
+        if not claims and sources:
+            claims.append(
+                AnswerClaim(
+                    text="Thông tin hiện có chưa đủ rõ để trả lời câu hỏi này.",
+                    source_ids=[sources[0].source_id],
+                )
+            )
         return GeneratedAnswer(claims=claims)

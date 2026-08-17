@@ -15,7 +15,7 @@ class GeminiIntentClassifier:
         user_payload = {
             "message": payload.message,
             "conversationContext": [
-                item[-500:] for item in payload.conversation_context[-3:]
+                item[-500:] for item in payload.conversation_context
             ],
             "hasItinerary": payload.has_itinerary,
             "hasEditOperation": payload.has_edit_operation,

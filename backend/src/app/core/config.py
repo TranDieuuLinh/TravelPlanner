@@ -77,8 +77,6 @@ class Settings(BaseSettings):
         "gemini_url"
     )
     information_finder_chunking_max_output_tokens: int = 8000
-    information_finder_min_local_sources: int = 2
-    information_finder_similarity_threshold: float = 0.8
     information_finder_relevance_threshold: float = 0.5
     information_finder_blocked_domains: str = ""
     information_finder_answer_provider: Literal["extractive", "gemini"] = "extractive"
