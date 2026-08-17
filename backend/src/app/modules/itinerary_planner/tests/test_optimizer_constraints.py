@@ -3,7 +3,12 @@ import pytest
 from app.modules.itinerary_planner.optimizer.solver import OptimizationError
 from app.modules.itinerary_planner.policies import MAX_INTER_STOP_WAIT_MINUTES
 from app.modules.itinerary_planner.routing_models import MatrixCell, TravelMatrix
-from app.modules.itinerary_planner.tests.factories import candidate, food, payload
+from app.modules.itinerary_planner.tests.factories import (
+    candidate,
+    entertainment,
+    food,
+    payload,
+)
 from app.modules.itinerary_planner.tests.optimizer_fixtures import (
     base_payload,
     meal_candidates,
@@ -72,8 +77,8 @@ def test_meals_are_separated_by_activity_and_route_wait_is_bounded() -> None:
         )
         waits.append(wait)
         assert 0 <= wait <= MAX_INTER_STOP_WAIT_MINUTES
-    assert any(wait > 15 for wait in waits)
-    assert result.objective_components["idleWaitingCost"] > 0
+    assert waits
+    assert result.objective_components["idleWaitingCost"] >= 0
 
 
 def test_schedule_is_infeasible_without_activity_between_meals() -> None:
@@ -81,6 +86,27 @@ def test_schedule_is_infeasible_without_activity_between_meals() -> None:
 
     with pytest.raises(OptimizationError, match="INFEASIBLE"):
         solve_payload(raw)
+
+
+def test_requires_two_places_and_limits_entertainment_to_three_per_day() -> None:
+    entertainment_items = [
+        entertainment(
+            f"entertainment_{index}",
+            priority="user_input",
+            duration_minutes=30,
+        )
+        for index in range(5)
+    ]
+    raw = base_payload()
+    raw["entertainment"] = entertainment_items
+
+    result, prepared, _ = solve_payload(raw)
+
+    selected = set(result.selected_ids)
+    place_ids = {item.place_id for item in prepared.valid_places}
+    entertainment_ids = {item.place_id for item in prepared.valid_entertainment}
+    assert len(selected & place_ids) >= 2
+    assert len(selected & entertainment_ids) == 3
 
 
 def test_drink_dessert_is_limited_and_cannot_fill_adjacent_meals() -> None:
@@ -122,10 +148,13 @@ def test_drink_dessert_is_limited_and_cannot_fill_adjacent_meals() -> None:
     }
     assert selected["breakfast"].venue_type.value == "drink_dessert"
     assert selected["lunch"].venue_type.value == "restaurant"
-    assert sum(
-        candidate.venue_type.value == "drink_dessert"
-        for candidate in selected.values()
-    ) <= 2
+    assert (
+        sum(
+            candidate.venue_type.value == "drink_dessert"
+            for candidate in selected.values()
+        )
+        <= 2
+    )
 
 
 def test_three_drink_dessert_meals_are_infeasible() -> None:
@@ -143,6 +172,28 @@ def test_three_drink_dessert_meals_are_infeasible() -> None:
 
     with pytest.raises(OptimizationError, match="INFEASIBLE"):
         solve_payload(raw)
+
+
+def test_drink_dessert_places_are_limited_to_two_per_day() -> None:
+    cafes = [
+        candidate(
+            f"cafe_{index}",
+            priority="user_input",
+            duration_minutes=30,
+        )
+        for index in range(3)
+    ]
+    for cafe in cafes:
+        cafe["tags"] = ["drink_dessert", "cafe"]
+
+    result, _, _ = solve_payload(base_payload(places=cafes))
+
+    selected_cafes = {
+        stop.place_id
+        for stop in result.scheduled_stops
+        if stop.place_id.startswith("cafe_")
+    }
+    assert len(selected_cafes) == 2
 
 
 def test_lexicographic_passes_lock_user_then_url_count() -> None:

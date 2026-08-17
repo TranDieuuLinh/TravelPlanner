@@ -21,7 +21,7 @@ class ItineraryStop(PlannerContractModel):
     item_id: str
     place_id: str
     name: str
-    kind: Literal["place", "food"]
+    kind: Literal["place", "food", "entertainment"]
     priority: CandidatePriority
     start_minute: int = Field(ge=0, le=1620)
     end_minute: int = Field(gt=0, le=1620)
@@ -104,6 +104,9 @@ class SolverPassMetadata(PlannerContractModel):
     objective_value: int
     wall_time_ms: int = Field(ge=0)
     optimality_proven: bool
+    attempt_count: int = Field(default=1, ge=1)
+    round_count: int = Field(default=1, ge=1)
+    no_improvement_rounds: int = Field(default=0, ge=0)
 
 
 class SolverMetadata(PlannerContractModel):

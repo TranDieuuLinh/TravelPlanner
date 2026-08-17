@@ -19,6 +19,8 @@ class FoodRestaurantCandidate(ContractModel):
     food_confidence: float = Field(default=0.7, ge=0, le=1)
     offered_food_item_id: str = Field(min_length=1, max_length=200)
     offered_food_item_name: str = Field(min_length=1, max_length=200)
+    style_id: str | None = Field(default=None, max_length=200)
+    style_name: str | None = Field(default=None, max_length=200)
     food_match_type: Literal[
         "direct_id",
         "offer_item_fallback",
@@ -46,6 +48,8 @@ class SelectedFoodRestaurant(ContractModel):
     food_item_name: str = Field(min_length=1, max_length=200)
     offered_food_item_id: str = Field(min_length=1, max_length=200)
     offered_food_item_name: str = Field(min_length=1, max_length=200)
+    style_id: str | None = Field(default=None, max_length=200)
+    style_name: str | None = Field(default=None, max_length=200)
     food_match_type: Literal[
         "direct_id",
         "offer_item_fallback",
@@ -62,6 +66,7 @@ class SelectedFoodRestaurant(ContractModel):
         "sole_candidate_for_food",
         "bayesian_ranked",
         "quality_fallback",
+        "style_item_diversity",
     ]
     proximity_source: Literal[
         "kg_special_near",
@@ -105,8 +110,18 @@ class FoodMealCoverage(ContractModel):
     reserve_missing_slots: list[FoodMealSlot] = Field(default_factory=list)
 
 
+class FoodStyleCoverage(ContractModel):
+    style_id: str = Field(min_length=1, max_length=200)
+    style_name: str = Field(min_length=1, max_length=200)
+    target_items: int = Field(ge=0)
+    selected_restaurants: int = Field(ge=0)
+    distinct_items: int = Field(ge=0)
+    complete: bool = False
+
+
 class FoodSelectionBatch(ContractModel):
     selections: list[SelectedFoodRestaurant] = Field(default_factory=list)
     unmatched_anchor_place_ids: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     meal_coverage: FoodMealCoverage = Field(default_factory=FoodMealCoverage)
+    style_coverage: list[FoodStyleCoverage] = Field(default_factory=list)

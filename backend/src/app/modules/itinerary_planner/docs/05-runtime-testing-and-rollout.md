@@ -35,10 +35,11 @@ Runtime mặc định giữ một CP-SAT search worker cho mỗi daily repair v�
 component-bridge arcs luôn được union lại sau nearest-neighbor pruning.
 Hai solver pass của mỗi ngày không có wall-clock timeout mặc định. Deployment
 cần SLA khác có thể inject `SolverConfig`. Pass priority `user_input > URL` vẫn
-exact trong daily subproblem; pass utility không deadline dừng ở nghiệm khả thi
-đầu tiên dựa trên hint. Greedy/local-search order được đưa vào
-CP-SAT bằng solution hint; CP-SAT vẫn có quyền sửa selection, time và route để
-thỏa hard constraint.
+exact trong daily subproblem. Mỗi utility round chạy ba solver instance một
+thread với seed khác nhau, giữ incumbent tốt nhất và dừng sau 10 round liên
+tiếp không cải thiện. Greedy/local-search order được đưa vào CP-SAT bằng
+solution hint; CP-SAT vẫn có quyền sửa selection, time và route để thỏa hard
+constraint.
 Valhalla matrix và route-detail request cũng không có timeout mặc định; lỗi
 HTTP/provider thực sự vẫn đi qua approximate fallback và phát warning.
 Greedy không dùng tổng activity duration làm điều kiện loại sớm. Nó tạo activity
@@ -122,10 +123,15 @@ Repair policy:
 
 1. Xác định ngày bị ảnh hưởng.
 2. Cập nhật travel coefficient của leg sai lệch.
-3. Khóa assignment/route của các ngày không bị ảnh hưởng.
-4. Re-solve ngày đó với priority count được bảo vệ tối đa.
-5. Chỉ re-enrich route detail của ngày đã thay đổi.
+3. Thử đẩy timeline của đúng ngày đó trong opening/meal/overnight/budget hard
+   constraints mà không đổi selection hoặc route order.
+4. Chỉ khi reflow không hợp lệ mới khóa các ngày không bị ảnh hưởng và re-solve
+   ngày đó với priority count được bảo vệ tối đa.
+5. Chỉ re-enrich route detail của ngày đã thay đổi; detail thành công của cùng
+   cặp matrix node được tái sử dụng trong request.
 6. Nếu route mới lại vượt matrix và phá timeline, áp correction mới rồi lặp lại.
+   Mỗi vòng bắt buộc phải có ít nhất một travel-time correction mới; nếu không,
+   runtime dừng bằng error có cấu trúc thay vì loop.
 
 Nếu repair có day locks trả `INFEASIBLE` hoặc `UNKNOWN`, runtime retry một lần bằng hybrid
 replan toàn chuyến trên routing đã sửa. Retry này vẫn tối ưu priority nhưng cho

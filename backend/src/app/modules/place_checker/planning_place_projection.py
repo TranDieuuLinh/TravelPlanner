@@ -20,7 +20,7 @@ from app.modules.place_checker.planner_semantics import (
     candidate_semantics,
 )
 from app.modules.place_checker.planning_time_windows import parse_planner_windows
-from app.modules.place_checker.price_policy import typical_cost
+from app.modules.place_checker.price_policy import planner_cost
 from app.shared.contracts.source_note import SourceNote
 
 
@@ -31,6 +31,8 @@ class PlannerPlaceProjector:
             checked.relationship_evidence
         )
         tags, styles = candidate_semantics(checked.tags, checked.relationship_evidence)
+        if checked.category == "drink_dessert" and "drink_dessert" not in tags:
+            tags.append("drink_dessert")
         adult_only, kid_suitable = audience_values(
             adults=checked.suitability.adults,
             children=checked.suitability.children,
@@ -82,6 +84,8 @@ class PlannerPlaceProjector:
         relations = option.relationships
         source_kind, offered_activity_ids = source_metadata(relations)
         tags, styles = candidate_semantics(option.tags, relations)
+        if option.category == "drink_dessert" and "drink_dessert" not in tags:
+            tags.append("drink_dessert")
         adult_only, kid_suitable = audience_values(
             adults=True,
             children=option.children_suitable,
@@ -117,7 +121,8 @@ class PlannerPlaceProjector:
                 relationships=relations,
             ),
             price=PlannerPrice(
-                cost=typical_cost(
+                cost=planner_cost(
+                    category=option.category,
                     minimum=option.minimum_cost,
                     typical=option.typical_cost,
                     maximum=option.maximum_cost,
@@ -184,7 +189,8 @@ class PlannerPlaceProjector:
     @staticmethod
     def _price(checked: CheckedPlace) -> PlannerPrice:
         return PlannerPrice(
-            cost=typical_cost(
+            cost=planner_cost(
+                category=checked.category,
                 minimum=checked.cost.minimum,
                 typical=checked.cost.typical,
                 maximum=checked.cost.maximum,

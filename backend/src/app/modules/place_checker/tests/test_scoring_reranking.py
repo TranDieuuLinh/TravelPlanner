@@ -236,9 +236,22 @@ def test_provisional_candidate_is_excluded() -> None:
     assert "low_verification" in result.excluded[0].penalties
 
 
-def test_candidate_without_usable_cost_is_excluded() -> None:
+def test_general_place_without_usable_cost_defaults_to_free() -> None:
     result = CandidateScoringService(now=NOW).rank(
         retrieval(candidate("unknown-price", with_cost=False)),
+        analysis_context(),
+        empty_places(),
+    )
+
+    assert [item.candidate.candidate_key for item in result.ranked] == [
+        "unknown-price"
+    ]
+    assert result.ranked[0].components.budget_fit == 1
+
+
+def test_restaurant_without_usable_cost_is_excluded() -> None:
+    result = CandidateScoringService(now=NOW).rank(
+        retrieval(candidate("unknown-price", category="restaurant", with_cost=False)),
         analysis_context(),
         empty_places(),
     )
@@ -376,7 +389,7 @@ def test_default_reserve_grows_with_trip_days() -> None:
     )
 
     assert result.reserve_limit_per_gap == 60
-    assert result.pool_target == 101
+    assert result.pool_target == 125
     assert len(result.ranked) == 8
 
 

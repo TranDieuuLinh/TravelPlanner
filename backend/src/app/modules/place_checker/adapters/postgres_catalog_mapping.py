@@ -11,7 +11,13 @@ from app.shared.contracts.source_note import SourceNote
 from app.shared.tools.search_places import AdministrativeArea, PlaceProviderCandidate
 from app.shared.tools.search_places.normalization import normalize_text
 
-PLACE_TYPES = {"TravelPlace", "Restaurant", "DrinkDessert", "Accommodation"}
+PLACE_TYPES = {
+    "TravelPlace",
+    "Restaurant",
+    "DrinkDessert",
+    "Entertainment",
+    "Accommodation",
+}
 TYPE_BY_HINT = {
     "travel place": {"TravelPlace"},
     "attraction": {"TravelPlace"},
@@ -23,6 +29,7 @@ TYPE_BY_HINT = {
     "coffee": {"DrinkDessert"},
     "drink": {"DrinkDessert"},
     "drink dessert": {"DrinkDessert"},
+    "entertainment": {"Entertainment"},
     "hotel": {"Accommodation"},
     "accommodation": {"Accommodation"},
 }
@@ -30,6 +37,7 @@ CANONICAL_TYPE = {
     "TravelPlace": "travel_place",
     "Restaurant": "restaurant",
     "DrinkDessert": "drink_dessert",
+    "Entertainment": "entertainment",
     "Accommodation": "accommodation",
 }
 
@@ -252,29 +260,11 @@ class PostgresCatalogMappingMixin:
             key=lambda relationship: relationship.priority or 0,
             reverse=True,
         )
-        style_windows: list[dict[str, Any]] = []
         style_durations: list[int] = []
         for relationship in styles:
             properties = relationship.properties
-            if properties.get("time_windows"):
-                raw_windows = properties["time_windows"]
-                try:
-                    parsed_windows = (
-                        json.loads(raw_windows)
-                        if isinstance(raw_windows, str)
-                        else raw_windows
-                    )
-                except (TypeError, ValueError):
-                    parsed_windows = []
-                for window in (
-                    parsed_windows if isinstance(parsed_windows, list) else []
-                ):
-                    if isinstance(window, dict) and window not in style_windows:
-                        style_windows.append(window)
             if duration := cls._duration(properties.get("time_duration")):
                 style_durations.append(duration)
-        if not merged.get("time_windows") and style_windows:
-            merged["time_windows"] = json.dumps(style_windows)
         if not merged.get("time_duration") and style_durations:
             merged["time_duration"] = f"PT{max(style_durations)}M"
         return merged

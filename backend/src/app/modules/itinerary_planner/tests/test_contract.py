@@ -2,7 +2,12 @@ import pytest
 from pydantic import ValidationError
 
 from app.modules.itinerary_planner.contract import ItineraryPlannerInput
-from app.modules.itinerary_planner.tests.factories import candidate, food, payload
+from app.modules.itinerary_planner.tests.factories import (
+    candidate,
+    entertainment,
+    food,
+    payload,
+)
 
 
 def test_camel_case_input_round_trips_with_aliases() -> None:
@@ -34,6 +39,22 @@ def test_camel_case_input_round_trips_with_aliases() -> None:
     ]
 
 
+def test_entertainment_pool_is_nullable_and_round_trips_separately() -> None:
+    parsed = ItineraryPlannerInput.model_validate(payload())
+    assert parsed.entertainment is None
+
+    parsed = ItineraryPlannerInput.model_validate(
+        payload(
+            entertainment_items=[entertainment("cafe", entity_type="drink_dessert")]
+        )
+    )
+    dumped = parsed.model_dump(mode="json", by_alias=True)
+
+    assert parsed.entertainment is not None
+    assert parsed.entertainment[0].entity_type == "drink_dessert"
+    assert dumped["entertainment"][0]["entityType"] == "drink_dessert"
+
+
 def test_accepts_legacy_preference_list_and_rejects_invalid_audience() -> None:
     raw = payload(places=[candidate("legacy")])
     raw["trip"].pop("party")
@@ -58,9 +79,10 @@ def test_food_venue_type_round_trips_and_rejects_unknown_values() -> None:
     parsed = ItineraryPlannerInput.model_validate(payload(foods=[drink]))
 
     assert parsed.food[0].venue_type.value == "drink_dessert"
-    assert parsed.model_dump(mode="json", by_alias=True)["food"][0][
-        "venueType"
-    ] == "drink_dessert"
+    assert (
+        parsed.model_dump(mode="json", by_alias=True)["food"][0]["venueType"]
+        == "drink_dessert"
+    )
 
     drink["venueType"] = "dessert_restaurant"
     with pytest.raises(ValidationError):
@@ -87,9 +109,7 @@ def test_accepts_place_checker_unique_meal_matching_feasibility() -> None:
     dumped = parsed.model_dump(mode="json", by_alias=True)
 
     assert parsed.food_coverage.days == 2
-    assert parsed.food_coverage.hard_assignments[0].restaurant_id == (
-        "food:breakfast"
-    )
+    assert parsed.food_coverage.hard_assignments[0].restaurant_id == ("food:breakfast")
     assert dumped["foodCoverage"]["reserveMissingSlots"] == [
         {"day": 2, "meal": "dinner"}
     ]

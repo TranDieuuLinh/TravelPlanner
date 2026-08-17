@@ -48,6 +48,7 @@ def finalize_itinerary(
             "the estimate is a soft planning target."
         )
     food_ids = {food.place_id for food in problem.valid_food}
+    entertainment_ids = {item.place_id for item in problem.valid_entertainment}
     selected_accommodation = (
         problem.accommodation_by_id.get(optimization.selected_accommodation_id)
         if optimization.selected_accommodation_id
@@ -73,7 +74,13 @@ def finalize_itinerary(
                 item_id=f"planner:{stop.day}:{canonical_place_id}{item_suffix}",
                 place_id=canonical_place_id,
                 name=candidate.name,
-                kind="food" if stop.place_id in food_ids else "place",
+                kind=(
+                    "food"
+                    if stop.place_id in food_ids
+                    else "entertainment"
+                    if stop.place_id in entertainment_ids
+                    else "place"
+                ),
                 priority=candidate.priority,
                 start_minute=stop.start_minute,
                 end_minute=stop.end_minute,
@@ -196,7 +203,9 @@ def finalize_itinerary(
             stop.cost_per_person for stop in day_stops if stop.kind == "food"
         )
         activity_cost = sum(
-            stop.cost_per_person for stop in day_stops if stop.kind == "place"
+            stop.cost_per_person
+            for stop in day_stops
+            if stop.kind in {"place", "entertainment"}
         )
         transport_cost = (
             sum(
@@ -295,6 +304,9 @@ def finalize_itinerary(
                     objective_value=item.objective_value,
                     wall_time_ms=item.wall_time_ms,
                     optimality_proven=item.optimality_proven,
+                    attempt_count=item.attempt_count,
+                    round_count=item.round_count,
+                    no_improvement_rounds=item.no_improvement_rounds,
                 )
                 for item in optimization.passes
             ],

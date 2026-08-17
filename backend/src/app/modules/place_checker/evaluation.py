@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.modules.place_checker.contract import TripEvaluationContext
 from app.modules.place_checker.avoid_policy import matching_avoids
+from app.modules.place_checker.contract import TripEvaluationContext
 from app.modules.place_checker.enums import (
     CostTier,
     EvaluationDimension,
@@ -27,6 +27,7 @@ from app.modules.place_checker.evaluation_policy import (
     place_labels,
     unique_constraints,
 )
+from app.modules.place_checker.price_policy import place_defaults_to_free
 from app.modules.place_checker.resolution_contract import EnrichedIdentityPlace
 from app.shared.tools.search_places.normalization import normalize_text
 
@@ -314,8 +315,11 @@ class PlaceEvaluationService:
                     message="Cần ước lượng duration trước khi xếp timeline.",
                 )
             )
-        if metadata and metadata.cost_tier == CostTier.unknown and (
-            metadata.typical_cost is None
+        if (
+            metadata
+            and not place_defaults_to_free(metadata.category)
+            and metadata.cost_tier == CostTier.unknown
+            and metadata.typical_cost is None
         ):
             constraints.append(
                 PlannerConstraint(

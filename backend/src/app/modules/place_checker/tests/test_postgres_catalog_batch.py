@@ -50,6 +50,22 @@ def test_catalog_search_many_uses_one_query_and_preserves_groups() -> None:
 
     assert result == [["place-1"], ["place-2"]]
     assert catalog.pool.arguments[0] == ["ho hoan kiem", "van mieu"]
+    assert catalog.pool.arguments[4] == [None, None]
+
+
+def test_catalog_search_many_passes_one_anchor_per_query() -> None:
+    catalog = Catalog()
+    adm = AdministrativeArea(adm_id="adm-1", name="Hà Nội", country_code="VN")
+
+    asyncio.run(catalog.search_many(
+        [["Museum"], ["Garden"]],
+        input_adm=adm,
+        place_type_hint="travel_place",
+        limit=5,
+        anchor_place_ids=["place-a", "place-b"],
+    ))
+
+    assert catalog.pool.arguments[4] == ["place-a", "place-b"]
 
 
 def test_catalog_search_many_rejects_more_than_ten_queries() -> None:

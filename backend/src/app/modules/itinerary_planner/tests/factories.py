@@ -54,11 +54,28 @@ def food(
     return value
 
 
+def entertainment(
+    place_id: str,
+    *,
+    entity_type: str = "entertainment",
+    priority: str = "special_experience",
+    duration_minutes: int = 60,
+) -> dict[str, Any]:
+    value = candidate(
+        place_id,
+        priority=priority,
+        duration_minutes=duration_minutes,
+    )
+    value["entityType"] = entity_type
+    return value
+
+
 def payload(
     *,
     days: int = 1,
     places: list[dict[str, Any]] | None = None,
     foods: list[dict[str, Any]] | None = None,
+    entertainment_items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "trip": {
@@ -77,5 +94,6 @@ def payload(
         },
         "places": places or [],
         "food": foods if foods is not None else [food()],
+        "entertainment": entertainment_items,
         "upstreamWarnings": [],
     }

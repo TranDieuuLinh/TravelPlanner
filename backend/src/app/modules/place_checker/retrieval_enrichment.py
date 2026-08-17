@@ -13,11 +13,13 @@ class RetrievalMetadataEnricher:
         self,
         candidates: list[RetrievedCandidate],
     ) -> tuple[list[RetrievedCandidate], list[str]]:
-        place_ids = [
-            candidate.place_id
-            for candidate in candidates
-            if candidate.place_id is not None
-        ]
+        place_ids = list(
+            dict.fromkeys(
+                candidate.place_id
+                for candidate in candidates
+                if candidate.place_id is not None
+            )
+        )
         if self.repository is None or not place_ids:
             return candidates, []
         try:

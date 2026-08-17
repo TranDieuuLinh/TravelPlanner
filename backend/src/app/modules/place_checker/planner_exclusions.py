@@ -1,7 +1,7 @@
 from app.modules.place_checker.checked_output_contract import CheckedPlace
 from app.modules.place_checker.enums import SourceTier, VerificationStatus
 from app.modules.place_checker.output_contract import PlannerExcludedCandidate
-from app.modules.place_checker.price_policy import has_usable_cost
+from app.modules.place_checker.price_policy import has_planner_cost
 
 
 def build_excluded_candidate(checked: CheckedPlace) -> PlannerExcludedCandidate:
@@ -14,7 +14,8 @@ def build_excluded_candidate(checked: CheckedPlace) -> PlannerExcludedCandidate:
     elif not checked.duration.typical_minutes:
         code = "missing_duration"
         message = "The requested place has no usable visit duration."
-    elif not has_usable_cost(
+    elif not has_planner_cost(
+        category=checked.category,
         minimum=checked.cost.minimum,
         typical=checked.cost.typical,
         maximum=checked.cost.maximum,

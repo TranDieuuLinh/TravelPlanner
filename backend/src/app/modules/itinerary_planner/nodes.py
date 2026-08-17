@@ -36,10 +36,12 @@ from app.modules.itinerary_planner.route_enrichment import (
     apply_route_corrections,
     enrich_selected_routes,
     invalid_timeline_days,
+    route_correction_pairs,
 )
 from app.modules.itinerary_planner.routing import build_routing_problem
 from app.modules.itinerary_planner.routing_models import RoutingPhaseError
 from app.modules.itinerary_planner.state import ItineraryPlannerState
+from app.modules.itinerary_planner.timeline_reflow import try_reflow_timeline
 from app.shared.observability import traced_call
 from app.shared.tools.transport_cost import TransportCostEstimator
 
@@ -184,7 +186,14 @@ def create_enrich_selected_routes_node(
         problem = state["prepared_problem"]
         routing = state["routing_problem"]
         optimization = state["optimization_result"]
-        details = await enrich_selected_routes(problem, routing, optimization, provider)
+        detail_cache = {}
+        details = await enrich_selected_routes(
+            problem,
+            routing,
+            optimization,
+            provider,
+            detail_cache=detail_cache,
+        )
         repair_ms = 0
         if details.repair_days:
             if estimator is None:
@@ -195,31 +204,54 @@ def create_enrich_selected_routes_node(
             repair_started = monotonic()
             while details.repair_days:
                 repair_days = details.repair_days
+                if not route_correction_pairs(routing, details):
+                    return {
+                        "error": "Route repair stopped because no new travel-time "
+                        "correction was available.",
+                        "error_code": "route_repair_no_progress",
+                    }
                 routing = apply_route_corrections(
                     routing, details, estimator, problem.trip.people
                 )
-                try:
-                    optimization, repair_scope, repair_warning = (
-                        await _repair_optimization(
-                            problem,
-                            routing,
-                            optimization,
-                            repair_days,
-                            config,
-                            weights,
-                        )
+                reflowed = try_reflow_timeline(
+                    problem,
+                    routing,
+                    optimization,
+                    repair_days,
+                    weights,
+                    max_inter_stop_wait_minutes=config.max_inter_stop_wait_minutes,
+                )
+                if reflowed is not None:
+                    optimization = reflowed
+                    repair_scope = repair_days
+                    repair_warning = (
+                        "Route detail changed travel time; affected-day timelines "
+                        "were shifted without changing selected places or route order."
                     )
-                except OptimizationError as exc:
-                    return {
-                        "error": f"Route repair failed: {exc}",
-                        "error_code": f"route_repair_{exc.status.casefold()}",
-                    }
+                else:
+                    try:
+                        optimization, repair_scope, repair_warning = (
+                            await _repair_optimization(
+                                problem,
+                                routing,
+                                optimization,
+                                repair_days,
+                                config,
+                                weights,
+                            )
+                        )
+                    except OptimizationError as exc:
+                        return {
+                            "error": f"Route repair failed: {exc}",
+                            "error_code": f"route_repair_{exc.status.casefold()}",
+                        }
                 repaired = await enrich_selected_routes(
                     problem,
                     routing,
                     optimization,
                     provider,
                     days=repair_scope,
+                    detail_cache=detail_cache,
                 )
                 details = _merge_enrichment(details, repaired)
                 if repair_warning:
@@ -289,8 +321,10 @@ async def _repair_optimization(
     return (
         repaired,
         frozenset(range(1, problem.trip.days + 1)),
-        "Route repair relaxed unaffected-day locks after the locked solve could not "
-        "produce a feasible result, then replanned compact per-day candidate pools.",
+        (
+            "Route repair relaxed unaffected-day locks after the locked solve could not "
+            "produce a feasible result, then replanned compact per-day candidate pools."
+        ),
     )
 
 

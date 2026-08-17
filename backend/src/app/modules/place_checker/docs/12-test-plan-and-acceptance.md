@@ -36,7 +36,8 @@ external adapter và downstream planning.
 18. Special experience chỉ tham chiếu canonical anchor place.
 19. Tạo gap cho item unresolved.
 20. Giữ low budget ở relative mode, không tạo target amount.
-21. Phân biệt unknown cost với zero/free.
+21. Giữ unknown cost trong rich output nhưng chiếu TravelPlace thiếu giá thành
+    `0 VND` ở Planner output; venue và accommodation vẫn yêu cầu giá.
 22. Báo mandatory capacity overload nhưng không remove.
 23. Reject hoặc rerank optional nightlife.
 24. Giữ nightlife user yêu cầu trực tiếp kèm warning.

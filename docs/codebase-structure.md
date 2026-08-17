@@ -89,15 +89,16 @@ in-memory và PostgreSQL cùng kiểm tra revision trước khi cập nhật JSO
 FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của
 module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla matrix,
 fallback đường chim bay khi Valhalla unavailable, và
-sparse arcs trên contract `trip + places + food + accommodations + excludedCandidates`, sau đó chạy Phase 4 OR-Tools
+sparse arcs trên contract `trip + places + food + entertainment + accommodations + excludedCandidates`, sau đó chạy Phase 4 OR-Tools
 hybrid planner gồm geographic day-domain, greedy shortlist, 2-opt/swap và
 CP-SAT hai pass theo từng ngày: pass priority exact giữ thứ tự
 `user_input > URL`, sau đó pass utility tối ưu chất lượng lịch.
 Geographic day-domain không dùng solver phụ: heuristic chọn tâm theo normalized
 KNN density (`K<=10`) và Bayesian quality, greedy gán ngày gần nhất rồi
 rebalance một lần. Preferred pool
-giữ activity reserve cân bằng; mọi ngày khả thi khác vẫn là reserve fallback,
-còn candidate user/URL giữ toàn bộ ngày khả thi.
+giữ reserve tổng Place + Entertainment cân bằng; hard preflight chỉ yêu cầu
+full feasible pool còn hai Place/ngày. Mọi ngày khả thi khác vẫn là reserve
+fallback, còn candidate user/URL giữ toàn bộ ngày khả thi.
 Runtime composition đặt `ITINERARY_LOG_SEARCH_PROGRESS=true` để OR-Tools phát
 search progress; test graph vẫn có thể truyền `SolverConfig` tắt log để tránh
 output nhiễu.
@@ -111,11 +112,13 @@ TravelPlace. Transportation dùng cùng Xanh SM fare estimator cho các ADM Vi�
 Nam. Thiếu giá ở một nhóm bắt buộc thì giữ budget `unspecified`, không tạo số
 tiền giả.
 Phase 5 lấy detail cho selected arcs và accommodation transfers, thử repair có
-day locks khi duration thực tế phá timeline; nếu repair `INFEASIBLE` hoặc
-`UNKNOWN`, Planner dùng baseline hint rồi hybrid-replan compact pool theo ngày
-để thay/drop optional candidate. Route detail mới tiếp tục được correction và
-repair cho đến khi timeline ổn định, không dùng wall-clock timeout mặc định,
-rồi tạo public
+timeline reflow trước khi duration thực tế phá lịch nhưng selection/order vẫn
+có thể giữ nguyên. Nếu reflow không thỏa hard constraints, Planner thử day locks;
+nếu repair `INFEASIBLE` hoặc `UNKNOWN`, Planner dùng baseline hint rồi
+hybrid-replan compact pool theo ngày để thay/drop optional candidate. Route
+detail được cache trong request và correction/repair tiếp tục khi có travel-time
+correction mới cho đến khi timeline ổn định, không dùng wall-clock timeout mặc
+định, rồi tạo public
 `ItineraryPlannerOutput`. Root/API trả nó
 qua `plannerOutput`; legacy `itinerary` được giữ riêng cho PlanEditor. Root
 orchestration không còn tạo lịch giả từ `VerifiedPlace` legacy.
@@ -249,9 +252,14 @@ Với rich PlaceChecker pipeline, root giữ `PlaceCheckerResult` cho diagnostic
 `ItineraryPlannerInput`. Payload nằm trong state `planner_input`; Planner runtime
 tiêu thụ payload qua preprocessing, routing matrix, hybrid daily repair, route enrichment và
 finalization.
-Compact builder chỉ chuyển place/food có giá dùng được; `typical_cost` được lấy
-từ trung bình khoảng min/max, một đầu mút có sẵn, hoặc `0` cho tier `free`.
-`places[].sourcePlaces` phân biệt nguồn `input` (người dùng chọn trực tiếp), `url` (nguồn URL do người dùng cung cấp) và `system` (gợi ý từ assistant/information-finder hoặc transcript cũ, mang tính tùy chọn, không bắt buộc; chỉ khi lượt người dùng hiện tại tham chiếu rõ ràng qua current-turn explicit reference promotion mới được chuyển sang `input`); `sourceTimeHint` và
+Compact builder giữ TravelPlace thiếu giá và gửi `0 VND`; food, entertainment
+và accommodation vẫn cần giá dùng được. `typical_cost` được lấy từ trung bình
+khoảng min/max, một đầu mút có sẵn, `0` cho tier `free`, hoặc `0` theo mặc định
+TravelPlace tại boundary sang Planner.
+`places[].sourcePlaces` phân biệt nguồn `input` (người dùng chọn trực tiếp),
+`url` (nguồn URL do người dùng cung cấp) và `system` (gợi ý từ assistant,
+Information Finder hoặc transcript cũ, mang tính tùy chọn). Chỉ current-turn
+explicit reference promotion mới chuyển `system` sang `input`; `sourceTimeHint` và
 `addressHint` được giữ nhưng không có `sourceOrder` hay `sourceDay`.
 Draft generator nằm sau port; prompt-only và source-import có provider cấu hình
 riêng. Source-import chia từng source/artifact dài thành chunk khoảng 20.000 ký
@@ -362,8 +370,12 @@ dùng cho ảnh thẻ lịch trình. Planner phân period theo giờ stop thực
 trả target/actual/fallback audit. Bayesian review quality tiếp tục xếp hạng độ
 nổi tiếng trong objective sau các hard feasibility constraints.
 Planner cấm food-to-food arc để mỗi cặp bữa liên tiếp có ít nhất một activity,
-giới hạn tối đa hai `drink_dessert` mỗi ngày và không cho hai meal slot liền
-nhau cùng dùng loại venue này. Food contract giữ `venueType` rõ ràng. Waiting
+giới hạn tối đa hai `drink_dessert` mỗi ngày kể cả khi loại này nằm trong
+`places`, và không cho hai meal slot legacy liền nhau cùng dùng loại venue này.
+Nightlife/night-market bắt đầu từ 18:00; Weekend Night Market chỉ nhận
+Thứ Sáu-Chủ Nhật. Hybrid shortlist giữ history nhóm trải nghiệm của các ngày đã
+chọn, ưu tiên nhóm mới nhưng cho chọn lại nhóm cũ khi alternative cạn. Food
+contract giữ `venueType` rõ ràng. Waiting
 giữa hai stop bị hard-cap 150 phút ngoài safe-travel buffer; objective bắt đầu
 phạt phần waiting vượt 15 phút.
 Sparse-arc policy giữ meal-access theo từng ngày và hai chiều để pruning không
@@ -382,9 +394,12 @@ và warning fallback. Pass utility dùng relative gap 5%, còn pass priority v�
 tối ưu exact trước khi khóa riêng count
 user input và URL.
 Retrieval ngoài gap phân tích còn mở core pool và thematic pool theo chuyến.
-TravelPlace dùng target `14/ngày`, giữ một đại diện cho mỗi theme/style khả dụng
-trước khi bù theo Special Experience/popular; food hard minimum là unique matching cho từng slot
-`day × breakfast/lunch/dinner`, tối đa 60 mỗi loại. PlaceChecker còn thử một
+TravelPlace dùng target `14/ngày`, Restaurant `12/ngày`, và pool optional
+DrinkDessert/Entertainment `4/ngày`; giữ một đại diện cho mỗi theme/style khả dụng
+trước khi bù theo Special Experience/popular. Food dùng reserve `12/ngày`:
+sáu Style food/drink có target mềm `2 × days`, chọn Item trước rồi reverse
+`Offer_Item` sang quán theo anchor region. Food hard minimum vẫn là unique matching cho từng slot
+`day × breakfast/lunch/dinner`, tối đa 60 candidate. PlaceChecker còn thử một
 reserve matching rời hard set và gửi cả feasibility qua `foodCoverage`.
 Core query over-fetch có giới hạn để bù candidate thiếu metadata; scoring chốt
 quota sau dedupe và quality gate. PlaceChecker đếm lại đúng candidate đủ điều
@@ -407,9 +422,10 @@ trung lập. PlaceChecker PostgreSQL adapter diễn giải `Special_Near`,
 evidence có provenance sang scoring/output. Adapter không còn đọc `Near` legacy
 hoặc `Must_Visit`. Timing mặc định của `Has_Style` được đọc từ properties của
 node Style đích; timing riêng của place được ưu tiên.
-Nhánh food query một batch Restaurant trong bán kính tọa độ 5 km quanh tối đa
-8-12 anchor đại diện. SpecialNear là evidence, còn SpecialExperience và
-OfferItem được đọc song song. Service dedup Restaurant, gộp anchor/provenance,
+Nhánh food query `FoodItem`/`DrinkItem` có `Has_Style` rồi reverse `Offer_Item`
+sang Restaurant/DrinkDessert trong bán kính tọa độ 5 km quanh tối đa 8-12 anchor
+đại diện. SpecialNear là evidence. Service giữ Style/Item provenance, gộp
+anchor, ưu tiên Item/quán chưa dùng theo vùng,
 validate metadata, rồi chạy unique meal-slot matching. Service chỉ query general
 ADM một lần cho các meal type còn thiếu ở hard/reserve matching và match lại.
 Logic nằm trong `place_checker/food_meal_matching.py`; pool selection bắt buộc

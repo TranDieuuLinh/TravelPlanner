@@ -22,13 +22,16 @@ prepared candidates
 -> chọn food theo corridor activity trước/sau meal
 -> 2-opt + swap cải thiện thứ tự activity
 -> CP-SAT repair hai pass trên từng ngày
+-> nếu ngày chưa đạt ba activity, mở reserve khả thi và solve refill
 -> ghép ngày, chọn accommodation, kiểm tra budget/rest/transfers
 ```
 
 Geographic partition không chạy CP-SAT. `preferred_days` cấp shortlist nhanh;
 `feasible_days` vẫn giữ mọi candidate-day hợp lệ làm reserve. Nếu shortlist
 không có nghiệm, daily optimizer thử lại với reserve pool đầy đủ trước khi nới
-hard wait cap.
+hard wait cap. Preflight không chặn chỉ vì Place trong preferred pool thấp hơn
+reserve target: geographic reserve đếm chung Place + Entertainment, còn hard
+feasibility chỉ yêu cầu toàn bộ feasible pool giữ ít nhất hai Place mỗi ngày.
 
 Greedy không loại candidate theo tổng `durationMinutes`; nó giữ toàn bộ priority
 candidate và lấy optional có điểm tổng hợp cao nhất đến ngưỡng 16 activity.
@@ -36,6 +39,9 @@ candidate và lấy optional có điểm tổng hợp cao nhất đến ngưỡn
 quality, relationship và travel-to-current-cluster. Duration,
 opening hours và thời gian di chuyển được CP-SAT
 kiểm tra khi dựng timeline thật.
+Hybrid planner giữ bộ đếm nhóm trải nghiệm của các activity đã được chọn ở
+những ngày trước. Shortlist ngày sau trừ điểm nhóm đã xuất hiện và ưu tiên nhóm
+mới; candidate nhóm cũ vẫn được lấy lại khi pool không còn đủ nhóm mới.
 Điểm quality của shortlist dùng cùng Bayesian review quality với CP-SAT, gồm
 rating, review count và prior của candidate pool; popularity bổ sung
 `log(reviewCount)` để nhận diện landmark phổ biến mà không cho raw count lấn át.
@@ -178,10 +184,9 @@ trong opening hours của food.
 Breakfast bị chặn cứng tại 10:00. Trong cùng ngày, lunch phải bắt đầu ít nhất
 180 phút sau breakfast và dinner ít nhất 300 phút sau lunch.
 
-Mỗi ngày có tối đa hai food stop mang `venueType=drink_dessert`. Hai meal slot
-liền nhau không được cùng chọn `drink_dessert`, nên nếu dùng hai điểm thì chúng
-chỉ có thể nằm ở breakfast và dinner. Constraint này bổ sung cho rule route
-food-to-food bên dưới; nó kiểm soát loại venue chứ không chỉ thứ tự stop.
+Boundary PlaceChecker mới không gửi `DrinkDessert` vào food mà đánh dấu place
+bằng tag kỹ thuật `drink_dessert`. Solver giới hạn tổng loại này tối đa hai
+điểm/ngày. Constraint meal cho `venueType=drink_dessert` vẫn phục vụ payload cũ.
 
 Route cấm food-to-food arc, nên mỗi ngày phải có activity giữa breakfast/lunch
 và lunch/dinner. Strict solve đặt hard maximum `waiting <= 150` phút ngoài
@@ -189,6 +194,10 @@ safe-travel buffer. Mốc 15 phút là ideal threshold trong objective, không c
 hard gate làm lịch hợp lệ 20-60 phút chờ bị `INFEASIBLE`. Nếu cả shortlist và
 full-day strict solve đều vô nghiệm, hybrid retry full-day một lần không hard
 wait cap; progressive penalty bên dưới vẫn tối thiểu hóa khoảng trống.
+
+Mỗi ngày solver bắt buộc đúng ba bữa, ít nhất hai candidate từ `places`, thưởng
+coverage đến ba `places`, và cho phép tối đa ba candidate từ pool optional
+`entertainment`. Entertainment không được tính thay cho minimum Place.
 
 ### Accommodation
 
@@ -262,9 +271,12 @@ Mỗi lượt mặc định giữ một CP-SAT search worker. Benchmark local ch
 bốn workers đều làm fixture graph nhỏ vượt 90 giây, trong khi single-worker
 hoàn tất nhanh; không tăng mặc định nếu chưa có benchmark production theo cỡ
 pool. Các hard constraint và thứ tự ưu tiên lexicographic không đổi.
-Hai pass mặc định không đặt `max_time_in_seconds`; solver chạy tới khi chứng minh
-optimal/infeasible hoặc gặp lỗi bên ngoài. `SolverConfig` vẫn nhận timeout cụ
-thể cho benchmark, test hoặc runtime deployment cần latency cap.
+Hai pass mặc định không đặt `max_time_in_seconds`. Mỗi utility round chạy ba
+solver instance song song, mỗi instance giữ một CP-SAT worker và dùng
+`random_seed` khác nhau. Utility giữ incumbent có điểm cao nhất; khi một round
+tốt hơn, bộ đếm stagnation được reset. Sau 10 round liên tiếp không cải thiện,
+solver trả incumbent tốt nhất. Nếu một attempt chứng minh exact optimum thì
+dừng ngay. `SolverConfig` vẫn nhận timeout riêng cho từng attempt.
 Pass priority yêu cầu exact optimum để khóa số `user_input` và URL. Pass utility
 dùng `relative_gap_limit=0.05`, nên có thể dừng khi utility nằm trong 5% bound;
 metadata giữ `optimalityProven=false` khi dùng tolerance này, kể cả OR-Tools
@@ -360,11 +372,18 @@ Không tạo pairwise variable cho mọi candidate. Với canonical tag `t`:
 tagCount[t,d] = sum(assigned[i,d] * hasTag[i,t])
 ```
 
-Mỗi lần tag semantic lặp sau candidate đầu tiên tạo same-day cost. Tag kỹ thuật,
-generic `travel_place` và style không tham gia. Với mỗi route arc activity →
+Mỗi lần tag semantic lặp sau candidate đầu tiên tạo same-day cost khi ngày đó
+còn nhóm trải nghiệm khác khả thi. Khi alternative đã cạn, tag cũ được dùng lại
+không chịu repetition cost. Tag kỹ thuật, generic `travel_place` và style không
+tham gia. Tag ngữ cảnh rộng như `văn_hóa`, `địa_phương`, `thiên_nhiên`,
+`ẩm_thực`, `đồ_uống`, `indoor`, `outdoor` chỉ dùng preference. Với mỗi route arc activity →
 activity, Jaccard overlap của hai tập tag tạo
 `consecutiveTagRepetitionCost`; hai stop giống nhau đặt liền nhau bị phạt mạnh
 hơn chỉ cùng ngày. Food giữ diversity count riêng.
+
+Ngoài cost trong một ngày, hybrid shortlist theo dõi các nhóm tag của stop đã
+thực sự chọn xuyên suốt chuyến đi. Nhóm chưa xuất hiện được ưu tiên trước; đây
+không phải hard exclusion, nên nhóm cũ vẫn dùng lại khi alternative đã cạn.
 
 ### Travel, waiting và meals
 
@@ -392,6 +411,8 @@ num_search_workers
 priority_timeout_seconds = None
 utility_timeout_seconds = None
 utility_relative_gap_limit = 0.05
+utility_parallel_workers = 3
+max_utility_no_improvement_rounds = 10
 random_seed
 log_search_progress
 max_inter_stop_wait_minutes = 150  # None chỉ dùng cho relaxed fallback

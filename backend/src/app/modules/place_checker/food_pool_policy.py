@@ -3,6 +3,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from app.modules.place_checker.food_selection_contract import FoodRestaurantCandidate
+from app.modules.place_checker.pool_policy import food_pool_target_for_days
 from app.modules.place_checker.planning_time_windows import meals_for_hours
 from app.shared.tools.bayesian_rating import BayesianRatingPrior
 
@@ -26,6 +27,8 @@ def aggregate_restaurants(
     candidates: list[FoodRestaurantCandidate],
     priors: dict[str, BayesianRatingPrior],
     rank: CandidateRank,
+    *,
+    preferred_by_restaurant: dict[str, FoodRestaurantCandidate] | None = None,
 ) -> list[RestaurantAggregate]:
     grouped: dict[str, list[FoodRestaurantCandidate]] = defaultdict(list)
     for candidate in candidates:
@@ -41,8 +44,11 @@ def aggregate_restaurants(
         for food_id in {item.food_item_id for item in candidates}
     }
     result = []
+    preferred_by_restaurant = preferred_by_restaurant or {}
     for options in grouped.values():
-        best = max(options, key=lambda item: rank(item, priors))
+        best = preferred_by_restaurant.get(options[0].restaurant_id) or max(
+            options, key=lambda item: rank(item, priors)
+        )
         related = tuple(
             dict.fromkeys(
                 item.anchor_place_id
@@ -85,7 +91,7 @@ def select_food_pool(
     required_ids: set[str] | None = None,
 ) -> list[RestaurantAggregate]:
     hard_total = min(MAX_FOOD_POOL, days * len(MEALS))
-    soft_total = min(MAX_FOOD_POOL, hard_total * 2)
+    soft_total = min(MAX_FOOD_POOL, food_pool_target_for_days(days))
     selected: list[RestaurantAggregate] = []
     remaining = list(candidates)
     meal_counts = {meal: 0 for meal in MEALS}
@@ -115,4 +121,3 @@ def select_food_pool(
         ):
             break
     return selected
-

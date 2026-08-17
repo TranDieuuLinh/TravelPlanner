@@ -114,6 +114,7 @@ class PlaceCheckerPipeline:
                     if self.food_selection is not None
                     else set()
                 ),
+                coverage=analysis.coverage,
             )
             ranking = self.scoring.rank(retrieval, context, evaluated)
             optional_places, verification_by_id, ranking_by_id = (

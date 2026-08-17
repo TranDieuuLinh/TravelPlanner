@@ -1,4 +1,5 @@
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Literal, Protocol
 
 from app.modules.place_checker.contract import AdmResolution
 from app.modules.place_checker.enums import RetrievalSourceKind
@@ -48,6 +49,13 @@ class GapCandidateSource(Protocol):
         self,
         query: TargetedRetrievalQuery,
     ) -> list[RetrievalEvidence]: ...
+
+
+@dataclass
+class GapSourceBatchItem:
+    evidence: list[RetrievalEvidence] = field(default_factory=list)
+    outcome: Literal["candidates", "empty", "error", "timeout"] = "empty"
+    error_code: str | None = None
 
 
 class PromotionOutbox(Protocol):

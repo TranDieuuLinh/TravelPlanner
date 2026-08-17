@@ -8,13 +8,15 @@ from app.modules.place_checker.enums import (
     VerificationStatus,
 )
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
+from app.modules.place_checker.pool_balancing import CandidatePoolBalancer
 from app.modules.place_checker.pool_policy import (
     activity_pool_target_for_days,
     combined_pool_target_for_days,
+    entertainment_pool_target_for_days,
     food_pool_target_for_days,
     pool_query_limit_for_days,
 )
-from app.modules.place_checker.pool_balancing import CandidatePoolBalancer
+from app.modules.place_checker.price_policy import planner_cost
 from app.modules.place_checker.reranking import CandidateDiversityReranker
 from app.modules.place_checker.retrieval_contract import (
     RetrievalBatch,
@@ -99,6 +101,7 @@ class CandidateScoringService:
                 existing_places,
                 activity_target=activity_pool_target_for_days(context.days),
                 food_target=food_pool_target_for_days(context.days),
+                entertainment_target=entertainment_pool_target_for_days(context.days),
             )
         excluded = sorted(
             (item for item in scored if not item.eligible),
@@ -235,7 +238,20 @@ class CandidateScoringService:
         candidate: RetrievedCandidate,
         context: TripEvaluationContext,
     ) -> float:
-        tier = candidate.metadata.cost_tier if candidate.metadata else CostTier.unknown
+        metadata = candidate.metadata
+        tier = metadata.cost_tier if metadata else CostTier.unknown
+        if (
+            metadata
+            and planner_cost(
+                category=candidate.category,
+                minimum=metadata.minimum_cost,
+                typical=metadata.typical_cost,
+                maximum=metadata.maximum_cost,
+                tier=tier,
+            )
+            == 0
+        ):
+            return 1.0
         values = {
             CostTier.free: 1.0,
             CostTier.low: 0.95,

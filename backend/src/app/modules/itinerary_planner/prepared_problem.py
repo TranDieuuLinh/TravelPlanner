@@ -9,12 +9,13 @@ from app.modules.itinerary_planner.contract import (
     MealType,
     PlannerAccommodation,
     PlannerCandidate,
+    PlannerEntertainmentCandidate,
     PlannerFoodCandidate,
     PlannerTrip,
 )
 from app.modules.itinerary_planner.time_windows import PlanningWindow
 
-Candidate = PlannerCandidate | PlannerFoodCandidate
+Candidate = PlannerCandidate | PlannerFoodCandidate | PlannerEntertainmentCandidate
 CandidateDay = tuple[str, int]
 MealSlot = tuple[str, int, MealType]
 
@@ -50,6 +51,7 @@ class PreparedPlanningProblem:
     accommodation_by_id: Mapping[str, PlannerAccommodation]
     valid_places: tuple[PlannerCandidate, ...]
     valid_food: tuple[PlannerFoodCandidate, ...]
+    valid_entertainment: tuple[PlannerEntertainmentCandidate, ...]
     candidate_by_id: Mapping[str, Candidate]
     feasible_days: Mapping[str, frozenset[int]]
     preferred_days: Mapping[str, frozenset[int]]

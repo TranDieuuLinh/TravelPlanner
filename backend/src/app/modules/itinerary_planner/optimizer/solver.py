@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from time import monotonic
 
 from ortools.sat.python import cp_model
@@ -9,13 +10,13 @@ from app.modules.itinerary_planner.optimizer.config import (
     ObjectiveWeights,
     SolverConfig,
 )
-from app.modules.itinerary_planner.optimizer.locks import (
-    RepairLocks,
-    apply_repair_locks,
-)
 from app.modules.itinerary_planner.optimizer.hints import (
     InitialSolutionHint,
     apply_initial_hint,
+)
+from app.modules.itinerary_planner.optimizer.locks import (
+    RepairLocks,
+    apply_repair_locks,
 )
 from app.modules.itinerary_planner.optimizer.objective import build_objective
 from app.modules.itinerary_planner.optimizer.result import (
@@ -102,14 +103,12 @@ def optimize_itinerary(
     _add_hints(model, problem, variables, priority_solver)
 
     model.Maximize(objective.utility)
-    final_solver, utility_pass = _solve(
+    final_solver, utility_pass = _solve_utility_with_incumbent(
         model,
-        "utility",
-        selected_config.utility_timeout_seconds,
+        problem,
+        variables,
         selected_config,
         objective.utility,
-        relative_gap_limit=selected_config.utility_relative_gap_limit,
-        stop_after_first_solution=(selected_config.utility_timeout_seconds is None),
     )
     passes.append(utility_pass)
     return extract_result(
@@ -122,6 +121,106 @@ def optimize_itinerary(
     )
 
 
+def _solve_utility_with_incumbent(
+    model: cp_model.CpModel,
+    problem: PreparedPlanningProblem,
+    variables: PlannerVariables,
+    config: SolverConfig,
+    objective: cp_model.LinearExpr,
+) -> tuple[cp_model.CpSolver, SolverPassResult]:
+    """Keep the best utility solution until ten parallel rounds stagnate."""
+    best_solver: cp_model.CpSolver | None = None
+    best_pass: SolverPassResult | None = None
+    attempt_count = 0
+    round_count = 0
+    no_improvement_rounds = 0
+    last_error: OptimizationError | None = None
+    started = monotonic()
+    worker_count = max(1, config.utility_parallel_workers)
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        while (
+            best_solver is None
+            or no_improvement_rounds < config.max_utility_no_improvement_rounds
+        ):
+            round_count += 1
+            seeds = range(
+                config.random_seed + attempt_count,
+                config.random_seed + attempt_count + worker_count,
+            )
+            futures = [
+                executor.submit(
+                    _solve,
+                    model.clone(),
+                    "utility",
+                    config.utility_timeout_seconds,
+                    config,
+                    objective,
+                    relative_gap_limit=config.utility_relative_gap_limit,
+                    stop_after_first_solution=(
+                        config.utility_timeout_seconds is None
+                    ),
+                    random_seed=seed,
+                )
+                for seed in seeds
+            ]
+            attempt_count += worker_count
+            outcomes: list[tuple[cp_model.CpSolver, SolverPassResult]] = []
+            for future in futures:
+                try:
+                    outcomes.append(future.result())
+                except OptimizationError as exc:
+                    last_error = exc
+
+            if not outcomes:
+                if best_solver is None:
+                    if last_error is not None:
+                        raise last_error
+                    raise OptimizationError("UNKNOWN", "utility")
+                no_improvement_rounds += 1
+                continue
+
+            round_solver, round_pass = max(
+                outcomes,
+                key=lambda item: (
+                    item[1].objective_value,
+                    item[1].optimality_proven,
+                ),
+            )
+            if (
+                best_pass is None
+                or round_pass.objective_value > best_pass.objective_value
+                or (
+                    round_pass.objective_value == best_pass.objective_value
+                    and round_pass.optimality_proven
+                    and not best_pass.optimality_proven
+                )
+            ):
+                best_solver = round_solver
+                best_pass = round_pass
+                no_improvement_rounds = 0
+            else:
+                no_improvement_rounds += 1
+
+            if round_pass.optimality_proven:
+                break
+
+    if best_solver is None or best_pass is None:
+        if last_error is not None:
+            raise last_error
+        raise OptimizationError("UNKNOWN", "utility")
+    return best_solver, SolverPassResult(
+        name="utility",
+        status=best_pass.status,
+        objective_value=best_pass.objective_value,
+        wall_time_ms=round((monotonic() - started) * 1000),
+        optimality_proven=best_pass.optimality_proven,
+        attempt_count=attempt_count,
+        round_count=round_count,
+        no_improvement_rounds=no_improvement_rounds,
+    )
+
+
 def _solve(
     model: cp_model.CpModel,
     name: str,
@@ -131,6 +230,7 @@ def _solve(
     *,
     relative_gap_limit: float,
     stop_after_first_solution: bool,
+    random_seed: int | None = None,
 ) -> tuple[cp_model.CpSolver, SolverPassResult]:
     solver = cp_model.CpSolver()
     if timeout_seconds is not None:
@@ -138,7 +238,9 @@ def _solve(
     if relative_gap_limit:
         solver.parameters.relative_gap_limit = relative_gap_limit
     solver.parameters.num_search_workers = config.num_search_workers
-    solver.parameters.random_seed = config.random_seed
+    solver.parameters.random_seed = (
+        config.random_seed if random_seed is None else random_seed
+    )
     solver.parameters.log_search_progress = config.log_search_progress
     solver.parameters.stop_after_first_solution = stop_after_first_solution
     started = monotonic()

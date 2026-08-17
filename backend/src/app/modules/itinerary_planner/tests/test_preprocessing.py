@@ -6,7 +6,12 @@ from app.modules.itinerary_planner.preprocessing import (
     PlanningPreflightError,
     prepare_planning_problem,
 )
-from app.modules.itinerary_planner.tests.factories import candidate, food, payload
+from app.modules.itinerary_planner.tests.factories import (
+    candidate,
+    entertainment,
+    food,
+    payload,
+)
 from app.modules.itinerary_planner.time_windows import PlanningWindow
 
 
@@ -35,6 +40,44 @@ def test_only_late_night_place_can_use_overnight_window() -> None:
 
     assert prepared.feasible_windows[("night_bar", 1)] == (PlanningWindow(1320, 1620),)
     assert prepared.late_night_eligible_ids == frozenset({"night_bar"})
+
+
+def test_nightlife_is_not_scheduled_before_1800() -> None:
+    nightlife = candidate(
+        "nightlife",
+        opening_hours={"1": [{"startMinute": 480, "endMinute": 1380}]},
+    )
+    nightlife["tags"] = ["nightlife"]
+
+    prepared = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(payload(places=[nightlife]))
+    )
+
+    assert prepared.feasible_windows[("nightlife", 1)] == (
+        PlanningWindow(1080, 1380),
+    )
+
+
+def test_weekend_night_market_is_only_available_friday_through_sunday() -> None:
+    market = candidate(
+        "weekend_market",
+        opening_hours={
+            str(day): [{"startMinute": 600, "endMinute": 1260}]
+            for day in range(1, 4)
+        },
+    )
+    market["name"] = "Hanoi Weekend Night Market"
+    market["tags"] = ["nightlife", "market"]
+
+    prepared = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(payload(days=3, places=[market]))
+    )
+
+    # 2026-08-20 is Thursday, therefore trip days 2 and 3 are Fri/Sat.
+    assert prepared.feasible_days["weekend_market"] == frozenset({2, 3})
+    assert prepared.feasible_windows[("weekend_market", 2)] == (
+        PlanningWindow(1080, 1260),
+    )
 
 
 def test_regular_place_is_clamped_at_2300() -> None:
@@ -270,6 +313,34 @@ def test_outlier_cannot_deplete_a_daily_activity_reserve() -> None:
         prepared.feasible_days[item.place_id] == frozenset({1, 2, 3})
         for item in prepared.valid_places
     )
+
+
+def test_entertainment_contributes_to_projected_activity_reserve() -> None:
+    prepared = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(
+            payload(
+                days=3,
+                places=[candidate(f"place_{index:02d}") for index in range(39)],
+                entertainment_items=[
+                    entertainment(f"entertainment_{index:02d}")
+                    for index in range(12)
+                ],
+            )
+        )
+    )
+
+    places = prepared.valid_places
+    activities = [*places, *prepared.valid_entertainment]
+    place_counts = [
+        sum(day in prepared.preferred_days[item.place_id] for item in places)
+        for day in range(1, 4)
+    ]
+    combined_counts = [
+        sum(day in prepared.preferred_days[item.place_id] for item in activities)
+        for day in range(1, 4)
+    ]
+    assert any(count < 13 for count in place_counts)
+    assert all(count >= 14 for count in combined_counts)
 
 
 def test_repeats_restaurant_only_when_original_pool_has_no_distinct_matching() -> None:

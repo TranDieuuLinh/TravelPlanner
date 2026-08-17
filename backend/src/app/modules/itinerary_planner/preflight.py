@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from app.modules.itinerary_planner.activity_day_domains import (
-    ACTIVITY_RESERVE_PER_DAY,
     MIN_ACTIVITY_SEPARATORS_PER_DAY,
 )
 from app.modules.itinerary_planner.contract import MealType
@@ -38,35 +37,21 @@ class ProjectedPoolPreflightError(ValueError):
 def validate_projected_pool(problem: PreparedPlanningProblem) -> None:
     """Reject projected day domains that cannot support the daily model."""
     violations: list[ProjectedPoolViolation] = []
-    reserve_target = min(
-        ACTIVITY_RESERVE_PER_DAY,
-        len(problem.valid_places) // problem.trip.days,
-    )
     food_ids = {item.place_id for item in problem.valid_food}
 
     for day in range(1, problem.trip.days + 1):
-        activity_ids = {
+        feasible_place_ids = {
             item.place_id
             for item in problem.valid_places
-            if day in problem.preferred_days[item.place_id]
+            if day in problem.feasible_days[item.place_id]
         }
-        if len(activity_ids) < reserve_target:
-            violations.append(
-                _count_violation(
-                    "insufficient_activity_reserve",
-                    day,
-                    reserve_target,
-                    len(activity_ids),
-                    "activity reserve",
-                )
-            )
-        if len(activity_ids) < MIN_ACTIVITY_SEPARATORS_PER_DAY:
+        if len(feasible_place_ids) < MIN_ACTIVITY_SEPARATORS_PER_DAY:
             violations.append(
                 _count_violation(
                     "insufficient_activity_separators",
                     day,
                     MIN_ACTIVITY_SEPARATORS_PER_DAY,
-                    len(activity_ids),
+                    len(feasible_place_ids),
                     "activity separators between meals",
                 )
             )
@@ -74,11 +59,7 @@ def validate_projected_pool(problem: PreparedPlanningProblem) -> None:
         matched = _distinct_meal_match_count(
             problem,
             day,
-            {
-                food_id
-                for food_id in food_ids
-                if day in problem.preferred_days[food_id]
-            },
+            {food_id for food_id in food_ids if day in problem.feasible_days[food_id]},
         )
         if matched < MEALS_PER_DAY:
             violations.append(
@@ -117,6 +98,7 @@ def validate_routing_connectivity(
 ) -> None:
     """Require one basic route-connected component viable for each day."""
     food_ids = {item.place_id for item in problem.valid_food}
+    place_ids = {item.place_id for item in problem.valid_places}
     violations: list[ProjectedPoolViolation] = []
     for day in range(1, problem.trip.days + 1):
         day_ids = {
@@ -138,7 +120,7 @@ def validate_routing_connectivity(
             adjacency[arc.destination_id].add(arc.origin_id)
 
         if not any(
-            len(component - food_ids) >= MIN_ACTIVITY_SEPARATORS_PER_DAY
+            len(component & place_ids) >= MIN_ACTIVITY_SEPARATORS_PER_DAY
             and _distinct_meal_match_count(
                 problem,
                 day,

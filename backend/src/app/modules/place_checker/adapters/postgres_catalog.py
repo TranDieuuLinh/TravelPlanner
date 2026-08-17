@@ -295,6 +295,8 @@ class PostgresPlaceCatalog(PostgresCatalogBatchMixin, PostgresCatalogMappingMixi
                 food_confidence=float(row["food_confidence"]),
                 offered_food_item_id=row["offered_food_item_id"],
                 offered_food_item_name=row["offered_food_item_name"],
+                style_id=row["style_id"],
+                style_name=row["style_name"],
                 food_match_type=row["food_match_type"],
                 food_match_confidence=float(row["food_match_confidence"]),
                 restaurant_id=row["restaurant_id"],

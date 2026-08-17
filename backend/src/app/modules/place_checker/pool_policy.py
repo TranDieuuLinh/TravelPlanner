@@ -4,9 +4,11 @@ import math
 
 
 ACTIVITY_CANDIDATES_PER_DAY = 14
-FOOD_CANDIDATES_PER_DAY = 10
+FOOD_CANDIDATES_PER_DAY = 12
+ENTERTAINMENT_CANDIDATES_PER_DAY = 4
 MAX_ACTIVITY_POOL_TARGET = 420
 MAX_FOOD_POOL_TARGET = 300
+MAX_ENTERTAINMENT_POOL_TARGET = 120
 MAX_QUERY_LIMIT = 60
 ACCOMMODATION_POOL_TARGET = 5
 MEALS_PER_DAY = 3
@@ -20,6 +22,14 @@ def activity_pool_target_for_days(days: int) -> int:
 def food_pool_target_for_days(days: int) -> int:
     """Return the restaurant reserve target, separate from activity capacity."""
     return min(MAX_FOOD_POOL_TARGET, max(10, days * FOOD_CANDIDATES_PER_DAY))
+
+
+def entertainment_pool_target_for_days(days: int) -> int:
+    """Return the optional DrinkDessert/Entertainment reserve target."""
+    return min(
+        MAX_ENTERTAINMENT_POOL_TARGET,
+        max(4, days * ENTERTAINMENT_CANDIDATES_PER_DAY),
+    )
 
 
 def planner_pool_shortfall(
@@ -48,6 +58,7 @@ def combined_pool_target_for_days(days: int) -> int:
     return (
         activity_pool_target_for_days(days)
         + food_pool_target_for_days(days)
+        + entertainment_pool_target_for_days(days)
         + ACCOMMODATION_POOL_TARGET
     )
 

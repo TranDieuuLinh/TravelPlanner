@@ -105,6 +105,7 @@ import {
 } from "@/features/planner/lib/planner-chat-layout";
 import { dragAutoScrollVelocity } from "@/features/planner/lib/drag-auto-scroll";
 import { parseUrlOnlyInput } from "@/features/planner/lib/url-only-input";
+import { itinerarySourceUrls } from "@/features/planner/lib/source-provider";
 
 const PlannerMap = dynamic(
   () =>
@@ -5501,7 +5502,7 @@ function Planner() {
                                     }
                                   );
                                 const sourceLabel = itinerarySourceLabel(
-                                  item.sourceRefs ?? [],
+                                  itinerarySourceUrls(item),
                                   item.sourceProvider,
                                   item.source
                                 );

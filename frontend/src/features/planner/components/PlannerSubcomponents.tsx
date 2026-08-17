@@ -13,6 +13,7 @@ import {
 } from "@/features/planner/components/PlannerIcons";
 import { TransportFareInline } from "@/features/planner/components/TransportFareInline";
 import { formatSourceNoteForDisplay } from "@/features/planner/lib/plan-note";
+import { itinerarySourceUrls } from "@/features/planner/lib/source-provider";
 import {
   formatDistance,
   formatDuration,
@@ -339,7 +340,7 @@ export function UnscheduledPlacesSection({
               return category === "food";
             });
             const sourceLabel = itinerarySourceLabel(
-              place.sourceRefs ?? [],
+              itinerarySourceUrls(place),
               place.sourceProvider,
               "selected_place"
             );

@@ -35,6 +35,7 @@ class SearchPlacesBatchMixin:
                 input_adm=first.input_adm,
                 place_type_hint=first.place_type_hint,
                 limit=first.top_k,
+                anchor_place_ids=[request.anchor_place_id for request in requests],
             )
         except (PlaceSearchProviderTimeout, PlaceSearchProviderError) as exc:
             return [self._provider_failure(request, names, started_at, exc) for request, names in zip(requests, name_batches)]
@@ -94,7 +95,6 @@ class SearchPlacesBatchMixin:
             request.input_adm == first.input_adm
             and request.place_type_hint == first.place_type_hint
             and request.top_k == first.top_k
-            and request.anchor_place_id is None
             and request.provider_scope != "external"
             and (not request.allow_external_fallback or self.external is None)
             for request in requests

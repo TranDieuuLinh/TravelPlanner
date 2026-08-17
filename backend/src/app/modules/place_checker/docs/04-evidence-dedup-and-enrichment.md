@@ -33,8 +33,10 @@ Tọa độ, address, category, ontology type, tag, duration range, cost range/t
 opening hours, operational status, reservation, accessibility, children/infant
 suitability, source, confidence và freshness.
 
-Giá trị unknown phải giữ là unknown. Không chuyển thành zero cost, free,
-always open hoặc không cần reservation.
+Giá trị unknown vẫn được giữ là unknown trong KG và rich PlaceChecker output.
+Chỉ tại compact boundary sang Planner, TravelPlace thiếu giá được chiếu thành
+`0 VND`; food, entertainment và accommodation không áp dụng mặc định này.
+Không suy diễn unknown opening thành always open hoặc không cần reservation.
 
 ## Chiến lược dữ liệu
 

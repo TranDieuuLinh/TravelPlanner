@@ -135,6 +135,9 @@ class PlaceCheckerOutputAssembler:
                 if food_selection
                 else FoodMealCoverage(days=context.days)
             ),
+            food_style_coverage=(
+                food_selection.style_coverage if food_selection else []
+            ),
             budget_analysis=analysis.budget,
             capacity_analysis=analysis.capacity,
             coverage_analysis=analysis.coverage,

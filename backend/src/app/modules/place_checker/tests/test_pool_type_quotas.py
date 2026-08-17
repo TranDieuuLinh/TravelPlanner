@@ -8,24 +8,29 @@ from app.modules.place_checker.tests.test_scoring_reranking import (
 )
 
 
-def test_three_days_keep_forty_two_activities_and_thirty_food_candidates() -> None:
+def test_three_days_keep_independent_place_food_and_entertainment_quotas() -> None:
     travel = [
         candidate(f"travel-{index}", category="travel_place") for index in range(50)
     ]
     restaurants = [
         candidate(f"restaurant-{index}", category="restaurant") for index in range(40)
     ]
+    entertainment = [
+        candidate(f"entertainment-{index}", category="entertainment")
+        for index in range(20)
+    ]
 
     result = CandidateScoringService().rank(
-        retrieval(*travel, *restaurants),
+        retrieval(*travel, *restaurants, *entertainment),
         analysis_context(days=3),
         empty_places(),
     )
 
     categories = [item.candidate.category for item in result.ranked]
-    assert result.pool_target == 77
+    assert result.pool_target == 95
     assert categories.count("travel_place") == 42
-    assert categories.count("restaurant") == 30
+    assert categories.count("restaurant") == 36
+    assert categories.count("entertainment") == 12
 
 
 def test_existing_places_reduce_only_their_own_type_quota() -> None:
@@ -50,7 +55,7 @@ def test_existing_places_reduce_only_their_own_type_quota() -> None:
 
     categories = [item.candidate.category for item in result.ranked]
     assert categories.count("travel_place") == 13
-    assert categories.count("restaurant") == 10
+    assert categories.count("restaurant") == 12
 
 
 def test_full_existing_pool_does_not_select_extra_candidates() -> None:
@@ -143,8 +148,7 @@ def test_activity_reserve_keeps_available_knowledge_tags() -> None:
         update={"tags": ["relaxing"]}
     )
     dominant = [
-        candidate(f"dominant-{index}", category="travel_place")
-        for index in range(20)
+        candidate(f"dominant-{index}", category="travel_place") for index in range(20)
     ]
 
     result = CandidateScoringService().rank(

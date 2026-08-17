@@ -1,7 +1,7 @@
 from app.modules.place_checker.avoid_policy import has_avoid_conflict
 from app.modules.place_checker.contract import TripEvaluationContext
 from app.modules.place_checker.enums import IssueSeverity, OperationalStatus
-from app.modules.place_checker.price_policy import has_usable_cost
+from app.modules.place_checker.price_policy import has_planner_cost
 from app.modules.place_checker.retrieval_contract import RetrievedCandidate
 
 SEVERITY_VALUE = {
@@ -25,7 +25,8 @@ def hard_violations(
     if has_avoid_conflict(context.avoids, labels):
         reasons.append("avoid_conflict")
     metadata = candidate.metadata
-    if metadata is None or not has_usable_cost(
+    if metadata is not None and not has_planner_cost(
+        category=candidate.category,
         minimum=metadata.minimum_cost,
         typical=metadata.typical_cost,
         maximum=metadata.maximum_cost,

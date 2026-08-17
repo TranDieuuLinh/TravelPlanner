@@ -21,8 +21,8 @@ def test_generic_travel_pool_uses_adm_candidates_without_experience_bucket_cap()
     assert "$1 = 'travel place'" in PLACE_SEARCH_SQL
     assert "$1 <> 'travel place'" in PLACE_SEARCH_SQL
     assert "style_property.key = 'time_duration'" in PLACE_SEARCH_SQL
-    assert (
-        "props.price_min IS NOT NULL OR props.price_max IS NOT NULL" in PLACE_SEARCH_SQL
+    assert "AND (props.price_min IS NOT NULL OR props.price_max IS NOT NULL)" not in (
+        PLACE_SEARCH_SQL
     )
     assert "activity.entity_type = 'ActivityItem'" in PLACE_SEARCH_SQL
     assert "'entityType', target.entity_type" in PLACE_SEARCH_SQL
@@ -55,7 +55,7 @@ def test_special_food_query_traverses_adm_food_restaurant_and_anchor() -> None:
         "special.relationship_type = 'Special_Experience'"
         in SPECIAL_FOOD_RESTAURANT_SQL
     )
-    assert "food.entity_type = 'FoodItem'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "food.entity_type IN ('FoodItem', 'DrinkItem')" in SPECIAL_FOOD_RESTAURANT_SQL
     assert "relation.relationship_type = 'Special_Near'" in SPECIAL_FOOD_RESTAURANT_SQL
     assert "relation.relationship_type = 'Special_Experience'" in SPECIAL_FOOD_RESTAURANT_SQL
     assert (
@@ -63,7 +63,11 @@ def test_special_food_query_traverses_adm_food_restaurant_and_anchor() -> None:
         in SPECIAL_FOOD_RESTAURANT_SQL
     )
     assert "offer.relationship_type = 'Offer_Item'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "restaurant.entity_type = 'Restaurant'" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert (
+        "restaurant.entity_type IN ('Restaurant', 'DrinkDessert')"
+        in SPECIAL_FOOD_RESTAURANT_SQL
+    )
+    assert "styled.relationship_type = 'Has_Style'" in SPECIAL_FOOD_RESTAURANT_SQL
 
 
 def test_special_food_query_does_not_match_food_by_name() -> None:
@@ -85,10 +89,11 @@ def test_special_food_query_reads_offer_and_special_evidence_independently() -> 
 def test_food_query_uses_computed_five_km_radius_and_general_mode() -> None:
     assert "pair.distance_km <= $3" in SPECIAL_FOOD_RESTAURANT_SQL
     assert "WHEN $3::double precision IS NULL THEN 'general_adm'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "proximity_rank <= $4" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "PARTITION BY nearby.anchor_place_id" in SPECIAL_FOOD_RESTAURANT_SQL
+    assert "style_rank <= LEAST($4, 4)" in SPECIAL_FOOD_RESTAURANT_SQL
 
 
-def test_style_time_properties_only_fill_missing_place_metadata() -> None:
+def test_style_duration_fills_metadata_but_style_window_stays_soft() -> None:
     relationship = PlaceRelationshipEvidence(
         relationship_type="Has_Style",
         direction="place_to_attribute",
@@ -116,7 +121,7 @@ def test_style_time_properties_only_fill_missing_place_metadata() -> None:
     )
 
     assert fallback.typical_duration_minutes == 120
-    assert fallback.opening_hours == ["18:00-23:59"]
+    assert fallback.opening_hours is None
     assert direct.typical_duration_minutes == 45
     assert direct.opening_hours == ["09:00-10:00"]
 
@@ -186,7 +191,10 @@ def test_style_node_properties_are_projected_onto_has_style_evidence() -> None:
     )
 
     assert metadata.typical_duration_minutes == 45
-    assert metadata.opening_hours == ["11:00-13:00"]
+    assert metadata.opening_hours is None
+    assert relationship.properties["time_windows"] == (
+        '[{"start":"11:00","end":"13:00"}]'
+    )
 
 
 def test_activity_node_timing_is_projected_onto_offer_evidence() -> None:
@@ -246,7 +254,7 @@ def test_has_style_edge_properties_override_style_node_defaults() -> None:
     }
 
 
-def test_multiple_style_windows_are_combined_when_place_has_no_direct_timing() -> None:
+def test_multiple_style_windows_do_not_become_hard_opening_hours() -> None:
     relationships = [
         PlaceRelationshipEvidence(
             relationship_type="Has_Style",
@@ -272,11 +280,7 @@ def test_multiple_style_windows_are_combined_when_place_has_no_direct_timing() -
     )
 
     assert metadata.typical_duration_minutes == 60
-    assert metadata.opening_hours == [
-        "06:00-10:00",
-        "11:00-13:00",
-        "18:00-20:00",
-    ]
+    assert metadata.opening_hours is None
 
 
 def test_special_near_score_decreases_with_distance() -> None:

@@ -247,6 +247,10 @@ class PlannerFoodCandidate(PlannerCandidate):
         return list(dict.fromkeys(values))
 
 
+class PlannerEntertainmentCandidate(PlannerCandidate):
+    entity_type: Literal["drink_dessert", "entertainment"]
+
+
 class PlannerAccommodation(PlannerContractModel):
     place_id: str = Field(min_length=1, max_length=300)
     name: str = Field(min_length=1, max_length=300)
@@ -269,6 +273,10 @@ class ItineraryPlannerInput(PlannerContractModel):
     trip: PlannerTrip
     places: list[PlannerCandidate] = Field(default_factory=list, max_length=500)
     food: list[PlannerFoodCandidate] = Field(default_factory=list, max_length=500)
+    entertainment: list[PlannerEntertainmentCandidate] | None = Field(
+        default=None,
+        max_length=500,
+    )
     food_coverage: FoodCoverageFeasibility = Field(
         default_factory=FoodCoverageFeasibility
     )
@@ -284,10 +292,12 @@ class ItineraryPlannerInput(PlannerContractModel):
 
     @model_validator(mode="after")
     def validate_candidate_identity_and_days(self) -> ItineraryPlannerInput:
-        candidates = [*self.places, *self.food]
+        candidates = [*self.places, *self.food, *(self.entertainment or [])]
         ids = [candidate.place_id for candidate in candidates]
         if len(ids) != len(set(ids)):
-            raise ValueError("placeId must be unique across places and food")
+            raise ValueError(
+                "placeId must be unique across places, food, and entertainment"
+            )
 
         for candidate in candidates:
             if candidate.opening_hours is None:

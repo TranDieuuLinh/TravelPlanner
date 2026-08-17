@@ -31,6 +31,9 @@ def project_problem_day(
     }
     places = tuple(item for item in problem.valid_places if item.place_id in candidates)
     food = tuple(item for item in problem.valid_food if item.place_id in candidates)
+    entertainment = tuple(
+        item for item in problem.valid_entertainment if item.place_id in candidates
+    )
     feasible_days = {candidate_id: frozenset({1}) for candidate_id in candidates}
     feasible_windows = {
         (candidate_id, 1): problem.feasible_windows[(candidate_id, day)]
@@ -65,6 +68,7 @@ def project_problem_day(
         accommodation_by_id=MappingProxyType({}),
         valid_places=places,
         valid_food=food,
+        valid_entertainment=entertainment,
         candidate_by_id=MappingProxyType(candidates),
         feasible_days=MappingProxyType(feasible_days),
         preferred_days=MappingProxyType(
@@ -159,6 +163,9 @@ def remap_day_result(result: OptimizationResult, day: int) -> OptimizationResult
                 objective_value=item.objective_value,
                 wall_time_ms=item.wall_time_ms,
                 optimality_proven=item.optimality_proven,
+                attempt_count=item.attempt_count,
+                round_count=item.round_count,
+                no_improvement_rounds=item.no_improvement_rounds,
             )
             for item in result.passes
         ),

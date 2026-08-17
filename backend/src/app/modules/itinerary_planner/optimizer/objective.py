@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from ortools.sat.python import cp_model
 
 from app.modules.itinerary_planner.contract import CandidateSourceKind
+from app.modules.itinerary_planner.optimizer.activity_coverage import (
+    build_activity_coverage_value,
+)
 from app.modules.itinerary_planner.optimizer.config import ObjectiveWeights
 from app.modules.itinerary_planner.optimizer.review_value import (
     build_popularity_value,
@@ -14,6 +17,7 @@ from app.modules.itinerary_planner.optimizer.source_mix import build_source_mix_
 from app.modules.itinerary_planner.optimizer.tag_diversity import (
     build_consecutive_tag_repetition_cost,
     build_same_day_tag_repetition_cost,
+    meaningful_tags,
 )
 from app.modules.itinerary_planner.optimizer.variables import PlannerVariables
 from app.modules.itinerary_planner.policies import (
@@ -42,6 +46,9 @@ def build_objective(
     weights: ObjectiveWeights,
 ) -> ObjectiveExpressions:
     positive = {
+        "activityCoverageValue": build_activity_coverage_value(
+            model, problem, variables, weights
+        ),
         "specialExperienceValue": _special_value(problem, variables, weights),
         "preferenceValue": _preference_value(problem, variables, weights),
         "styleValue": _style_value(problem, variables, weights),
@@ -178,13 +185,15 @@ def _relationship_value(model, problem, variables, weights):
 
 
 def _food_diversity(model, problem, variables, weights):
-    tags = sorted({tag for food in problem.valid_food for tag in food.tags})
+    tags = sorted(
+        {tag for food in problem.valid_food for tag in meaningful_tags(food.tags)}
+    )
     costs = []
     for tag in tags:
         literals = [
             variables.selected[food.place_id]
             for food in problem.valid_food
-            if tag in food.tags
+            if tag in meaningful_tags(food.tags)
         ]
         costs.extend(
             _convex_repeat(model, literals, weights.food_diversity, f"food:{tag}")
