@@ -56,9 +56,9 @@ def build_postgres_place_checker_pipeline(
             ),
             metadata_repository=catalog,
             verified_target_per_gap=5,
-            # Keep broad thematic expansion off; core entity-type pools have
-            # their own bounded queries below.
-            expand_pool=False,
+            # Fill the activity reserve from independent theme/style queries
+            # instead of letting the generic TravelPlace ranking dominate it.
+            expand_pool=True,
             # Keep independent TravelPlace and Restaurant pools for Planner.
             ensure_core_pools=True,
         ),

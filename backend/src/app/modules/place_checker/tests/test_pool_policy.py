@@ -134,6 +134,29 @@ def test_core_pool_retrieval_leaves_restaurants_to_food_pool_service() -> None:
     assert all(query.limit == 60 for query in queries.values())
 
 
+def test_expanded_pool_queries_independent_activity_themes_and_styles() -> None:
+    source = RecordingSource()
+    service = TargetedRetrievalService(source, expand_pool=True)
+
+    asyncio.run(service.retrieve(GapAnalysis(), analysis_context(days=3)))
+
+    queries = {query.gap_id: query for query in source.queries}
+    assert {
+        "pool:culture_alternatives",
+        "pool:nature_alternatives",
+        "pool:shopping_alternatives",
+        "pool:nightlife_alternatives",
+        "pool:workshop_alternatives",
+        "pool:performance_alternatives",
+        "pool:outdoor_alternatives",
+        "pool:family_alternatives",
+        "pool:special_experience_alternatives",
+        "pool:local_activity_alternatives",
+    } <= set(queries)
+    assert queries["pool:nature_alternatives"].relation_terms
+    assert queries["pool:nightlife_alternatives"].relation_terms
+
+
 def test_retrieval_can_skip_food_gaps_for_dedicated_food_pool() -> None:
     source = RecordingSource()
     service = TargetedRetrievalService(source)

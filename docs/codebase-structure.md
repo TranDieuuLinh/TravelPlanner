@@ -1,6 +1,6 @@
 # Cấu trúc codebase hiện tại
 
-Cập nhật lần cuối: 2026-08-16.
+Cập nhật lần cuối: 2026-08-17.
 
 ## Các ứng dụng cấp cao nhất
 
@@ -207,7 +207,8 @@ còn evidence dùng được; mỗi source chỉ retry tối đa một lần.
 Explorer chỉ trích xuất và giữ provenance, không resolve place. Root
 orchestration chỉ chuyển output `ready` sang public input của PlaceChecker.
 Explorer output mang `days`, `startDate` và `timezone`; mặc định duration là 3
-ngày và ngày bắt đầu là ngày mai khi prompt không chỉ định.
+ngày và ngày bắt đầu là ngày mai khi prompt không chỉ định. Shared `TripIntent`
+cũng dùng mặc định 3 ngày để các luồng legacy không âm thầm quay về plan 1 ngày.
 Khi một nguồn có destination chính cùng một điểm day-trip, Explorer ưu tiên
 `input_adm` nếu evidence của destination chính mạnh hơn; chỉ yêu cầu làm rõ khi
 nhiều destination mạnh ngang nhau hoặc không xác định được destination chính.
@@ -304,8 +305,11 @@ GIN `pg_trgm` trên canonical name, alias và relationship target trước khi t
 áp score cuối. Generic `travel place` discovery xen kẽ candidate
 `Special_Experience` với các `TravelPlace` khác nằm trong đúng ADM; nhóm ngoài
 special ưu tiên place có `Offer_Item -> ActivityItem`, metadata đầy đủ,
-rating/review tốt. `Has_Style` không được dùng làm taxonomy/quota; nó chỉ cung
-cấp fallback `time_duration` và `time_windows` khi place thiếu timing trực tiếp.
+rating/review tốt. Runtime còn chạy các thematic query độc lập cho culture,
+nature, shopping, nightlife, workshop, performance, outdoor, family và local
+activity. `Has_Style` vừa cung cấp fallback `time_duration`/`time_windows`, vừa
+được truyền thành tag `style:*` để reserve giữ coverage theo style. Relationship
+`Special_Experience` pending không được tính vào special quota.
 Compact PlaceChecker-to-Planner contract giữ `sourceKind`, ActivityItem IDs và
 timing source. URL ảnh từ các property ảnh của place trong Knowledge Graph được
 chuẩn hóa thành `imageUrls`, giữ qua Itinerary Planner output và được frontend
@@ -314,7 +318,10 @@ dùng cho ảnh thẻ lịch trình. Planner phân period theo giờ stop thực
 trả target/actual/fallback audit. Bayesian review quality tiếp tục xếp hạng độ
 nổi tiếng trong objective sau các hard feasibility constraints.
 Planner cấm food-to-food arc để mỗi cặp bữa liên tiếp có ít nhất một activity,
-đồng thời giới hạn waiting giữa hai stop ở 15 phút ngoài safe-travel buffer.
+giới hạn tối đa hai `drink_dessert` mỗi ngày và không cho hai meal slot liền
+nhau cùng dùng loại venue này. Food contract giữ `venueType` rõ ràng. Waiting
+giữa hai stop bị hard-cap 150 phút ngoài safe-travel buffer; objective bắt đầu
+phạt phần waiting vượt 15 phút.
 Sparse-arc policy giữ meal-access theo từng ngày và hai chiều để pruning không
 làm mất đường activity vào/ra meal. Graph cơ bản giữ mười neighbor gần nhất theo
 safe travel time có hướng từ matrix; forced relationship/priority/bridge arcs
@@ -327,8 +334,9 @@ center gần nhất; user/URL giữ toàn bộ feasible days và food relationsh
 cùng TravelPlace. Meal coverage được repair sau projection. Pass utility dùng
 relative gap 5%, còn pass priority vẫn tối ưu exact trước khi khóa riêng count
 user input và URL.
-Retrieval ngoài gap phân tích còn mở hai core pool theo chuyến. TravelPlace dùng
-target `14/ngày` với coverage mềm Special Experience/popular; food hard minimum là unique matching cho từng slot
+Retrieval ngoài gap phân tích còn mở core pool và thematic pool theo chuyến.
+TravelPlace dùng target `14/ngày`, giữ một đại diện cho mỗi theme/style khả dụng
+trước khi bù theo Special Experience/popular; food hard minimum là unique matching cho từng slot
 `day × breakfast/lunch/dinner`, tối đa 60 mỗi loại. PlaceChecker còn thử một
 reserve matching rời hard set và gửi cả feasibility qua `foodCoverage`.
 Core query over-fetch có giới hạn để bù candidate thiếu metadata; scoring chốt

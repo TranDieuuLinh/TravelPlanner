@@ -12,6 +12,20 @@ from app.shared.tools.bayesian_rating import (
 COMPOSITION_BASE = 14
 SPECIAL_SLOTS = 6
 POPULAR_SLOTS = 4
+THEMATIC_POOL_CATEGORIES = frozenset(
+    {
+        "culture",
+        "nature",
+        "shopping",
+        "nightlife",
+        "workshop",
+        "performance",
+        "outdoor",
+        "family",
+        "special_experience",
+        "local_activity",
+    }
+)
 
 
 def select_activity_coverage(
@@ -29,8 +43,16 @@ def select_activity_coverage(
     selected: list[ScoredCandidate] = []
     selected_keys: set[str] = set()
 
+    _take_group_coverage(selected, selected_keys, ranked, limit)
+
     special = [item for item in ranked if _is_special(item)]
-    _take(selected, selected_keys, special, special_target)
+    selected_special = sum(_is_special(item) for item in selected)
+    _take(
+        selected,
+        selected_keys,
+        special,
+        max(0, special_target - selected_special),
+    )
 
     popularity = _popularity_scores(ranked)
     popular = sorted(
@@ -45,9 +67,57 @@ def select_activity_coverage(
             item.candidate.candidate_key,
         ),
     )
-    _take(selected, selected_keys, popular, popular_target)
+    selected_popular = sum(_has_review_signal(item) for item in selected)
+    _take(
+        selected,
+        selected_keys,
+        popular,
+        max(0, popular_target - selected_popular),
+    )
     _take(selected, selected_keys, ranked, limit - len(selected))
     return _with_ranks(selected)
+
+
+def _take_group_coverage(
+    selected: list[ScoredCandidate],
+    selected_keys: set[str],
+    ranked: list[ScoredCandidate],
+    limit: int,
+) -> None:
+    """Reserve one candidate per available theme/style before score-only fill."""
+    groups: dict[str, list[ScoredCandidate]] = {}
+    for item in ranked:
+        groups.setdefault(_diversity_group(item), []).append(item)
+    ordered_groups = sorted(
+        groups,
+        key=lambda group: (
+            -groups[group][0].rerank_score,
+            group,
+        ),
+    )
+    for group in ordered_groups[:limit]:
+        _take(selected, selected_keys, groups[group], 1)
+
+
+def _diversity_group(item: ScoredCandidate) -> str:
+    candidate = item.candidate
+    if candidate.pool_category in THEMATIC_POOL_CATEGORIES:
+        return f"pool:{candidate.pool_category}"
+    tags = [
+        *candidate.tags,
+        *(candidate.metadata.tags if candidate.metadata else []),
+    ]
+    styles = sorted(
+        tag.casefold() for tag in tags if tag.casefold().startswith("style:")
+    )
+    if styles:
+        return styles[0]
+    return (
+        candidate.pool_category
+        or candidate.experience_type
+        or candidate.category
+        or "unknown"
+    ).casefold()
 
 
 def _take(

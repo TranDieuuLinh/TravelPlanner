@@ -117,6 +117,47 @@ def test_activity_reserve_covers_special_and_popular_candidates() -> None:
     assert len(selected_ids & {item.candidate_key for item in popular}) >= 4
 
 
+def test_activity_reserve_keeps_available_theme_and_style_groups() -> None:
+    groups = [
+        "culture",
+        "nature",
+        "shopping",
+        "nightlife",
+        "workshop",
+        "performance",
+        "outdoor",
+        "family",
+        "special_experience",
+        "local_activity",
+    ]
+    themed = [
+        candidate(
+            f"theme-{group}",
+            category="travel_place",
+            pool_category=group,
+        )
+        for group in groups
+    ]
+    styled = candidate("styled", category="travel_place").model_copy(
+        update={"tags": ["style:Thư giãn & Chăm sóc bản thân"]}
+    )
+    dominant = [
+        candidate(f"dominant-{index}", category="travel_place")
+        for index in range(20)
+    ]
+
+    result = CandidateScoringService().rank(
+        retrieval(*dominant, *themed, styled),
+        analysis_context(days=1),
+        empty_places(),
+        reserve_limit_per_gap=60,
+    )
+
+    selected_ids = {item.candidate.candidate_key for item in result.ranked}
+    assert {item.candidate_key for item in themed} <= selected_ids
+    assert styled.candidate_key in selected_ids
+
+
 def test_candidate_without_duration_cannot_fill_a_planner_pool_slot() -> None:
     missing_duration = candidate("missing-duration", category="travel_place")
     missing_duration = missing_duration.model_copy(

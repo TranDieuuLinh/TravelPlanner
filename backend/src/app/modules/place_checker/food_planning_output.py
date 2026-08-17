@@ -101,6 +101,11 @@ class SelectedFoodPlanningProjector:
                 currency=metadata.cost_currency or "VND",
             ),
             relationships=list(selection.related_anchor_place_ids),
+            venue_type=(
+                "drink_dessert"
+                if metadata.category == "drink_dessert"
+                else "restaurant"
+            ),
             supported_meals=meals,
         )
 

@@ -92,9 +92,10 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
     assert place["openingHours"]["1"] == [{"startMinute": 540, "endMinute": 1020}]
     assert set(place["price"]) == {"cost", "currency"}
     food = output["food"][0]
-    assert set(food) == {*set(place), "supportedMeals"}
+    assert set(food) == {*set(place), "venueType", "supportedMeals"}
     assert food["placeId"] == "kg:pho"
     assert food["priority"] == "user_input"
+    assert food["venueType"] == "restaurant"
     assert food["supportedMeals"] == ["lunch"]
     assert output["foodCoverage"]["days"] == result.trip_context.days
     assert set(output["foodCoverage"]) == {

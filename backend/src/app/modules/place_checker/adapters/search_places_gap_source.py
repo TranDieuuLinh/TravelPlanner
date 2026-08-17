@@ -162,11 +162,6 @@ class SearchPlacesGapSource:
             return False
         name_score = match.score_components.get("nameSimilarity", 0)
         if match.relationship_score > 0:
-            if any(
-                relationship.get("relationshipType") == "Special_Experience"
-                for relationship in match.relationship_evidence
-            ):
-                return True
             return not query.relation_terms or cls._matches_relation_terms(
                 match.tags, query.relation_terms
             )

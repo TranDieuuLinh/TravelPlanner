@@ -278,6 +278,7 @@ class PlaceCheckerPlannerOutputBuilder:
         values = cls._place(checked, days).model_dump()
         return PlannerOutputFood(
             **values,
+            venue_type=checked.category,
             supported_meals=supported_meals,
         )
 
@@ -336,6 +337,7 @@ class PlaceCheckerPlannerOutputBuilder:
         values = cls._item_place(item, days).model_dump()
         return PlannerOutputFood(
             **values,
+            venue_type=item.selected.category,
             supported_meals=supported_meals,
         )
 

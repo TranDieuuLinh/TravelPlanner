@@ -67,6 +67,16 @@ offer; 5 slot tối thành 3 special + 2 offer.
 Nếu một nhóm không đủ candidate, lấy phần thiếu từ nhóm còn lại và ghi
 `quota_fallback`; không để slot trống và không đưa candidate chưa verify vào.
 
+Trước source/popularity fill, reserve giữ coverage theo các thematic query
+`culture`, `nature`, `shopping`, `nightlife`, `workshop`, `performance`,
+`outdoor`, `family`, `special_experience`, `local_activity`. Nếu candidate không
+có thematic `pool_category`, `Has_Style` được truyền thành tag `style:*` và dùng
+làm diversity group. Mỗi group có dữ liệu được giữ một candidate khi giới hạn
+pool cho phép. Relationship `Special_Experience` pending không tạo special slot.
+Thematic retrieval chỉ nhận relationship candidate khi tag `style:*` hoặc
+`experience:*` khớp relation terms của chính theme; Special Experience chung
+không bypass điều kiện này.
+
 ## Tỷ lệ sở thích và khám phá
 
 Chỉ áp dụng khi người dùng có `shortPreferences`:

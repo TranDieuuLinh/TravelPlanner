@@ -49,6 +49,11 @@ class MealType(StrEnum):
     dinner = "dinner"
 
 
+class FoodVenueType(StrEnum):
+    restaurant = "restaurant"
+    drink_dessert = "drink_dessert"
+
+
 class MissingMealSlot(PlannerContractModel):
     day: int = Field(ge=1, le=30)
     meal: MealType
@@ -195,6 +200,7 @@ class PlannerCandidate(PlannerContractModel):
 
 
 class PlannerFoodCandidate(PlannerCandidate):
+    venue_type: FoodVenueType = FoodVenueType.restaurant
     supported_meals: list[MealType] = Field(min_length=1, max_length=3)
 
     @field_validator("supported_meals")

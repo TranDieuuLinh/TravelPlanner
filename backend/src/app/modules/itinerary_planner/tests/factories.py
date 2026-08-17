@@ -34,6 +34,7 @@ def food(
     *,
     supported_meals: list[str] | None = None,
     opening_hours: Any = None,
+    venue_type: str = "restaurant",
 ) -> dict[str, Any]:
     value = candidate(
         place_id,
@@ -45,6 +46,7 @@ def food(
         "lunch",
         "dinner",
     ]
+    value["venueType"] = venue_type
     return value
 
 

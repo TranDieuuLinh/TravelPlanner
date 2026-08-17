@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from app.modules.itinerary_planner.contract import (
     CandidatePriority,
     CandidateSourceKind,
+    FoodVenueType,
     MealType,
     PlannerCandidate,
+    PlannerFoodCandidate,
 )
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.quality import (
@@ -93,7 +95,7 @@ def build_day_shortlist(
                 item.place_id,
             ),
         )
-        options = tuple(item.place_id for item in ranked[:FOOD_OPTIONS_PER_MEAL])
+        options = _food_options(ranked)
         food_options[meal] = options
         if options:
             selected_food[meal] = options[0]
@@ -109,6 +111,25 @@ def build_day_shortlist(
         candidate_ids=candidate_ids,
         hinted_order=order,
     )
+
+
+def _food_options(ranked: list[PlannerFoodCandidate]) -> tuple[str, ...]:
+    selected = list(ranked[:FOOD_OPTIONS_PER_MEAL])
+    if selected and all(
+        item.venue_type == FoodVenueType.drink_dessert
+        for item in selected
+    ):
+        restaurant = next(
+            (
+                item
+                for item in ranked[FOOD_OPTIONS_PER_MEAL:]
+                if item.venue_type == FoodVenueType.restaurant
+            ),
+            None,
+        )
+        if restaurant is not None:
+            selected[-1] = restaurant
+    return tuple(item.place_id for item in selected)
 
 
 def full_day_candidate_ids(

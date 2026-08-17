@@ -165,6 +165,11 @@ trong opening hours của food.
 Breakfast bị chặn cứng tại 10:00. Trong cùng ngày, lunch phải bắt đầu ít nhất
 180 phút sau breakfast và dinner ít nhất 300 phút sau lunch.
 
+Mỗi ngày có tối đa hai food stop mang `venueType=drink_dessert`. Hai meal slot
+liền nhau không được cùng chọn `drink_dessert`, nên nếu dùng hai điểm thì chúng
+chỉ có thể nằm ở breakfast và dinner. Constraint này bổ sung cho rule route
+food-to-food bên dưới; nó kiểm soát loại venue chứ không chỉ thứ tự stop.
+
 Route cấm food-to-food arc, nên mỗi ngày phải có activity giữa breakfast/lunch
 và lunch/dinner. Strict solve đặt hard maximum `waiting <= 150` phút ngoài
 safe-travel buffer. Mốc 15 phút là ideal threshold trong objective, không còn là

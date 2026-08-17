@@ -41,6 +41,9 @@ Greedy không dùng tổng activity duration làm điều kiện loại sớm. N
 skeleton trước, giữ placeholder cho ba meal, rồi ưu tiên restaurant theo tổng
 travel từ activity trước qua restaurant đến activity sau. Daily CP-SAT vẫn sở
 hữu kiểm tra duration cùng opening/travel/meal constraints và có thể sửa hint.
+Mỗi meal shortlist giữ tối đa ba food option và bảo đảm có ít nhất một
+`restaurant` khi top ba ban đầu đều là `drink_dessert` nhưng pool còn restaurant,
+giảm fallback full-day do constraint đồ uống/tráng miệng.
 
 Nếu shortlist heuristic vô nghiệm, runtime thử lại ngày đó với toàn bộ candidate
 còn khả dụng trong day-domain và hard wait cap 150 phút. Nếu full-day strict

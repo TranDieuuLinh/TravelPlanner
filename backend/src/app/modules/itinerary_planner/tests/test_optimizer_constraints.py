@@ -3,7 +3,7 @@ import pytest
 from app.modules.itinerary_planner.optimizer.solver import OptimizationError
 from app.modules.itinerary_planner.policies import MAX_INTER_STOP_WAIT_MINUTES
 from app.modules.itinerary_planner.routing_models import MatrixCell, TravelMatrix
-from app.modules.itinerary_planner.tests.factories import candidate, payload
+from app.modules.itinerary_planner.tests.factories import candidate, food, payload
 from app.modules.itinerary_planner.tests.optimizer_fixtures import (
     base_payload,
     meal_candidates,
@@ -78,6 +78,68 @@ def test_meals_are_separated_by_activity_and_route_wait_is_bounded() -> None:
 
 def test_schedule_is_infeasible_without_activity_between_meals() -> None:
     raw = payload(foods=meal_candidates())
+
+    with pytest.raises(OptimizationError, match="INFEASIBLE"):
+        solve_payload(raw)
+
+
+def test_drink_dessert_is_limited_and_cannot_fill_adjacent_meals() -> None:
+    breakfast_drink = food(
+        "breakfast_drink",
+        supported_meals=["breakfast"],
+        venue_type="drink_dessert",
+    )
+    lunch_drink = food(
+        "lunch_drink",
+        supported_meals=["lunch"],
+        venue_type="drink_dessert",
+    )
+    lunch_drink["priority"] = "user_input"
+    lunch_restaurant = food(
+        "lunch_restaurant",
+        supported_meals=["lunch"],
+    )
+    dinner_restaurant = food(
+        "dinner_restaurant",
+        supported_meals=["dinner"],
+    )
+    raw = payload(
+        places=base_payload()["places"],
+        foods=[
+            breakfast_drink,
+            lunch_drink,
+            lunch_restaurant,
+            dinner_restaurant,
+        ],
+    )
+
+    result, prepared, _ = solve_payload(raw)
+
+    selected = {
+        stop.meal_type.value: prepared.candidate_by_id[stop.place_id]
+        for stop in result.scheduled_stops
+        if stop.meal_type
+    }
+    assert selected["breakfast"].venue_type.value == "drink_dessert"
+    assert selected["lunch"].venue_type.value == "restaurant"
+    assert sum(
+        candidate.venue_type.value == "drink_dessert"
+        for candidate in selected.values()
+    ) <= 2
+
+
+def test_three_drink_dessert_meals_are_infeasible() -> None:
+    raw = payload(
+        places=base_payload()["places"],
+        foods=[
+            food(
+                f"{meal}_drink",
+                supported_meals=[meal],
+                venue_type="drink_dessert",
+            )
+            for meal in ("breakfast", "lunch", "dinner")
+        ],
+    )
 
     with pytest.raises(OptimizationError, match="INFEASIBLE"):
         solve_payload(raw)

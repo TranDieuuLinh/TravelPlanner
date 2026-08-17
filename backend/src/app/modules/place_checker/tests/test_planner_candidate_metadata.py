@@ -34,6 +34,17 @@ def test_activity_offer_is_explicit_and_not_double_counted_with_special() -> Non
     assert activity_ids == ["activity:walk"]
 
 
+def test_pending_special_relationship_is_not_promoted_to_special_source() -> None:
+    pending = relationship("Special_Experience", "place:1").model_copy(
+        update={"status": "pending"}
+    )
+
+    kind, activity_ids = source_metadata([pending])
+
+    assert kind == "generic"
+    assert activity_ids == []
+
+
 def test_activity_timing_precedes_style_and_style_is_fallback() -> None:
     activity = relationship(
         "Offer_Item",

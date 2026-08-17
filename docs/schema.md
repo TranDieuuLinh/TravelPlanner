@@ -1,6 +1,6 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-16.
+Cập nhật lần cuối: 2026-08-17.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
@@ -198,14 +198,18 @@ gần P50 và high gần P80 của candidate đã xác minh trong thành phố; 
 output phát tối đa ba phương án quanh mốc ngân sách để Planner chọn theo giá và
 vị trí.
 Compact priority chỉ gồm `user_input`, `url`, `special_experience`,
-`special_near`; food có `supportedMeals`.
+`special_near`; food có `supportedMeals` và
+`venueType=restaurant|drink_dessert`.
 Địa điểm/quán được resolve từ `inputItems` mang priority `user_input`; quan hệ
 Special Experience/Offer Item vẫn được giữ riêng trong source metadata và tags.
 Mỗi place còn có `sourceKind` (`special_experience`, `offer_item`, `both` hoặc
 `generic`), `offeredActivityIds` và `timeSource`. `Offer_Item` chỉ được tính là
 nguồn activity khi target là `ActivityItem`; timing ActivityItem được truyền
-qua relationship evidence, còn `Has_Style` là fallback khi thiếu timing cụ thể.
-Travel reserve dùng coverage mềm 6/14 Special Experience thật và 4/14 popular;
+qua relationship evidence, còn `Has_Style` là fallback khi thiếu timing cụ thể
+và được giữ thành tag `style:*` cho diversity coverage. Travel reserve chạy
+thematic query cho culture, nature, shopping, nightlife, workshop, performance,
+outdoor, family và local activity, giữ một candidate mỗi theme/style khả dụng
+trước khi bù theo 6/14 Special Experience đã duyệt và 4/14 popular;
 popular kết hợp Bayesian quality với log review count, bucket thiếu được ranking
 diversity bù và không làm PlaceChecker phân ngày thay Planner.
 Compact output chỉ chứa place/food có giá dùng được; user input bị loại được giữ
@@ -255,8 +259,10 @@ transfer. Sau solver, module chỉ lấy
 route detail cho selected arcs cùng accommodation transfers và có tối đa một affected-day repair nếu detail
 thực tế làm timeline sai.
 Mỗi ngày bắt buộc có activity xen giữa breakfast/lunch và lunch/dinner bằng
-hard constraint cấm food-to-food arc. Waiting giữa hai stop liên tiếp bị giới
-hạn tối đa 15 phút ngoài `safeTravel` đã gồm routing buffer; khi pool/opening
+hard constraint cấm food-to-food arc. Mỗi ngày có tối đa hai
+`drink_dessert`, và hai meal slot liền nhau không được cùng dùng loại venue
+này. Waiting giữa hai stop liên tiếp bị giới hạn tối đa 150 phút ngoài
+`safeTravel` đã gồm routing buffer; khi pool/opening
 window không dựng được chuỗi liên tục, solver trả `INFEASIBLE` thay vì xuất
 ngày chỉ có ba bữa ăn.
 Optional candidate của chuyến từ ba ngày được giới hạn vào tối đa hai ngày gần

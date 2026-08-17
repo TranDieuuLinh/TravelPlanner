@@ -158,8 +158,9 @@ compatibility planner cho tới khi routing và CP-SAT hoàn tất; compact payl
 sẵn sàng trong root state dưới `planner_input`.
 
 `restaurant` và `drink_dessert` được đưa vào `food`; các loại còn lại nằm trong
-`places`. Mỗi phần tử có tọa độ, địa chỉ, rating, review count, thời lượng,
-giờ mở cửa, quan hệ và `price`.
+`places`. Mỗi food giữ `venueType=restaurant|drink_dessert` để Planner áp policy
+theo ngày mà không phải đoán từ tên hoặc tag. Mỗi phần tử có tọa độ, địa chỉ,
+rating, review count, thời lượng, giờ mở cửa, quan hệ và `price`.
 
 Food query lấy một batch trong bán kính tính từ tọa độ tối đa 5 km. Cạnh
 `Special_Near` được giữ làm provenance nhưng không còn là điều kiện bắt buộc.

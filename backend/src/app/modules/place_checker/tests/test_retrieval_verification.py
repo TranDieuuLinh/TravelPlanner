@@ -438,6 +438,72 @@ def test_relation_candidates_are_selected_before_keyword_fallbacks() -> None:
     assert tool.requests[0].top_k == 5
 
 
+def test_thematic_query_rejects_unrelated_special_experience() -> None:
+    temple = PlaceSearchMatch(
+        place_id="kg:temple",
+        provider="knowledge_graph",
+        name="Temple",
+        coordinates=Coordinates(latitude=21.034, longitude=105.847),
+        tags=["style:Tham quan"],
+        score=0.9,
+        relationship_score=0.8,
+        relationship_evidence=[{
+            "relationshipType": "Special_Experience",
+            "direction": "area_to_place",
+            "scope": "destination",
+            "fromEntityId": "adm:hanoi",
+            "toEntityId": "kg:temple",
+        }],
+    )
+    garden = PlaceSearchMatch(
+        place_id="kg:garden",
+        provider="knowledge_graph",
+        name="Garden",
+        coordinates=Coordinates(latitude=21.035, longitude=105.848),
+        tags=["style:Ngoài trời", "nature", "garden"],
+        score=0.85,
+        relationship_score=0.8,
+        relationship_evidence=[{
+            "relationshipType": "Special_Experience",
+            "direction": "area_to_place",
+            "scope": "destination",
+            "fromEntityId": "adm:hanoi",
+            "toEntityId": "kg:garden",
+        }],
+    )
+    tool = FakeSearchTool(
+        PlaceSearchResult(
+            status="resolved",
+            query="nature lake garden",
+            normalized_query="nature lake garden",
+            search_mode="requirement",
+            top_matches=[temple, garden],
+            resolution_reason="requirement_match",
+        )
+    )
+    source = SearchPlacesGapSource(
+        tool,
+        provider_name="knowledge_graph",
+        source_kind=RetrievalSourceKind.knowledge_graph,
+    )
+    query = TargetedRetrievalQuery(
+        gap_id="pool:nature_alternatives",
+        gap_type=GapType.experience_coverage,
+        severity=IssueSeverity.low,
+        query_text="nature lake garden",
+        adm_id="adm1_vn_ha_noi",
+        adm_name="Hà Nội",
+        country_code="VN",
+        budget_level="low",
+        relation_terms=["nature", "garden", "ngoài trời"],
+        limit=5,
+    )
+
+    result = asyncio.run(source.search(query))
+
+    assert [item.entity_id for item in result] == ["kg:garden"]
+
+
 def test_external_call_budget_uses_at_most_two_sources() -> None:
     sources = [
         FakeSource(f"external_{index}", RetrievalSourceKind.external)

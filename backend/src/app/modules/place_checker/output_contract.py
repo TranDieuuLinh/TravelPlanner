@@ -237,6 +237,7 @@ class PlannerOutputPlace(ContractModel):
 
 
 class PlannerOutputFood(PlannerOutputPlace):
+    venue_type: Literal["restaurant", "drink_dessert"] = "restaurant"
     supported_meals: list[Literal["breakfast", "lunch", "dinner"]] = Field(min_length=1)
 
 

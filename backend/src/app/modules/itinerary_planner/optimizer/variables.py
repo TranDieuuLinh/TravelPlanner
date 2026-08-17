@@ -4,8 +4,13 @@ from dataclasses import dataclass, field
 
 from ortools.sat.python import cp_model
 
-from app.modules.itinerary_planner.contract import MealType, PlannerFoodCandidate
+from app.modules.itinerary_planner.contract import (
+    FoodVenueType,
+    MealType,
+    PlannerFoodCandidate,
+)
 from app.modules.itinerary_planner.policies import (
+    MAX_DRINK_DESSERTS_PER_DAY,
     MEAL_POLICIES,
     MINIMUM_MEAL_START_GAPS,
     OVERNIGHT_END_MINUTE,
@@ -131,7 +136,37 @@ def create_schedule_variables(
                 variables.meal_start[(day, later)]
                 >= variables.meal_start[(day, earlier)] + minimum_gap
             )
+        _add_drink_dessert_constraints(model, problem, variables, day)
     return variables
+
+
+def _add_drink_dessert_constraints(
+    model: cp_model.CpModel,
+    problem: PreparedPlanningProblem,
+    variables: PlannerVariables,
+    day: int,
+) -> None:
+    drink_ids = {
+        food.place_id
+        for food in problem.valid_food
+        if food.venue_type == FoodVenueType.drink_dessert
+    }
+    daily_assignments = [
+        variables.assigned[(food_id, day)]
+        for food_id in drink_ids
+        if (food_id, day) in variables.assigned
+    ]
+    if daily_assignments:
+        model.Add(sum(daily_assignments) <= MAX_DRINK_DESSERTS_PER_DAY)
+
+    for earlier, later in MINIMUM_MEAL_START_GAPS:
+        adjacent_choices = [
+            variable
+            for (food_id, meal_day, meal), variable in variables.meal.items()
+            if food_id in drink_ids and meal_day == day and meal in {earlier, later}
+        ]
+        if adjacent_choices:
+            model.Add(sum(adjacent_choices) <= 1)
 
 
 def _create_activity_interval(

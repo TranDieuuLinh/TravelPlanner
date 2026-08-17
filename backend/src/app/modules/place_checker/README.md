@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai PlaceChecker
 
-Cập nhật lần cuối: 2026-08-16.
+Cập nhật lần cuối: 2026-08-17.
 
 Thư mục này chứa kế hoạch triển khai stage PlaceChecker. Các module Python
 production sẽ được thêm bên cạnh `docs/` khi từng task được thực hiện.
@@ -48,10 +48,15 @@ chỉ tạo warning vì Planner vẫn có thể dùng general food pool theo rou
 output gửi cả `foodCoverage` gồm hard/reserve assignments và missing slots để
 Planner biết feasibility đã được kiểm tra trước.
 
-TravelPlace reserve dùng coverage mềm theo tỷ lệ tham chiếu 6/14 candidate có
-evidence `Special_Experience`, 4/14 candidate có Bayesian popularity signal và
-phần còn lại theo ranking đa dạng hiện có. Bucket thiếu được pool khác bù; đây
-không phải phân ngày hoặc quyết định itinerary.
+TravelPlace reserve chạy các query độc lập cho culture, nature, shopping,
+nightlife, workshop, performance, outdoor, family, special experience và local
+activity. Selection giữ một đại diện cho mỗi `pool_category` hoặc `style:*` có
+dữ liệu trước khi bù theo tỷ lệ tham chiếu 6/14 candidate có evidence
+`Special_Experience`, 4/14 candidate có Bayesian popularity signal và phần còn
+lại theo ranking. Thematic query bắt buộc match relation/style term; một
+`Special_Experience` không liên quan không được dùng để lấp mọi theme.
+`Special_Experience` trạng thái `pending` không được tính là special. Bucket
+thiếu được pool khác bù; đây không phải phân ngày hoặc quyết định itinerary.
 
 ## Input từ Explorer
 

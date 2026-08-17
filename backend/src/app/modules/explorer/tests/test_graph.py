@@ -20,6 +20,13 @@ def test_prompt_only_extracts_adm_and_prompt_days() -> None:
     assert output.timezone == "Asia/Ho_Chi_Minh"
 
 
+def test_prompt_without_days_defaults_to_three_day_plan() -> None:
+    output = invoke({"rawPrompt": "Lập kế hoạch ở Huế"})
+
+    assert output.status == "ready"
+    assert output.days == 3
+
+
 def test_prompt_date_overrides_tomorrow_default() -> None:
     output = invoke({"rawPrompt": "Đi Hà Nội ngày 20/08/2026 trong 5 ngày"})
 

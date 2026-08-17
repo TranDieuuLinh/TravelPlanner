@@ -18,12 +18,28 @@ def test_camel_case_input_round_trips_with_aliases() -> None:
     assert parsed.trip.start_date.isoformat() == "2026-08-20"
     assert parsed.trip.budget.currency == "VND"
     assert parsed.food[0].supported_meals[0].value == "breakfast"
+    assert parsed.food[0].venue_type.value == "restaurant"
     assert dumped["trip"]["startDate"] == "2026-08-20"
     assert dumped["places"][0]["durationMinutes"] == 60
     assert "openingHours" in dumped["places"][0]
     assert dumped["places"][0]["sourceKind"] == "generic"
     assert dumped["places"][0]["offeredActivityIds"] == []
     assert dumped["places"][0]["timeSource"] == "unknown"
+    assert dumped["food"][0]["venueType"] == "restaurant"
+
+
+def test_food_venue_type_round_trips_and_rejects_unknown_values() -> None:
+    drink = food(venue_type="drink_dessert")
+    parsed = ItineraryPlannerInput.model_validate(payload(foods=[drink]))
+
+    assert parsed.food[0].venue_type.value == "drink_dessert"
+    assert parsed.model_dump(mode="json", by_alias=True)["food"][0][
+        "venueType"
+    ] == "drink_dessert"
+
+    drink["venueType"] = "dessert_restaurant"
+    with pytest.raises(ValidationError):
+        ItineraryPlannerInput.model_validate(payload(foods=[drink]))
 
 
 def test_accepts_place_checker_unique_meal_matching_feasibility() -> None:

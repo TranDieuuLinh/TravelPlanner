@@ -55,6 +55,11 @@ JSON bên ngoài dùng camelCase; Pydantic/Python dùng snake_case với alias.
 }
 ```
 
+Mỗi phần tử `food` có `venueType=restaurant|drink_dessert`; giá trị mặc định
+`restaurant` chỉ phục vụ backward compatibility. Runtime PlaceChecker luôn gửi
+loại venue rõ ràng để constraint đồ uống/tráng miệng không phụ thuộc tên hoặc
+tag tự do.
+
 Mỗi place bắt buộc có:
 
 ```text

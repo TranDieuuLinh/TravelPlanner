@@ -17,6 +17,7 @@ def source_metadata(
 ) -> tuple[SourceKind, list[str]]:
     special = any(
         relation.relationship_type == "Special_Experience"
+        and not relation.is_pending
         for relation in relationships
     )
     activity_ids = list(
