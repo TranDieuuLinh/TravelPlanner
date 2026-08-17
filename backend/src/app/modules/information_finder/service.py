@@ -216,7 +216,7 @@ class InformationFinderService:
                     "No source was available after local retrieval and optional web search.",
                 ],
             )
-        answer, cited_sources, answer_warnings = await generate_and_render_answer(
+        answer, content_blocks, cited_sources, answer_warnings = await generate_and_render_answer(
             normalized_query,
             ranked,
             answers=self.answers,
@@ -227,6 +227,7 @@ class InformationFinderService:
         warnings.extend(answer_warnings)
         return InformationFinderOutput(
             answer=answer,
+            content_blocks=content_blocks,
             sources=[self._citation(source) for source in cited_sources],
             warnings=warnings,
         )

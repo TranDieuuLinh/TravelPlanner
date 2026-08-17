@@ -53,7 +53,7 @@ def test_deterministic_eval_cases_enforce_answer_invariants():
         generated = GeneratedAnswer(
             claims=[AnswerClaim(text=case["claim"], source_ids=case["sourceIds"])]
         )
-        answer, cited = validate_and_render_answer(generated, sources)
+        answer, _, cited = validate_and_render_answer(generated, sources)
         assert all(term in answer for term in case["requiredTerms"])
         assert [item.source_id for item in cited] == list(
             dict.fromkeys(case["sourceIds"])

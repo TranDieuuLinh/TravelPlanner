@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.modules.conversation_memory.adapters.in_memory import InMemoryMemoryRepository
 from app.modules.conversation_memory.service import ConversationMemoryService
+from app.modules.information_finder.contract import InformationFinderOutput, ParagraphBlock
 from app.modules.trip_chat.contract import TripChat, TripChatMessage
 from app.modules.trip_chat.service import TripChatService
 
@@ -162,6 +163,28 @@ class TestTripChatService(unittest.TestCase):
         asyncio.run(TripChatService(repository, graph).send(7, "chat-1", "Tạo lịch"))
 
         self.assertEqual(repository.appended[-1], {"plannerOutput": "value"})
+
+    def test_send_persists_information_finder_content_blocks_with_assistant_message(self) -> None:
+        repository = FakeRepository()
+        graph = FakeGraph(
+            {
+                "response": "Hồ Gươm ở Hà Nội.",
+                "decision": SimpleNamespace(route="information_finder"),
+                "information_output": InformationFinderOutput(
+                    answer="Hồ Gươm ở Hà Nội.",
+                    content_blocks=[
+                        ParagraphBlock(
+                            text="Hồ Gươm ở Hà Nội.",
+                            source_ids=["source-1"],
+                        )
+                    ],
+                ),
+            }
+        )
+
+        asyncio.run(TripChatService(repository, graph).send(7, "chat-1", "Hồ Gươm ở đâu?"))
+
+        assert repository.appended[3]["content_blocks"][0]["type"] == "paragraph"
 
     def test_send_graph_failure_does_not_change_memory(self) -> None:
         repository = FakeRepository()

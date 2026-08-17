@@ -51,6 +51,7 @@ def test_invoke_accepts_and_returns_camel_case_source_contract():
     assert payload["requestId"]
     assert payload["sources"][0]["sourceId"] == "source-1"
     assert payload["sources"][0]["updatedAt"] == "2026-08-10T00:00:00Z"
+    assert payload["contentBlocks"] == []
     assert "request_id" not in payload
 
 

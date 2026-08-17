@@ -76,3 +76,37 @@ test("maps the full planner snapshot received after sending a message", () => {
   assert.equal(chat.currentPlan.days.length, 1);
   assert.equal(chat.currentPlan.days[0].items[0].name, "Hồ Hoàn Kiếm");
 });
+
+test("preserves structured content blocks and keeps old messages empty", () => {
+  const chat = mapCurrentTripChat({
+    id: "chat-structured",
+    title: "Hà Nội",
+    threadId: "thread-structured",
+    revision: 1,
+    hasItinerary: false,
+    createdAt: "2026-08-14T00:00:00Z",
+    updatedAt: "2026-08-14T01:00:00Z",
+    messages: [
+      {
+        id: "message-old",
+        role: "assistant",
+        content: "Câu trả lời cũ",
+        createdAt: "2026-08-14T00:00:00Z",
+      },
+      {
+        id: "message-new",
+        role: "assistant",
+        content: "Hồ Gươm ở Hà Nội.",
+        contentBlocks: [{
+          type: "paragraph",
+          text: "Hồ Gươm ở Hà Nội.",
+          sourceIds: ["source-1"],
+        }],
+        createdAt: "2026-08-14T00:01:00Z",
+      },
+    ],
+  }, plannerOutputToTravelPlan);
+
+  assert.deepEqual(chat.messages[0].contentBlocks, []);
+  assert.equal(chat.messages[1].contentBlocks[0].type, "paragraph");
+});

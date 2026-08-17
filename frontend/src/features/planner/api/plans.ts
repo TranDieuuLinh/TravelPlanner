@@ -10,6 +10,7 @@ import type {
   TransportLeg,
   TransportOption,
 } from "@/features/planner/contracts/transport";
+import type { AnswerBlock } from "@/features/planner/lib/answer-blocks";
 
 export type {
   CurrentLocationRouteInput,
@@ -496,7 +497,7 @@ export type TripChatMessage = {
   planRevision: number | null;
   turnId?: string | null;
   messageKind?: string;
-  contentBlocks?: Array<Record<string, unknown>>;
+  contentBlocks?: AnswerBlock[];
   sources: TripChatSource[];
   createdAt: string;
 };

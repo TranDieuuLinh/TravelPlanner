@@ -279,21 +279,27 @@ API key, development/test dùng fallback trung thực trong process.
 
 Answer generator của Information Finder có thể nhận `LlmClient` dùng chung qua
 dependency injection. Prompt, structured claim contract, source budget,
-citation validation và fallback policy vẫn thuộc module Information Finder;
+citation validation, structured block rendering và fallback policy vẫn thuộc module Information Finder;
 shared client chỉ sở hữu transport Gemini và key rotation. Service lấy năm nguồn
 local có điểm semantic cao nhất rồi truyền cho `LlmSearchQueryPlanner`; LLM chỉ
 đặt `shouldSearch=true` và tạo tối đa ba truy vấn Tavily khi các nguồn này thiếu
 dữ kiện cần thiết. Nếu planner lỗi, service chỉ dùng truy vấn deterministic khi
 không có nguồn local hoặc cần refresh.
-Structured answer prompt dùng các format Markdown theo loại câu hỏi như gợi ý
-mềm, chỉ tạo section khi có đủ dữ kiện. Extractive fallback không tổng hợp bằng
-LLM; nó chỉ trả tối đa ba excerpt ngắn có citation và loại các segment quảng cáo,
-lời dẫn SEO phổ biến trước khi render.
+Structured answer prompt yêu cầu các block semantic như `paragraph`, `factList`,
+`verse`, `quote`, `recommendations`, `steps`, `comparison` và `notice`, chỉ tạo
+block khi có đủ dữ kiện. Extractive fallback không tổng hợp bằng LLM; nó trả
+structured facts ngắn, tối đa ba đến năm item có citation và loại các segment
+quảng cáo, navigation/footer và lời dẫn SEO phổ biến trước khi render.
 Answer generator trả về `entityCandidates` gồm tên hiển thị và các tên tra cứu,
 bao gồm alias hoặc tên tiếng Anh khi có căn cứ. `KnowledgeGraphEntityResolver`
 thử từng tên qua public Knowledge Graph contract và backend tự gắn
-`travel-entity://entity` sau khi node tồn tại. Entity không resolve được không bị
-gắn link giả.
+`travel-entity://entity/<encoded_entity_id>` trong answer legacy và tạo
+`inlineSpans` có `entityId` trong content blocks sau khi node tồn tại. Entity
+không resolve được giữ plain text, không bị gắn link giả. Chat preview đọc node bằng ID qua
+`GET /v1/knowledge-graph/entities/{entity_id}/preview`; lookup theo tên chỉ còn
+là endpoint tương thích cho các caller cũ. TripChat lưu `content` và
+`content_blocks` riêng trong cùng assistant message; message cũ được đọc với
+`contentBlocks=[]`.
 
 Supervisor là intent classifier có provider cấu hình được. Khi provider là
 `gemini`, mọi message được structured Gemini phân loại trước qua `shared/llm/`;

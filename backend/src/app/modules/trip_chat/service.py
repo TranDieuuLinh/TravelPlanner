@@ -370,6 +370,12 @@ class TripChatService:
             "route": getattr(decision, "route", None),
             "clarification_question": result.get("clarification_question"),
             "warnings": warnings,
+            "content_blocks": [
+                _dump(block, by_alias=True)
+                for block in (
+                    information_output.content_blocks if information_output else []
+                )
+            ],
             "sources": [
                 _dump(source)
                 for source in (

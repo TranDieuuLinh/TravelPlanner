@@ -1,7 +1,7 @@
 # Từ điển gắn tag tự động dựa trên tên địa điểm.
 # Mỗi key là một tag; danh sách bên phải là từ khóa dùng để nhận diện.
 # Có thể gắn nhiều tag nếu tên địa điểm khớp nhiều nhóm.
-# Cập nhật lần cuối: 2026-08-12
+# Cập nhật lần cuối: 2026-08-17
 
 di tích: [lăng mộ, lăng, đền, pháo đài, khu di tích, di tích, thành cổ, hoàng thành, kinh thành, cố đô, khu tưởng niệm, đài tưởng niệm, historical site, heritage site, monument, memorial]
 
@@ -39,6 +39,8 @@ drunk: [bia, beer, rượu, wine, whisky, vodka, cocktail, beer club, pub, bar, 
 
 18+: [bar, pub, club, nightclub, beer club, cocktail, rượu, bia, adult only, người lớn]
 
+Chỉ Người Lớn: [adult only, adults only, 18+, chỉ người lớn, người lớn, nightclub, beer club, pub, bar, cocktail]
+
 nightlife: [bar, pub, club, nightclub, beer club, karaoke, phố đi bộ, chợ đêm, night market, nightlife]
 
 mạo hiểm: [mạo hiểm, adventure, extreme, trekking, hiking, leo núi, zipline, bungee, dù lượn, lặn biển, diving, snorkeling, kayak, chèo thuyền, lướt sóng, rock climbing, rafting, paragliding]
@@ -56,6 +58,8 @@ thư giãn: [spa, massage, yoga, thiền, resort, nghỉ dưỡng, suối khoán
 mua sắm: [chợ, chợ đêm, chợ nổi, trung tâm thương mại, mall, shopping, phố mua sắm, làng nghề]
 
 gia đình: [công viên, khu vui chơi, công viên nước, thiếu nhi, trẻ em, family, kids, sở thú, thủy cung]
+
+Phù Hợp Với Trẻ Em: [trẻ em, thiếu nhi, khu vui chơi, công viên nước, sở thú, thủy cung, playground, kids, family, family-friendly, child-friendly, children, zoo, aquarium, amusement park]
 
 phong cách Việt: [phở, bún, bánh mì, cơm tấm, món việt, ẩm thực việt, việt nam]
 

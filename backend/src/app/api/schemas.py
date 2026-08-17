@@ -2,7 +2,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from app.modules.explorer.public import ExplorerImageInput, ExplorerInput
-from app.modules.information_finder.public import SourceReference
+from app.modules.information_finder.public import AnswerBlock, SourceReference
 from app.modules.itinerary_planner.public import ItineraryPlannerOutput
 from app.modules.plan_editor.public import EditOperation
 from app.modules.supervisor.public import SupervisorRoute
@@ -43,4 +43,5 @@ class InvokeResponse(ApiModel):
     planner_output: ItineraryPlannerOutput | None = None
     clarification_question: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    content_blocks: list[AnswerBlock] = Field(default_factory=list)
     sources: list[SourceReference] = Field(default_factory=list)

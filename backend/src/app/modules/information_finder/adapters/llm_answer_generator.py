@@ -35,7 +35,13 @@ def _provider_schema(value):
         return {
             key: _provider_schema(item)
             for key, item in value.items()
-            if key != "default"
+            if key not in {
+                "default",
+                "minLength",
+                "maxLength",
+                "minItems",
+                "maxItems",
+            }
         }
     if isinstance(value, list):
         return [_provider_schema(item) for item in value]

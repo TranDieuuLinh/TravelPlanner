@@ -1,6 +1,6 @@
 # Travel Planner Agents
 
-Cập nhật lần cuối: 2026-08-14.
+Cập nhật lần cuối: 2026-08-17.
 
 Greenfield modular backend for a LangGraph-based travel-planning workflow.
 
@@ -124,6 +124,7 @@ psql "$DATABASE_URL" -f migrations/003_explorer_draft_cache.sql
 psql "$DATABASE_URL" -f migrations/002_auth.sql
 psql "$DATABASE_URL" -f migrations/003_knowledge_graph.sql
 psql "$DATABASE_URL" -f migrations/004_knowledge_auto_attach.sql
+psql "$DATABASE_URL" -f migrations/008_trip_chat_content_blocks.sql
 psql "$DATABASE_URL" -f migrations/009_conversation_memory.sql
 psql "$DATABASE_URL" -f migrations/009_trip_chat_planner_output.sql
 psql "$DATABASE_URL" -f migrations/010_phase05_memory_durable.sql

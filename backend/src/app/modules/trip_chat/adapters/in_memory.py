@@ -83,6 +83,7 @@ class InMemoryTripChatRepository:
             route=assistant.get("route"),
             clarification_question=assistant.get("clarification_question"),
             warnings=assistant.get("warnings", []),
+            content_blocks=assistant.get("content_blocks", []),
             sources=assistant.get("sources", []),
             created_at=now,
         )

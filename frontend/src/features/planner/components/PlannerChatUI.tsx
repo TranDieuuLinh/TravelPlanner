@@ -14,7 +14,9 @@ import { createPortal } from "react-dom";
 import { PenguinMascot } from "@/components/PenguinMascot";
 import { SourceProviderIcon } from "@/features/planner/lib/planner-formatters";
 import { MarkdownMessage } from "@/features/planner/components/MarkdownMessage";
+import { AnswerBlockRenderer } from "@/features/planner/components/AnswerBlockRenderer";
 import type { TripChatSource } from "@/features/planner/api/plans";
+import type { AnswerBlock } from "@/features/planner/lib/answer-blocks";
 import {
   sourceProviderKind,
   type SourceProviderKind,
@@ -37,6 +39,7 @@ export type PlannerChatMessage = {
   role: "assistant" | "user";
   text: string;
   sources?: TripChatSource[];
+  contentBlocks?: AnswerBlock[];
   streaming?: boolean;
 };
 
@@ -145,11 +148,18 @@ export const PlannerChatMessages = forwardRef(function PlannerChatMessages(
           ) : null}
           <div className={`chatBubble ${message.role}`}>
             {message.role === "assistant" ? (
-              <MarkdownMessage
-                content={message.text}
-                sources={message.sources ?? []}
-                streaming={message.streaming}
-              />
+              message.contentBlocks?.length ? (
+                <AnswerBlockRenderer
+                  blocks={message.contentBlocks}
+                  sources={message.sources ?? []}
+                />
+              ) : (
+                <MarkdownMessage
+                  content={message.text}
+                  sources={message.sources ?? []}
+                  streaming={message.streaming}
+                />
+              )
             ) : (
               message.text
             )}

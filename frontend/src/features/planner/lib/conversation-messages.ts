@@ -1,10 +1,12 @@
 import type { TripChat, TripChatSource } from "@/features/planner/api/plans";
+import type { AnswerBlock } from "@/features/planner/lib/answer-blocks";
 
 export type VisibleConversationMessage = {
   id: number | string;
   role: "assistant" | "user";
   text: string;
   sources: TripChatSource[];
+  contentBlocks: AnswerBlock[];
 };
 
 const LEGACY_PLAN_UPDATE_PATTERN =
@@ -55,5 +57,6 @@ export function visibleConversationMessages(
         .filter(Boolean)
         .join("\n"),
       sources: message.sources ?? [],
+      contentBlocks: message.contentBlocks ?? [],
     }));
 }

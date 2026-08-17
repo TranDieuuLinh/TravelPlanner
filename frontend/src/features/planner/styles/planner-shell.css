@@ -35,10 +35,12 @@
   stroke-linejoin: round;
   stroke-width: 1.8;
 }
-.markdownMessage { display: grid; gap: 8px; line-height: 1.6; }
+.markdownMessage { display: grid; gap: 8px; line-height: 1.6; white-space: normal; }
 .markdownMessage > * { margin: 0; }
 .markdownMessage h1, .markdownMessage h2, .markdownMessage h3 { color: inherit; font-size: 1em; font-weight: 850; }
 .markdownMessage ul, .markdownMessage ol { display: grid; gap: 4px; margin: 0; padding-left: 20px; }
+.markdownMessage li { padding-left: 4px; }
+.markdownMessage li > p { margin: 0; }
 .markdownMessage p { margin: 0; }
 .markdownMessage a { color: var(--brand-dark); text-decoration: underline; text-underline-offset: 3px; }
 .markdownMessage a.citationSource {
@@ -76,6 +78,24 @@
   opacity: .7;
   vertical-align: super;
 }
+.answerBlockRenderer { display: grid; gap: 10px; line-height: 1.6; white-space: normal; }
+.answerBlock > * { margin: 0; }
+.answerBlock h3 { margin: 0 0 5px; color: inherit; font-size: .88rem; font-weight: 850; }
+.answerBlock ul, .answerBlock ol { display: grid; gap: 5px; margin: 0; padding-left: 20px; }
+.answerBlock li { padding-left: 4px; }
+.answerFactList, .answerRecommendations, .answerSteps { display: grid; gap: 4px; }
+.answerHighlight { border-radius: 3px; background: color-mix(in srgb, #f3c969 38%, transparent); color: inherit; padding: 0 2px; }
+.answerCitations { display: inline-flex; gap: 2px; margin-left: 3px; }
+.answerVerse { display: grid; gap: 3px; border-left: 3px solid color-mix(in srgb, var(--brand) 35%, transparent); padding: 5px 0 5px 12px; }
+.answerVerse small { color: var(--muted); font-size: .72rem; }
+.answerVerseLines { white-space: pre-line; font-style: italic; }
+.answerComparison { display: grid; gap: 5px; }
+.answerComparisonGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.answerComparisonGrid article { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 9px; }
+.answerComparisonGrid p { margin: 5px 0 0; color: var(--muted); font-size: .74rem; }
+.answerNotice { border-left: 3px solid color-mix(in srgb, var(--brand) 45%, transparent); border-radius: 6px; background: color-mix(in srgb, var(--brand) 7%, transparent); padding: 8px 10px; }
+.answerNotice.warning { border-left-color: #c98d2e; background: #fff8e8; }
+.answerNotice.critical { border-left-color: #b54a4a; background: #fff0f0; }
 .entityMention { display: inline; border: 0; border-bottom: 1px dashed currentColor; padding: 0; background: transparent; color: var(--brand-dark); cursor: pointer; font: inherit; }
 .entityHoverPortal { position: fixed; z-index: 500; width: min(320px, calc(100vw - 16px)); pointer-events: auto; }
 .entityHoverCard { display: grid; width: 100%; overflow: hidden; border: 1px solid rgba(54, 95, 90, .16); border-radius: 14px; padding: 0; background: white; color: var(--ink); box-shadow: 0 18px 45px rgba(23, 32, 51, .2); text-align: left; }
@@ -97,6 +117,9 @@
 .entityDialogContent dl > div { display: grid; grid-template-columns: 100px 1fr; gap: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
 .entityDialogContent dt { color: var(--muted); font-size: .65rem; text-transform: capitalize; }
 .entityDialogContent dd { margin: 0; font-size: .72rem; line-height: 1.45; }
+@media (max-width: 600px) {
+  .answerComparisonGrid { grid-template-columns: 1fr; }
+}
 
 /* Keep the completed desktop planner flush with every available viewport edge.
    The shared pageWidth utility is useful elsewhere, but its outer gutter leaves

@@ -387,6 +387,12 @@ entity remains the admin context for the mutation. Updating an entity type in
 the admin UI also sends the synchronized entity ID; the backend moves child
 records and relationship endpoints transactionally when that ID changes.
 
+Chat có public read-only endpoint `GET
+/v1/knowledge-graph/entities/{entity_id}/preview` để lấy `EntityPreview` chính
+xác theo ID của entity link. Endpoint tương thích
+`GET /v1/knowledge-graph/entity-preview?name=...` vẫn được giữ cho caller cũ;
+UI chat không dùng lookup theo tên cho link mới.
+
 Các schema dùng chung chính:
 
 - `TripIntent`
@@ -452,6 +458,10 @@ Internal `GeneratedAnswer` gồm danh sách `AnswerClaim(text, source_ids)` và
 `caveat` tùy chọn. JSON schema gửi cho LLM dùng camelCase (`sourceIds`,
 `entityNames`, `entityCandidates`); Pydantic ánh xạ về tên Python tương ứng.
 Backend từ chối source ID ngoài context, deduplicate ID theo thứ tự, render
-marker `[1]` và chỉ ánh xạ metadata cho nguồn thực sự được cite.
+marker `[1]` và chỉ ánh xạ metadata cho nguồn thực sự được cite. Structured
+answer public dùng `contentBlocks` với discriminated union cho paragraph,
+factList, verse, quote, recommendations, steps, comparison và notice. Entity
+interaction trong block dùng `inlineSpans`; chỉ span có `entityId` do backend
+resolve mới được frontend render thành Knowledge Graph preview.
 
 Information Finder đã có repository nguồn riêng. Module `conversation_memory` dùng `MemoryRepository` port, PostgreSQL asyncpg adapter, migration `009_conversation_memory.sql`, optimistic concurrency control và atomic `save_memory_and_facts`. Fact extraction giữ rule deterministic; reference resolution mặc định dùng hybrid Gemini với transcript/memory có cấu trúc và `RuleBasedReferenceResolver` fallback. Target do LLM trả về chỉ hợp lệ khi trùng active fact ID, vì vậy provider không thể tự tạo địa điểm. Fact insert idempotent theo `fact_id` giúp retry cùng message không làm hỏng lượt chat. `MergePolicyEvaluator` bảo vệ confirmed facts và giữ lịch sử superseded.

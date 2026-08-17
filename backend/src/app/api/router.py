@@ -211,6 +211,9 @@ async def invoke_agent(
         planner_output=result.get("planner_output"),
         clarification_question=result.get("clarification_question"),
         warnings=result.get("warnings", []),
+        content_blocks=(
+            information_output.content_blocks if information_output else []
+        ),
         sources=information_output.sources if information_output else [],
     )
     await observability.record_agent_invoke(

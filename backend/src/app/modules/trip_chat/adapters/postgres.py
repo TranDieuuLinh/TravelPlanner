@@ -99,8 +99,8 @@ class PostgresTripChatRepository:
             if not chat:
                 return None
             messages = await connection.fetch(
-                """SELECT id, role, content, route, clarification_question, warnings,
-                          sources, created_at
+                    """SELECT id, role, content, route, clarification_question, warnings,
+                          content_blocks, sources, created_at
                    FROM agent_trip_chat_messages WHERE chat_id=$1 ORDER BY sequence""",
                 chat_id,
             )
@@ -141,9 +141,9 @@ class PostgresTripChatRepository:
                 await connection.execute(
                     """INSERT INTO agent_trip_chat_messages
                        (id, chat_id, sequence, role, content, created_at,
-                        route, clarification_question, warnings, sources)
-                       VALUES ($1,$2,$3,'user',$4,$5,NULL,NULL,'[]'::jsonb,'[]'::jsonb),
-                              ($6,$2,$3+1,'assistant',$7,$5,$8,$9,$10::jsonb,$11::jsonb)""",
+                        route, clarification_question, warnings, content_blocks, sources)
+                       VALUES ($1,$2,$3,'user',$4,$5,NULL,NULL,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb),
+                              ($6,$2,$3+1,'assistant',$7,$5,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb)""",
                     str(uuid4()),
                     chat_id,
                     sequence + 1,
@@ -154,6 +154,7 @@ class PostgresTripChatRepository:
                     assistant.get("route"),
                     assistant.get("clarification_question"),
                     json.dumps(assistant.get("warnings", [])),
+                    json.dumps(assistant.get("content_blocks", [])),
                     json.dumps(assistant.get("sources", [])),
                 )
                 await connection.execute(
@@ -354,6 +355,11 @@ class PostgresTripChatRepository:
             route=row["route"],
             clarification_question=row["clarification_question"],
             warnings=_json(row["warnings"]) or [],
+            content_blocks=(
+                _json(row["content_blocks"])
+                if "content_blocks" in row.keys()
+                else []
+            ) or [],
             sources=_json(row["sources"]) or [],
             created_at=row["created_at"],
         )

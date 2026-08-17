@@ -5,12 +5,16 @@ from uuid import uuid4
 from app.modules.information_finder.contract import (
     AnswerClaim,
     EmbeddingIdentity,
+    FactItem,
+    FactListBlock,
     GeneratedAnswer,
+    ParagraphBlock,
     PreparedSource,
     RetrievedSource,
 )
 from app.modules.information_finder.freshness import FreshnessPolicy
 from app.modules.information_finder.normalization import select_relevant_excerpt
+from app.modules.information_finder.structured_content import clean_source_sentences
 
 
 class HashingEmbeddingProvider:
@@ -138,18 +142,22 @@ class ExtractiveAnswerGenerator:
 
     max_claims = 3
     max_chars_per_claim = 280
+    max_words_per_fact = 25
 
     async def generate(
         self, query: str, sources: list[RetrievedSource]
     ) -> GeneratedAnswer:
         claims = []
+        fact_items = []
         for source in sources:
-            snippet = select_relevant_excerpt(
+            sentences = clean_source_sentences(source.content, query, source.title)
+            snippet = sentences[0] if sentences else select_relevant_excerpt(
                 source.content,
                 query,
                 title=source.title,
                 max_chars=self.max_chars_per_claim,
             )
+            snippet = _limit_words(snippet, self.max_words_per_fact)
             if not snippet:
                 continue
             prefix = "## Thông tin nổi bật\n\n" if not claims else ""
@@ -159,13 +167,40 @@ class ExtractiveAnswerGenerator:
                     source_ids=[source.source_id],
                 )
             )
+            fact_items.append(
+                FactItem(
+                    label="Thông tin",
+                    text=snippet,
+                    source_ids=[source.source_id],
+                )
+            )
             if len(claims) >= self.max_claims:
                 break
         if not claims and sources:
+            fallback_text = "Thông tin hiện có chưa đủ rõ để trả lời câu hỏi này."
             claims.append(
                 AnswerClaim(
-                    text="Thông tin hiện có chưa đủ rõ để trả lời câu hỏi này.",
+                    text=fallback_text,
                     source_ids=[sources[0].source_id],
                 )
             )
-        return GeneratedAnswer(claims=claims)
+            return GeneratedAnswer(
+                claims=claims,
+                blocks=[
+                    ParagraphBlock(
+                        text=fallback_text,
+                        source_ids=[sources[0].source_id],
+                    )
+                ],
+            )
+        return GeneratedAnswer(
+            claims=claims,
+            blocks=[FactListBlock(title="Thông tin nổi bật", items=fact_items)],
+        )
+
+
+def _limit_words(text: str, max_words: int) -> str:
+    words = text.split()
+    if len(words) <= max_words:
+        return text.strip()
+    return " ".join(words[:max_words]).rstrip(" ,;:")

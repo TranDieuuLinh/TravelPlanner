@@ -74,6 +74,12 @@ class KnowledgeGraphService:
             raise KnowledgeGraphError(404, "KG_ENTITY_NOT_FOUND", "Không tìm thấy entity.")
         return result
 
+    async def entity_preview_by_id(self, entity_id: str) -> dict:
+        result = await self.store.get_entity_preview_by_id(entity_id)
+        if not result:
+            raise KnowledgeGraphError(404, "KG_ENTITY_NOT_FOUND", "Không tìm thấy entity.")
+        return result
+
     async def create_entity(self, payload: EntityCreate) -> dict:
         try:
             return await self.store.create_entity(**payload.model_dump(by_alias=False))

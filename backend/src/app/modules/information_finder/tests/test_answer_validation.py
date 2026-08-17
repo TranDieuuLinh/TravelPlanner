@@ -164,7 +164,7 @@ def test_verified_entity_name_is_linked_after_knowledge_graph_lookup():
         ).find("Hà Nội")
     )
     assert output.answer.startswith("## Hà Nội")
-    assert "[Lăng Bác](travel-entity://entity)" in output.answer
+    assert "[Lăng Bác](travel-entity://entity/lang-bac)" in output.answer
 
 
 def test_unknown_source_id_falls_back_with_warning():

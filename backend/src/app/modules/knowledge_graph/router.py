@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 
 from app.core.config import get_settings
 from app.modules.knowledge_graph.adapters.postgres import PostgresKnowledgeGraphStore
@@ -63,6 +63,18 @@ async def entity_preview(
 ) -> EntityPreview:
     try:
         return EntityPreview.model_validate(await service.entity_preview(name))
+    except KnowledgeGraphError as error:
+        handle(error)
+
+
+@public_router.get("/entities/{entity_id:path}/preview", response_model=EntityPreview)
+async def entity_preview_by_id(
+    entity_id: str = Path(..., min_length=1, max_length=200),
+    _: AuthUser = Depends(require_current_user),
+    service: KnowledgeGraphService = Depends(get_service),
+) -> EntityPreview:
+    try:
+        return EntityPreview.model_validate(await service.entity_preview_by_id(entity_id))
     except KnowledgeGraphError as error:
         handle(error)
 

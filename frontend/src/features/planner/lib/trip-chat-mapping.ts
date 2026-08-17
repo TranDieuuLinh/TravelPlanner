@@ -6,6 +6,7 @@ import type {
   TravelPlan,
 } from "@/features/planner/api/plans";
 import type { ItineraryPlannerOutput } from "@/features/planner/lib/planner-output";
+import type { AnswerBlock } from "@/features/planner/lib/answer-blocks";
 
 export type CurrentTripChatSummary = {
   id: string;
@@ -25,6 +26,7 @@ export type CurrentTripChat = CurrentTripChatSummary & {
     role: "assistant" | "user";
     content: string;
     sources?: TripChatSource[];
+    contentBlocks?: AnswerBlock[];
     createdAt: string;
   }>;
 };
@@ -132,7 +134,7 @@ export function mapCurrentTripChat(
       planRevision: plan ? chat.revision : null,
       createdAt: message.createdAt,
       messageKind: message.role,
-      contentBlocks: [],
+      contentBlocks: message.contentBlocks ?? [],
     })),
     turns: [],
   };

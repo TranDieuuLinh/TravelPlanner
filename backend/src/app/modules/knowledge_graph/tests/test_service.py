@@ -31,6 +31,18 @@ class FakeStore:
     async def get_entity(self, entity_id: str, **_):
         return self.entity if entity_id == self.entity["id"] else None
 
+    async def get_entity_preview_by_id(self, entity_id: str):
+        if entity_id != self.entity["id"]:
+            return None
+        return {
+            "id": self.entity["id"],
+            "name": self.entity["canonical_name"],
+            "entity_type": self.entity["entity_type"],
+            "description": "A capital city.",
+            "image_url": None,
+            "details": {},
+        }
+
     async def update_entity(self, entity_id: str, **payload):
         if entity_id != self.entity["id"]:
             return None
@@ -59,6 +71,14 @@ def test_missing_entity_returns_domain_error() -> None:
         assert error.status_code == 404
     else:
         raise AssertionError("missing entity should raise KnowledgeGraphError")
+
+
+def test_entity_preview_by_id_uses_exact_store_key() -> None:
+    service = KnowledgeGraphService(FakeStore())  # type: ignore[arg-type]
+
+    result = asyncio.run(service.entity_preview_by_id("hanoi"))
+
+    assert result["id"] == "hanoi"
 
 
 

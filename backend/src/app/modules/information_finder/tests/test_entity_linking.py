@@ -24,12 +24,12 @@ def test_links_only_entities_confirmed_by_knowledge_graph():
         )
     )
 
-    assert "[Lăng Bác](travel-entity://entity)" in answer
+    assert "[Lăng Bác](travel-entity://entity/lang-bac)" in answer
     assert "Phở" in answer
     assert "[Phở](travel-entity://entity)" not in answer
 
 
-def test_converts_llm_link_labels_after_node_lookup():
+def test_preserves_external_markdown_links():
     answer = asyncio.run(
         link_verified_entities(
             "[Hà Nội](http://localhost:3000/planner?chatId=old) có Hồ Hoàn Kiếm.",
@@ -38,8 +38,7 @@ def test_converts_llm_link_labels_after_node_lookup():
         )
     )
 
-    assert "[Hà Nội](travel-entity://entity)" in answer
-    assert "localhost:3000" not in answer
+    assert "[Hà Nội](http://localhost:3000/planner?chatId=old)" in answer
 
 
 def test_tries_entity_aliases_until_one_resolves():
@@ -61,7 +60,19 @@ def test_tries_entity_aliases_until_one_resolves():
         )
     )
 
-    assert "[Lăng Bác](travel-entity://entity)" in answer
+    assert "[Lăng Bác](travel-entity://entity/lang-bac)" in answer
+
+
+def test_preserves_citation_links_and_entity_link_order():
+    answer = asyncio.run(
+        link_verified_entities(
+            "Lăng Bác [1] và Hồ Hoàn Kiếm [2].",
+            ["Lăng Bác"],
+            Resolver(),
+        )
+    )
+
+    assert answer == "[Lăng Bác](travel-entity://entity/lang-bac) [1] và Hồ Hoàn Kiếm [2]."
 
 
 class AliasOnlyResolver(EntityResolver):

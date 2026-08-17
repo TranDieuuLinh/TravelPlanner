@@ -200,6 +200,10 @@ payload.
 Stores ordered user/assistant messages, route metadata, warnings and sources.
 Rows cascade with their owning `agent_trip_chats` record.
 
+Migration `008_trip_chat_content_blocks.sql` bổ sung cột `content_blocks`
+kiểu `jsonb`, mặc định `[]`. Cột này lưu structured answer riêng với cột
+`content`; message cũ khi đọc được chuẩn hóa thành danh sách rỗng.
+
 ### `agent_conversation_memory`
 
 Cập nhật lần cuối: 2026-08-17. Bảng do module `conversation_memory` sở hữu; migration là `backend/migrations/009_conversation_memory.sql`. Lưu working memory state theo `chat_id` và `user_id` với optimistic concurrency control (`version`).

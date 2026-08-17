@@ -122,3 +122,18 @@ def test_personal_note_update_changes_only_planner_snapshot_personal_notes() -> 
     assert status == "updated"
     assert stop["personalNotes"] == "Nhớ mang ô"
     assert stop["notes"]["text"] == "Source note"
+
+
+def test_legacy_message_without_content_blocks_reads_as_empty_list() -> None:
+    message = PostgresTripChatRepository._message({
+        "id": "message-1",
+        "role": "assistant",
+        "content": "Câu trả lời cũ",
+        "route": "information_finder",
+        "clarification_question": None,
+        "warnings": "[]",
+        "sources": "[]",
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    assert message.content_blocks == []

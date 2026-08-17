@@ -4,6 +4,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from app.modules.information_finder.public import AnswerBlock
+
 
 class TripChatModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
@@ -69,6 +71,7 @@ class TripChatMessage(TripChatModel):
     route: str | None = None
     clarification_question: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    content_blocks: list[AnswerBlock] = Field(default_factory=list)
     sources: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
 

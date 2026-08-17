@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -25,6 +25,7 @@ class SourceReference(PublicModel):
 
 class InformationFinderOutput(PublicModel):
     answer: str
+    content_blocks: list["AnswerBlock"] = Field(default_factory=list)
     sources: list[SourceReference] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -54,10 +55,25 @@ class EntityCandidate(PublicModel):
 
 
 class GeneratedAnswer(PublicModel):
-    claims: list[AnswerClaim] = Field(min_length=1)
+    answer_type: Literal[
+        "overview",
+        "direct",
+        "recommendation",
+        "instruction",
+        "comparison",
+        "creative",
+    ] = "overview"
+    blocks: list["AnswerBlock"] = Field(default_factory=list)
+    claims: list[AnswerClaim] = Field(default_factory=list)
     caveat: str | None = None
     entity_names: list[str] = Field(default_factory=list, max_length=30)
     entity_candidates: list[EntityCandidate] = Field(default_factory=list, max_length=30)
+
+    @model_validator(mode="after")
+    def validate_has_answer_content(self) -> "GeneratedAnswer":
+        if not self.blocks and not self.claims:
+            raise ValueError("generated answer must contain blocks or claims")
+        return self
 
 
 class EmbeddingIdentity(BaseModel):
@@ -120,3 +136,22 @@ class RetrievedSource(BaseModel):
     last_fetched_at: datetime
     expires_at: datetime
     review_status: Literal["pending", "approved", "rejected"] = "pending"
+
+
+from app.modules.information_finder.structured_blocks import (  # noqa: E402
+    AnswerBlock,
+    ComparisonBlock,
+    ComparisonOption,
+    EntitySpan,
+    FactItem,
+    FactListBlock,
+    InlineSpan,
+    NoticeBlock,
+    ParagraphBlock,
+    RecommendationsBlock,
+    QuoteBlock,
+    StepItem,
+    StepsBlock,
+    TextSpan,
+    VerseBlock,
+)

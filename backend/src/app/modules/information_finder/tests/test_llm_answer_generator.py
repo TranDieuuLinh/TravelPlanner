@@ -77,6 +77,42 @@ def test_valid_structured_answer_is_parsed_in_query_language(text, expected):
     assert '"minLength"' not in json.dumps(response_schema)
 
 
+def test_llm_output_can_parse_fact_list_and_verse_blocks():
+    client = FakeLlmClient(
+        json.dumps(
+            {
+                "answerType": "overview",
+                "blocks": [
+                    {
+                        "type": "factList",
+                        "title": "Thông tin nổi bật",
+                        "items": [
+                            {
+                                "label": "Xếp hạng",
+                                "text": "Di tích quốc gia đặc biệt năm 2013.",
+                                "highlights": ["năm 2013"],
+                                "sourceIds": ["s1"],
+                            }
+                        ],
+                    },
+                    {
+                        "type": "verse",
+                        "title": "Nghiên Bút Non Sông",
+                        "author": "Đình Dương",
+                        "lines": ["Dòng một", "Dòng hai"],
+                        "sourceIds": ["s1"],
+                    },
+                ],
+            }
+        )
+    )
+
+    generated = run(StructuredLlmAnswerGenerator(client).generate("Hồ Gươm", [source()]))
+
+    assert [block.type for block in generated.blocks] == ["factList", "verse"]
+    assert generated.blocks[1].lines == ["Dòng một", "Dòng hai"]
+
+
 def test_answer_prompt_names_the_same_json_fields_as_the_schema():
     client = FakeLlmClient(
         json.dumps({"claims": [{"text": "Supported.", "sourceIds": ["s1"]}]})
