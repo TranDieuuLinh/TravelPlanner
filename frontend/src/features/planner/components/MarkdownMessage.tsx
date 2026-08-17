@@ -1,11 +1,12 @@
 "use client";
 
-import { useRef, useState, type ComponentPropsWithoutRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { apiFetch } from "@/shared/api/client";
+import type { TripChatSource } from "@/features/planner/api/plans";
 
 type EntityPreview = {
   id: string;
@@ -128,8 +129,15 @@ function EntityLink({ children, href, ...props }: EntityLinkProps) {
   const closeTimer = useRef<number | null>(null);
 
   if (!isEntityLink) {
+    const isExternalSource = typeof href === "string" && /^https?:\/\//i.test(href);
     return (
-      <a {...props} href={href} rel="noreferrer" target="_blank">
+      <a
+        {...props}
+        className={`${props.className ?? ""}${isExternalSource ? " citationSource" : ""}`.trim()}
+        href={href}
+        rel="noreferrer"
+        target="_blank"
+      >
         {children}
       </a>
     );
@@ -186,15 +194,55 @@ function EntityLink({ children, href, ...props }: EntityLinkProps) {
   );
 }
 
-export function MarkdownMessage({ content }: { content: string }) {
+export function MarkdownMessage({
+  content,
+  sources = [],
+  streaming = false,
+}: {
+  content: string;
+  sources?: TripChatSource[];
+  streaming?: boolean;
+}) {
+  const [visibleContent, setVisibleContent] = useState(streaming ? "" : content);
+
+  useEffect(() => {
+    if (!streaming) {
+      setVisibleContent(content);
+      return;
+    }
+    setVisibleContent("");
+    let cursor = 0;
+    const timer = window.setInterval(() => {
+      cursor = Math.min(content.length, cursor + 2);
+      setVisibleContent(content.slice(0, cursor));
+      if (cursor >= content.length) window.clearInterval(timer);
+    }, 16);
+    return () => window.clearInterval(timer);
+  }, [content, streaming]);
+
+  const citationContent = visibleContent.replace(
+    /\[(\d+)\](?!\()/g,
+    (match, number: string) => {
+      const source = sources[Number(number) - 1];
+      const sourceUrl = source?.url?.trim();
+      if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) {
+        return match;
+      }
+      // Angle brackets keep URLs containing query strings or parentheses
+      // intact in Markdown's link destination parser.
+      return `[${number}](<${sourceUrl}>)`;
+    },
+  );
   return (
     <div className="markdownMessage">
       <ReactMarkdown
-        components={{ a: EntityLink }}
+        components={{
+          a: (props) => <EntityLink {...props} />,
+        }}
         rehypePlugins={[[rehypeSanitize, markdownSchema]]}
         remarkPlugins={[remarkGfm]}
       >
-        {content}
+        {citationContent}
       </ReactMarkdown>
     </div>
   );

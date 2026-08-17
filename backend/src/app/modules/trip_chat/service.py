@@ -4,6 +4,8 @@ import logging
 from time import perf_counter
 from typing import Any
 
+import asyncpg
+
 from app.modules.conversation_memory.public import (
     ConversationMemoryService,
     FactProvenance,
@@ -174,7 +176,22 @@ class TripChatService:
                     memory_reference_count = len(references)
                     conversation_summary = working_memory.summary
                 except Exception as exc:
+                    if isinstance(exc, (asyncpg.PostgresConnectionError, ConnectionError)):
+                        logger.warning(
+                            "conversation_memory_transient_db_error chat_id=%s attempt=%d/%d error=%s",
+                            chat_id,
+                            attempt + 1,
+                            max_retries,
+                            type(exc).__name__,
+                        )
+                        if attempt < max_retries - 1:
+                            continue
                     memory_warning = "Memory service error; falling back to transcript-only."
+                    logger.exception(
+                        "conversation_memory_prepare_failed chat_id=%s error=%s",
+                        chat_id,
+                        type(exc).__name__,
+                    )
                     working_memory = None
                     valid_facts = []
 
@@ -198,6 +215,44 @@ class TripChatService:
 
             if self.memory_service is not None and working_memory is not None:
                 try:
+                    # Preserve place candidates suggested by Information Finder
+                    # so a later message such as "những chỗ đó" can resolve
+                    # against the assistant's immediately preceding answer.
+                    information_output = result.get("information_output")
+                    assistant_facts = []
+                    if information_output and information_output.answer:
+                        extracted = await self.memory_service.extract_facts(
+                            information_output.answer,
+                            working_memory,
+                            turn=len(chat.messages) // 2 + 1,
+                            message_id=f"assistant:{chat_id}:{chat.revision + 1}",
+                        )
+                        assistant_facts = [
+                            fact.model_copy(
+                                update={
+                                    "confirmed_by_user": False,
+                                    "provenance": fact.provenance.model_copy(
+                                        update={
+                                            "extracted_by": "information_finder_v1",
+                                            "confidence": min(
+                                                fact.provenance.confidence, 0.7
+                                            ),
+                                        }
+                                    ),
+                                }
+                            )
+                            for fact in extracted
+                            if fact.fact_type == "place_candidate"
+                        ]
+                    if assistant_facts:
+                        (
+                            working_memory,
+                            accepted_assistant_facts,
+                        ) = self.memory_service.merge_facts_for_persistence(
+                            working_memory, assistant_facts
+                        )
+                        valid_facts.extend(accepted_assistant_facts)
+                        memory_facts_added = len(valid_facts)
                     await self.memory_service.persist_prepared_context(
                         memory=working_memory,
                         facts=valid_facts,
@@ -211,7 +266,22 @@ class TripChatService:
                     memory_warning = "Memory service error; version conflict after retries."
                     break
                 except Exception as exc:
+                    if isinstance(exc, (asyncpg.PostgresConnectionError, ConnectionError)):
+                        logger.warning(
+                            "conversation_memory_persistence_transient_db_error chat_id=%s attempt=%d/%d error=%s",
+                            chat_id,
+                            attempt + 1,
+                            max_retries,
+                            type(exc).__name__,
+                        )
+                        if attempt < max_retries - 1:
+                            continue
                     memory_warning = "Memory service error; memory persistence skipped."
+                    logger.exception(
+                        "conversation_memory_persistence_failed chat_id=%s error=%s",
+                        chat_id,
+                        type(exc).__name__,
+                    )
                     break
             else:
                 break  # No memory service, exit retry loop

@@ -118,6 +118,18 @@ class ConversationMemoryService:
         valid_facts = self.merge_policy.evaluate_facts(current_memory, extracted_facts)
         return self.merge_policy.merge_facts_into_memory_state(current_memory, valid_facts)
 
+    def merge_facts_for_persistence(
+        self,
+        current_memory: WorkingMemoryState,
+        extracted_facts: Sequence[MemoryFact],
+    ) -> tuple[WorkingMemoryState, list[MemoryFact]]:
+        """Merge facts and return only facts accepted for atomic persistence."""
+        valid_facts = self.merge_policy.evaluate_facts(current_memory, extracted_facts)
+        return (
+            self.merge_policy.merge_facts_into_memory_state(current_memory, valid_facts),
+            valid_facts,
+        )
+
     async def append_facts(
         self,
         chat_id: str,

@@ -45,7 +45,16 @@ class LazyPostgresMemoryRepository:
             async with self._init_lock:
                 if self._repo is None:
                     self.pool = await asyncpg.create_pool(
-                        self.database_url, min_size=1, max_size=10
+                        self.database_url,
+                        min_size=1,
+                        max_size=10,
+                        # Cloud Postgres providers may close idle TLS
+                        # connections before the client notices. Recycling
+                        # them sooner prevents stale connections from being
+                        # handed to memory requests.
+                        max_inactive_connection_lifetime=45,
+                        timeout=15,
+                        command_timeout=30,
                     )
                     self._repo = PostgresMemoryRepository(self.pool)
         return self._repo

@@ -53,6 +53,15 @@ KNOWN_PLACES = [
     ("vinh ha long", "Vịnh Hạ Long"),
     ("pho co", "Phố Cổ"),
     ("dinh fansipan", "Đỉnh Fansipan"),
+    ("lang co duong lam", "Làng cổ Đường Lâm"),
+    ("lang gom bat trang", "Làng nghề gốm Bát Tràng"),
+    ("bat trang", "Bát Tràng"),
+    ("vuon quoc gia ba vi", "Vườn quốc gia Ba Vì"),
+    ("lang van hoa cac dan toc viet nam", "Làng văn hóa các dân tộc Việt Nam"),
+    ("hoi truong ba dinh", "Hội trường Ba Đình"),
+    ("ho tay", "Hồ Tây"),
+    ("lang bac", "Lăng Bác"),
+    ("pho ly quoc su", "Phở Lý Quốc Sư"),
 ]
 
 NUMBER_WORDS = {
