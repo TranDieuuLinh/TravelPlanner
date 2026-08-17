@@ -1,5 +1,7 @@
 # Task 11: Performance, observability và xử lý lỗi
 
+Cập nhật lần cuối: 2026-08-17.
+
 ## Mục tiêu
 
 Đảm bảo PlaceChecker có giới hạn tài nguyên, dễ chẩn đoán và chịu được lỗi cục
@@ -40,9 +42,22 @@ source/place không thể làm crash request vẫn còn dữ liệu sử dụng 
 ## Hiện thực tại Checkpoint 6
 
 - Giới hạn input: 100 place, 50 item và 200 URL note mỗi request.
-- Entity và item resolution dùng semaphore, mặc định tối đa 10 call song song.
+- Runtime PostgreSQL giới hạn entity resolution ở 2 call song song và pool đọc
+  Knowledge Graph của PlaceChecker ở tối đa 2 connection trên mỗi process.
+  Item resolution vẫn có semaphore riêng nhưng mọi query cùng chia sẻ pool này.
+- Entity resolution gom tối đa 10 tên vào một SQL call; 50 tên thường thành 5
+  batch và tối đa 2 batch chạy đồng thời.
+- Google Maps Playwright dùng limiter dùng chung trên adapter, tối đa 2 search
+  đồng thời; limiter trang chi tiết vẫn áp dụng bên trong từng search. Mỗi
+  PlaceChecker request chỉ gọi external retrieval cho tối đa 2 gap và mỗi gap
+  chỉ dùng anchor đầu tiên.
+- Targeted KG retrieval chỉ dùng 1 anchor đại diện mỗi gap, tránh số SQL
+  call tăng theo phép nhân giữa toàn bộ place đầu vào và toàn bộ gap.
 - Retrieval chỉ giữ top-K, tối đa hai external provider và dừng khi đã đủ
-  candidate verify. Không có distance matrix N x N.
+  candidate verify. Kết quả top-K từ KG được dùng ngay; external Playwright chỉ
+  chạy khi KG không trả candidate phù hợp nào. Không có distance matrix N x N.
+- Với nhiều branch trùng tên, `addressHint` được dùng để xếp hạng/chọn branch;
+  nếu input không có address hint thì chọn kết quả KG đầu tiên.
 - Có wrapper cache TTL cho ADM, named/requirement search và metadata batch.
   Provider error không được cache; metadata chỉ query ID còn thiếu.
 - Output metadata có request ID, correlation ID, tổng latency, latency theo

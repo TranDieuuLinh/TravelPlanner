@@ -40,6 +40,7 @@ class SupervisorService:
 
         if self._classifier is None:
             return build_fallback_decision(
+                payload,
                 warning="Supervisor LLM chưa được cấu hình."
             )
         try:
@@ -51,6 +52,7 @@ class SupervisorService:
                     "Supervisor intent classification failed and fallback is disabled."
                 ) from None
             return build_fallback_decision(
+                payload,
                 warning="Không thể gọi Supervisor LLM; đã dùng câu hỏi làm rõ.",
             )
 
@@ -63,6 +65,7 @@ class SupervisorService:
                     "Supervisor intent confidence is below the configured threshold."
                 )
             return build_fallback_decision(
+                payload,
                 warning="LLM intent confidence was below the configured threshold.",
             )
         if result.route == "plan_editor" and not (
@@ -73,6 +76,7 @@ class SupervisorService:
                     "Supervisor returned plan_editor without required structured state."
                 )
             return build_fallback_decision(
+                payload,
                 warning="LLM plan_editor result lacked required structured state.",
             )
         if result.route == "finish" and not result.response:

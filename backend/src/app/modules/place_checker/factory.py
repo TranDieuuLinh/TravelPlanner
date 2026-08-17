@@ -27,22 +27,24 @@ def build_postgres_place_checker_pipeline(
         search_tool,
         provider_name=catalog.provider_name,
         source_kind=RetrievalSourceKind.knowledge_graph,
+        max_anchor_queries=1,
     )
     external_gap_source = (
         SearchPlacesGapSource(
             search_tool,
             provider_name=external_place_search.provider_name,
             source_kind=RetrievalSourceKind.external,
+            max_anchor_queries=1,
         )
         if external_place_search is not None
         else None
     )
     return PlaceCheckerPipeline(
         context_builder=TripContextBuilder(catalog),
-        # Explorer and PlaceChecker share the cloud connection budget. A small
-        # bounded resolver pool prevents URL candidates from failing in bursts
-        # after Explorer has opened its source/cache pools.
-        entity_resolution=EntityResolutionService(search_tool, max_concurrency=4),
+        # Explorer and PlaceChecker share the cloud connection budget. Keep at
+        # most two named-place resolutions in flight so external fallbacks do
+        # not open a burst of Playwright browsers or database queries.
+        entity_resolution=EntityResolutionService(search_tool, max_concurrency=2),
         evidence_enrichment=EvidenceEnrichmentService(catalog),
         item_resolution=InputItemResolutionService(
             search_tool,
@@ -56,6 +58,9 @@ def build_postgres_place_checker_pipeline(
             ),
             metadata_repository=catalog,
             verified_target_per_gap=5,
+            # Bound browser-backed fallbacks per PlaceChecker request. This is
+            # separate from the global concurrency limit of two searches.
+            external_call_budget=2,
             # Fill the activity reserve from independent theme/style queries
             # instead of letting the generic TravelPlace ranking dominate it.
             expand_pool=True,

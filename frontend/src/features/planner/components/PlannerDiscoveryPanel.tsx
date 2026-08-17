@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type PlannerDiscoveryPanelProps = {
   planning?: boolean;
@@ -54,15 +55,20 @@ const discoveryItems = [
 export function PlannerDiscoveryPanel({ planning = false }: PlannerDiscoveryPanelProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [saved, setSaved] = useState<Record<number, boolean>>({});
+  const [mounted, setMounted] = useState(false);
+  const [muted, setMuted] = useState(true);
   const touchStartY = useRef<number | null>(null);
   const wheelLocked = useRef(false);
   const activeItem = activeIndex === null ? null : discoveryItems[activeIndex];
+  const viewerIndex = activeIndex ?? 0;
 
   function moveViewer(direction: -1 | 1) {
     setActiveIndex((current) => current === null
       ? null
-      : Math.min(Math.max(current + direction, 0), discoveryItems.length - 1));
+      : (current + direction + discoveryItems.length) % discoveryItems.length);
   }
+
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (activeIndex === null) return;
@@ -103,7 +109,7 @@ export function PlannerDiscoveryPanel({ planning = false }: PlannerDiscoveryPane
           <span>{planning ? "Trong lúc chờ" : "Dành cho bạn"}</span>
           <h2>Khám phá</h2>
         </div>
-        <button type="button">Xem tất cả</button>
+        <button onClick={() => setActiveIndex(0)} type="button">Xem tất cả</button>
       </header>
 
       <div className="plannerDiscoveryGrid">
@@ -149,11 +155,14 @@ export function PlannerDiscoveryPanel({ planning = false }: PlannerDiscoveryPane
         ))}
       </div>
 
-      {activeItem ? (
+      {mounted && activeItem ? createPortal(
         <div
           aria-label="Feed cảm hứng du lịch"
           aria-modal="true"
-          className="promotionViewer plannerDiscoveryViewer"
+          className="plannerDiscoveryViewer"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setActiveIndex(null);
+          }}
           onTouchEnd={handleTouchEnd}
           onTouchStart={(event) => {
             touchStartY.current = event.touches[0].clientY;
@@ -161,29 +170,51 @@ export function PlannerDiscoveryPanel({ planning = false }: PlannerDiscoveryPane
           onWheel={handleWheel}
           role="dialog"
         >
-          <button aria-label="Đóng feed" className="promotionViewerClose" onClick={() => setActiveIndex(null)} type="button">×</button>
-          <button aria-label="Nội dung trước" className="promotionViewerNav previous" disabled={activeIndex === 0} onClick={() => moveViewer(-1)} type="button">↑</button>
-          <button aria-label="Nội dung tiếp theo" className="promotionViewerNav next" disabled={activeIndex === discoveryItems.length - 1} onClick={() => moveViewer(1)} type="button">↓</button>
+          <button aria-label="Đóng feed" autoFocus className="plannerDiscoveryViewerClose" onClick={() => setActiveIndex(null)} type="button">×</button>
+          <button aria-label="Nội dung trước" className="plannerDiscoveryViewerNav previous" onClick={() => moveViewer(-1)} type="button">↑</button>
+          <button aria-label="Nội dung tiếp theo" className="plannerDiscoveryViewerNav next" onClick={() => moveViewer(1)} type="button">↓</button>
 
-          <article className="promotionViewerStage" key={activeItem.title}>
+          <article className="plannerDiscoveryViewerStage" key={activeItem.title}>
             {activeItem.kind === "Reel" ? (
-              <video autoPlay controls loop muted playsInline poster={activeItem.image} src={activeItem.media} />
+              <video autoPlay loop muted={muted} playsInline poster={activeItem.image} src={activeItem.media} />
             ) : (
               <img alt={activeItem.title} src={activeItem.media} />
             )}
-            <div className="promotionViewerShade" />
-            <span className={`reelContentType viewerType ${activeItem.kind === "Reel" ? "video" : "post"}`}>
-              {activeItem.kind === "Reel" ? "Video" : "Ảnh"}
+            <div className="plannerDiscoveryViewerShade" />
+            <div aria-hidden="true" className="plannerDiscoveryViewerProgress">
+              {discoveryItems.map((item, index) => (
+                <i className={index === activeIndex ? "active" : ""} key={item.title} />
+              ))}
+            </div>
+            <span className="plannerDiscoveryViewerType">
+              {activeItem.kind === "Reel" ? "▶ Reel" : "▤ Bài viết"}
             </span>
-            <span className="promotionViewerCount">{(activeIndex ?? 0) + 1} / {discoveryItems.length}</span>
-            <div className="promotionViewerCopy">
+            <div className="plannerDiscoveryViewerActions">
+              <button
+                aria-label={`${saved[viewerIndex] ? "Bỏ lưu" : "Lưu"} ${activeItem.title}`}
+                className={saved[viewerIndex] ? "saved" : ""}
+                onClick={() => setSaved((current) => ({ ...current, [viewerIndex]: !current[viewerIndex] }))}
+                type="button"
+              >
+                <span aria-hidden="true">{saved[viewerIndex] ? "♥" : "♡"}</span>
+                <small>{saved[viewerIndex] ? "Đã lưu" : "Lưu"}</small>
+              </button>
+              {activeItem.kind === "Reel" ? (
+                <button aria-label={muted ? "Bật âm thanh" : "Tắt âm thanh"} onClick={() => setMuted((current) => !current)} type="button">
+                  <span aria-hidden="true">{muted ? "⌁" : "♫"}</span>
+                  <small>{muted ? "Bật tiếng" : "Có tiếng"}</small>
+                </button>
+              ) : null}
+            </div>
+            <div className="plannerDiscoveryViewerCopy">
               <span>{activeItem.location}</span>
               <h2>{activeItem.title}</h2>
               <p>Vuốt hoặc cuộn dọc để tiếp tục khám phá.</p>
             </div>
           </article>
-          <span className="promotionViewerHint">Cuộn, vuốt hoặc dùng phím ↑ ↓ để xem tiếp</span>
-        </div>
+          <span className="plannerDiscoveryViewerHint">Cuộn, vuốt hoặc dùng phím ↑ ↓ để xem tiếp</span>
+        </div>,
+        document.body
       ) : null}
     </aside>
   );

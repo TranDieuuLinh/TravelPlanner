@@ -6,12 +6,12 @@ from app.modules.itinerary_planner.tests.optimizer_fixtures import (
 from app.modules.itinerary_planner.optimizer.config import SolverConfig
 
 
-def test_default_solver_is_deterministic_and_time_bounded() -> None:
+def test_default_solver_is_deterministic_without_wall_clock_deadlines() -> None:
     config = SolverConfig()
 
     assert config.num_search_workers == 1
-    assert config.priority_timeout_seconds == 2
-    assert config.utility_timeout_seconds == 5
+    assert config.priority_timeout_seconds is None
+    assert config.utility_timeout_seconds is None
     assert config.utility_relative_gap_limit == 0.05
 
 

@@ -1,5 +1,6 @@
 import time
 
+from app.shared.tools.search_places.batch import SearchPlacesBatchMixin
 from app.shared.observability import traced_call
 from app.shared.tools.search_places.contract import (
     PlaceProviderCandidate,
@@ -24,7 +25,7 @@ from app.shared.tools.search_places.scoring import (
 )
 
 
-class SearchPlacesTool:
+class SearchPlacesTool(SearchPlacesBatchMixin):
     """Resolve or discover places through ranked, policy-checked providers."""
 
     def __init__(
@@ -220,7 +221,10 @@ class SearchPlacesTool:
             return None
         top = eligible[0]
         if request.search_mode == "requirement":
-            if top.score >= self.policy.requirement_acceptance_score:
+            if (
+                top.score >= self.policy.requirement_acceptance_score
+                or top.score_components.get("nameSimilarity", 0) >= 0.90
+            ):
                 return "resolved", top, "requirement_match"
             return None
         if top.score <= self.policy.named_acceptance_score:
@@ -241,6 +245,11 @@ class SearchPlacesTool:
                     return "resolved", top, "distinctive_name_identity"
                 if self._route_context_disambiguates(top, second):
                     return "resolved", top, "route_context_identity"
+                if not request.address_hint:
+                    # Same-name branches are already ranked deterministically.
+                    # Without an address hint there is no extra signal to ask
+                    # the user for, so select the first catalog result.
+                    return "resolved", top, "first_branch_without_address_hint"
                 return "needs_review", None, "branch_or_identity_ambiguous"
             if margin < self.policy.named_minimum_margin:
                 return "needs_review", None, "top_matches_too_close"

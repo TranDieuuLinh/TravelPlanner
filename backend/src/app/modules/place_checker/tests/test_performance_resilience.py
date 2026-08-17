@@ -84,6 +84,24 @@ class ConcurrencySearchTool:
         )
 
 
+class BatchSearchTool:
+    def __init__(self) -> None:
+        self.batch_sizes = []
+
+    async def search_many(self, requests):
+        self.batch_sizes.append(len(requests))
+        return [
+            PlaceSearchResult(
+                status="unresolved",
+                query=request.query,
+                normalized_query=request.query.casefold(),
+                search_mode=request.search_mode,
+                resolution_reason="not_found",
+            )
+            for request in requests
+        ]
+
+
 def search_request() -> PlaceSearchRequest:
     return PlaceSearchRequest(
         query="museum",
@@ -154,3 +172,18 @@ def test_entity_resolution_respects_concurrency_bound() -> None:
 
     assert len(result.candidates) == 12
     assert search.maximum == 3
+
+
+def test_entity_resolution_groups_fifty_candidates_into_five_batches() -> None:
+    search = BatchSearchTool()
+    service = EntityResolutionService(search, max_concurrency=2)
+
+    result = asyncio.run(
+        service.resolve_all(
+            [candidate(index) for index in range(50)],
+            analysis_context(),
+        )
+    )
+
+    assert len(result.candidates) == 50
+    assert search.batch_sizes == [10, 10, 10, 10, 10]

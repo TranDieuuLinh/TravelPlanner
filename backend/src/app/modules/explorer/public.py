@@ -13,7 +13,6 @@ from app.modules.explorer.contract import (
 )
 from app.modules.explorer.adapters import (
     CurlCffiWebsiteFetcher,
-    FallbackUrlMediaClient,
     GeminiExplorerDraftGenerator,
     GeminiImageSourceExtractor,
     GeminiMediaAnalyzer,
@@ -71,7 +70,7 @@ def create_explorer_service(
     audio_chunk_seconds: float = 60,
     youtube_audio_chunk_seconds: int = 300,
     youtube_audio_chunk_overlap_seconds: int = 5,
-    youtube_audio_max_concurrency: int = 8,
+    youtube_audio_max_concurrency: int = 1,
     youtube_max_duration_seconds: int = 14_400,
     max_video_seconds: float = 180,
     max_media_mb: int = 120,
@@ -149,13 +148,10 @@ def create_explorer_service(
             max_workers=4,
         )
         tiktok = YtDlpSocialSourceExtractor(
-            FallbackUrlMediaClient(
-                TikTokHtmlMediaClient(
-                    timeout_seconds=url_timeout_seconds,
-                    max_filesize_mb=max_media_mb,
-                    max_workers=4,
-                ),
-                media_client,
+            TikTokHtmlMediaClient(
+                timeout_seconds=url_timeout_seconds,
+                max_filesize_mb=max_media_mb,
+                max_workers=4,
             ),
             analyzer,
             platform="TikTok",

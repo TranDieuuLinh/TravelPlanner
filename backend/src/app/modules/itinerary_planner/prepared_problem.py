@@ -52,6 +52,7 @@ class PreparedPlanningProblem:
     valid_food: tuple[PlannerFoodCandidate, ...]
     candidate_by_id: Mapping[str, Candidate]
     feasible_days: Mapping[str, frozenset[int]]
+    preferred_days: Mapping[str, frozenset[int]]
     feasible_windows: Mapping[CandidateDay, tuple[PlanningWindow, ...]]
     preferred_windows: Mapping[str, tuple[PlanningWindow, ...]]
     meal_eligibility: Mapping[MealSlot, tuple[PlanningWindow, ...]]

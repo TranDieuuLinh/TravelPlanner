@@ -10,6 +10,9 @@ from app.modules.place_checker.contract import AdmResolution, AdmResolutionStatu
 from app.modules.place_checker.adapters.postgres_catalog_mapping import (
     PostgresCatalogMappingMixin,
 )
+from app.modules.place_checker.adapters.postgres_catalog_batch import (
+    PostgresCatalogBatchMixin,
+)
 from app.modules.place_checker.adapters.postgres_food_query import (
     SPECIAL_FOOD_RESTAURANT_SQL,
 )
@@ -27,7 +30,7 @@ def _asyncpg_url(database_url: str) -> str:
     )
 
 
-class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
+class PostgresPlaceCatalog(PostgresCatalogBatchMixin, PostgresCatalogMappingMixin):
     """Read-only PlaceChecker adapter over the normalized Knowledge Graph."""
 
     provider_name = "knowledge_graph"

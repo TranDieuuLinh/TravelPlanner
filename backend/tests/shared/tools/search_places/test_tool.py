@@ -97,7 +97,7 @@ def test_diacritic_insensitive_alias_matching_is_supported() -> None:
     assert result.selected.name == "Café Giảng"
 
 
-def test_true_knowledge_graph_ambiguity_does_not_call_external_provider() -> None:
+def test_branch_without_address_hint_selects_first_kg_result() -> None:
     kg = InMemoryPlaceSearch(
         [
             _candidate("Highlands Coffee", "branch-1", address="Hoan Kiem"),
@@ -116,8 +116,10 @@ def test_true_knowledge_graph_ambiguity_does_not_call_external_provider() -> Non
         )
     )
 
-    assert result.status == "needs_review"
-    assert result.resolution_reason == "branch_or_identity_ambiguous"
+    assert result.status == "resolved"
+    assert result.selected is not None
+    assert result.selected.place_id == "branch-1"
+    assert result.resolution_reason == "first_branch_without_address_hint"
     assert len(result.top_matches) == 2
     assert external.calls == []
 

@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackHandler
@@ -8,6 +9,8 @@ from app.shared.observability import (
     ObservabilityManager,
     create_observability_manager,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ObservabilityError(Exception):
@@ -66,6 +69,13 @@ class ObservabilityService:
             error_code=error_code,
             duration_ms=duration_ms,
             output=output,
+        )
+        logger.info(
+            "agent_request_timing request_id=%s route=%s status=%s duration_ms=%s",
+            request_id,
+            route or "unknown",
+            "success" if success else "error",
+            f"{duration_ms:.2f}" if duration_ms is not None else "unknown",
         )
 
     async def aclose(self) -> None:

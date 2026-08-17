@@ -18,6 +18,10 @@ from app.modules.place_checker.item_contract import (
 )
 from app.modules.place_checker.item_option_enrichment import apply_metadata
 from app.modules.place_checker.item_proximity import ItemProximityPolicy
+from app.modules.place_checker.item_selection import (
+    selected_confidence,
+    selection_reason,
+)
 from app.modules.place_checker.ports import (
     NamedPlaceSearchTool,
     PlaceMetadataRepository,
@@ -63,7 +67,7 @@ class InputItemResolutionService:
     ) -> None:
         self.search_tool = search_tool
         self.metadata_repository = metadata_repository
-        self.policy = policy or PlaceSearchPolicy()
+        self.policy = policy or PlaceSearchPolicy(requirement_acceptance_score=0.5)
         self.max_concurrency = max(1, max_concurrency)
 
     async def resolve_all(
@@ -251,19 +255,6 @@ class InputItemResolutionService:
                 anchor_place_id=selected.place_id,
                 evidence=item.evidence,
             )
-        confidence = (
-            round(item.confidence * selected.score, 6) if selected else None
-        )
-        if (
-            selected is not None
-            and result.selected is not None
-            and selected.place_id != result.selected.place_id
-        ):
-            reason = "context_and_proximity_reranked_requirement_match"
-        elif selected is not None or result.status == "provider_error":
-            reason = result.resolution_reason
-        else:
-            reason = "no_eligible_item_venue"
         return ResolvedInputItem(
             item_index=index,
             item=item,
@@ -271,8 +262,8 @@ class InputItemResolutionService:
             status=status,
             selected=selected,
             alternatives=alternatives,
-            confidence=confidence,
-            selection_reason=reason,
+            confidence=selected_confidence(item, selected, result),
+            selection_reason=selection_reason(selected, result),
             evidence=item.evidence,
             special_experience=special,
             provider_attempts=result.provider_attempts,

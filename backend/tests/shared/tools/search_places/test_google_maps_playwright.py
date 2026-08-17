@@ -1,9 +1,48 @@
+import asyncio
 from datetime import UTC, datetime
+from types import MethodType
 
 from app.modules.knowledge_graph.adapters.draft_places import PostgresDraftPlaceStore
 from app.shared.contracts.place import Coordinates
-from app.shared.tools.search_places import PlaceProviderCandidate
+from app.shared.tools.search_places import AdministrativeArea, PlaceProviderCandidate
 from app.shared.tools.search_places.adapters import GoogleMapsPlaywrightSearch
+
+
+def test_google_searches_share_a_global_concurrency_limit() -> None:
+    search = GoogleMapsPlaywrightSearch(max_concurrency=2)
+    current = 0
+    maximum = 0
+
+    async def fake_search(self, *args, **kwargs):
+        nonlocal current, maximum
+        current += 1
+        maximum = max(maximum, current)
+        await asyncio.sleep(0.01)
+        current -= 1
+        return []
+
+    search._search = MethodType(fake_search, search)
+
+    async def run() -> None:
+        await asyncio.gather(
+            *(
+                search.search(
+                    [f"place-{index}"],
+                    input_adm=AdministrativeArea(
+                        adm_id="adm-1",
+                        name="Hà Nội",
+                        country_code="VN",
+                    ),
+                    place_type_hint=None,
+                    limit=5,
+                )
+                for index in range(6)
+            )
+        )
+
+    asyncio.run(run())
+
+    assert maximum == 2
 
 
 def test_google_maps_url_identity_and_coordinates_are_stable() -> None:

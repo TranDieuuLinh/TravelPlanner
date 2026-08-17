@@ -24,7 +24,7 @@ class ValhallaAdapter:
         base_url: str,
         *,
         client: httpx.AsyncClient | None = None,
-        timeout_seconds: float = 15,
+        timeout_seconds: float | None = None,
         provider_version: str = "unknown",
     ) -> None:
         self.base_url = base_url.rstrip("/")

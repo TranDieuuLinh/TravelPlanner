@@ -341,12 +341,24 @@ class GeminiAudioTranscriber:
 
 
 class YouTubeTranscriptSourceExtractor:
-    def __init__(self, captions, audio, transcriber) -> None:
+    def __init__(
+        self,
+        captions,
+        audio,
+        transcriber,
+        *,
+        max_concurrency: int = 1,
+    ) -> None:
         self.captions = captions
         self.audio = audio
         self.transcriber = transcriber
+        self._limiter = asyncio.Semaphore(max(1, max_concurrency))
 
     async def extract(self, url: str, *, source_index: int, raw_prompt: str | None):
+        async with self._limiter:
+            return await self._extract(url, source_index=source_index)
+
+    async def _extract(self, url: str, *, source_index: int):
         with TemporaryDirectory(prefix="explorer-youtube-") as work_dir:
             try:
                 bundle = await self.captions.fetch(url, work_dir)

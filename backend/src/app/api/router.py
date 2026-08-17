@@ -202,6 +202,34 @@ async def invoke_agent(
     finally:
         if trace_callback is not None:
             await trace_callback.flush()
+    if planner_error_code := result.get("planner_error_code"):
+        retryable = planner_error_code in {
+            "solver_unknown",
+            "route_repair_unknown",
+            "matrix_timeout",
+            "matrix_provider_error",
+        }
+        status_code = 503 if retryable else 422
+        message = result.get("response", "Itinerary planning failed.")
+        await observability.record_agent_invoke(
+            request_id=request_id,
+            route=result["decision"].route,
+            success=False,
+            message_length=len(payload.message or ""),
+            warning_count=len(result.get("warnings", [])),
+            source_count=0,
+            has_itinerary=False,
+            error_code=planner_error_code.upper(),
+            duration_ms=round((perf_counter() - started_at) * 1000, 2),
+        )
+        raise HTTPException(
+            status_code=status_code,
+            detail={
+                "code": planner_error_code.upper(),
+                "message": message,
+                "retryable": retryable,
+            },
+        )
     information_output = result.get("information_output")
     response = InvokeResponse(
         request_id=request_id,

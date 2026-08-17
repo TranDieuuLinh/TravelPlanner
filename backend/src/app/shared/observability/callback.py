@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 import time
 from typing import Any
 from uuid import UUID
@@ -13,6 +14,8 @@ from app.shared.observability.ports import (
     ObservabilityTrace,
 )
 from app.shared.observability.redaction import safe_preview
+
+logger = logging.getLogger(__name__)
 
 
 class TraceCallbackHandler(AsyncCallbackHandler):
@@ -31,6 +34,8 @@ class TraceCallbackHandler(AsyncCallbackHandler):
         self._local_observations: dict[UUID, str] = {}
         self._langfuse_observations: dict[UUID, ObservabilitySpan | ObservabilityGeneration] = {}
         self._start_times: dict[UUID, datetime] = {}
+        self._run_metadata: dict[UUID, tuple[str, str, UUID | None]] = {}
+        self._root_run_id: UUID | None = None
 
     async def on_chain_start(
         self,
@@ -159,6 +164,9 @@ class TraceCallbackHandler(AsyncCallbackHandler):
     ) -> None:
         now = datetime.now(timezone.utc)
         self._start_times[run_id] = now
+        self._run_metadata[run_id] = (kind, name, parent_run_id)
+        if parent_run_id is None and self._root_run_id is None:
+            self._root_run_id = run_id
 
         # Local diagnostic store
         if self._local_store is not None:
@@ -218,6 +226,8 @@ class TraceCallbackHandler(AsyncCallbackHandler):
         output_value: Any = None,
     ) -> None:
         now = datetime.now(timezone.utc)
+        started_at = self._start_times.pop(run_id, None)
+        run_metadata = self._run_metadata.pop(run_id, None)
 
         # Local diagnostic store
         if self._local_store is not None:
@@ -257,7 +267,19 @@ class TraceCallbackHandler(AsyncCallbackHandler):
                         status_message=status_msg,
                         end_time=now,
                     )
-        self._start_times.pop(run_id, None)
+        if (
+            started_at is not None
+            and run_metadata is not None
+            and run_metadata[0] == "chain"
+            and run_metadata[2] == self._root_run_id
+        ):
+            logger.info(
+                "agent_stage_timing request_id=%s stage=%s status=%s duration_ms=%.2f",
+                self.request_id,
+                run_metadata[1],
+                "error" if error else "success",
+                (now - started_at).total_seconds() * 1000,
+            )
 
 
 def _extract_run_name(kind: str, serialized: Any, kwargs: dict[str, Any]) -> str:

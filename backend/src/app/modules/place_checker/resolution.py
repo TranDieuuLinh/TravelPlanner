@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-
 from app.modules.place_checker.contract import (
     AdmResolutionStatus,
     PlaceCandidateInput,
@@ -20,6 +18,7 @@ from app.modules.place_checker.resolution_contract import (
     SimilarityComponents,
 )
 from app.modules.place_checker.resolution_policy import select_provisional_option
+from app.modules.place_checker.resolution_batch import EntityResolutionBatchMixin
 from app.shared.tools.search_places import (
     AdministrativeArea,
     PlaceSearchMatch,
@@ -33,7 +32,7 @@ from app.shared.tools.search_places.scoring import text_similarity
 MAX_MATCH_OPTIONS = 5
 
 
-class EntityResolutionService:
+class EntityResolutionService(EntityResolutionBatchMixin):
     def __init__(
         self,
         search_tool: NamedPlaceSearchTool,
@@ -63,18 +62,7 @@ class EntityResolutionService:
                 warnings=[warning],
             )
 
-        semaphore = asyncio.Semaphore(self.max_concurrency)
-
-        async def bounded(index, candidate):
-            async with semaphore:
-                return await self._resolve_one(index, candidate, context)
-
-        results = await asyncio.gather(
-            *(
-                bounded(index, candidate)
-                for index, candidate in enumerate(candidates)
-            )
-        )
+        results = await self._resolve_candidates(candidates, context)
         batch_warnings = list(
             dict.fromkeys(
                 warning

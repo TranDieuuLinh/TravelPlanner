@@ -19,11 +19,15 @@ Root orchestration sau này chỉ được map public contract. Mọi fallback,
 validation và business rule của Planner phải nằm trong module này.
 
 Với chuyến từ ba ngày và đủ TravelPlace làm geographic anchors, preprocessing
-dùng deterministic dense medoids và assignment có capacity. Mỗi optional
-candidate thuộc một đến tối đa hai ngày khả thi; mỗi ngày giữ activity reserve
-bằng giá trị lớn hơn giữa hai separator và giá trị nhỏ hơn giữa 14 với
-`floor(valid_places / days)`. Candidate cô lập không được làm center nếu vùng
-20 km quanh nó thiếu reserve. `user_input` và URL giữ nguyên mọi ngày khả thi.
+dùng heuristic chọn tâm theo normalized KNN density với
+`K=min(10, valid_places - 1)` và Bayesian review quality, sau đó
+greedy gán mỗi optional candidate vào ngày gần nhất và rebalance đúng một lần.
+Mỗi ngày giữ preferred activity pool bằng giá trị lớn hơn giữa hai separator
+và giá trị nhỏ hơn giữa 14 với `floor(valid_places / days)`. Candidate có thể
+được thêm vào ngày gần thứ hai khi cần rebalance; các ngày khả thi còn lại
+không bị xóa mà được giữ làm reserve fallback. Candidate cô lập không được làm
+center nếu KNN neighborhood quanh nó quá thưa. `user_input` và URL giữ nguyên
+mọi ngày khả thi.
 Restaurant có relationship đi theo day-domain của TravelPlace liên kết; sau
 projection, meal coverage dùng phép ghép một-một và tự mở lại các food-day gần
 nhất cho đến khi breakfast/lunch/dinner được phục vụ bởi ba `placeId` khác

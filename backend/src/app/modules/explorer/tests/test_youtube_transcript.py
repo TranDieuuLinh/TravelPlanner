@@ -78,3 +78,38 @@ def test_youtube_uses_audio_only_fallback_when_caption_is_missing() -> None:
     assert audio.called is True
     assert result.coverage_ratio == 1.0
     assert any(item.text == "Văn Miếu" for item in result.artifacts)
+
+
+def test_youtube_sources_are_serialized_by_default() -> None:
+    class Captions:
+        active = 0
+        maximum = 0
+
+        async def fetch(self, url: str, target_dir: str):
+            self.active += 1
+            self.maximum = max(self.maximum, self.active)
+            await asyncio.sleep(0.01)
+            self.active -= 1
+            return TranscriptBundle(
+                artifacts=[SourceArtifact(
+                    artifactType="transcript", text="Hà Nội", sourceUrl=url
+                )],
+                metadata={"title": "Hà Nội", "duration": 60},
+                duration_seconds=60,
+                source="youtube_caption",
+            )
+
+    captions = Captions()
+    extractor = YouTubeTranscriptSourceExtractor(captions, object(), object())
+
+    async def run():
+        await asyncio.gather(*(
+            extractor.extract(
+                f"https://youtu.be/{index}", source_index=index, raw_prompt=None
+            )
+            for index in range(3)
+        ))
+
+    asyncio.run(run())
+
+    assert captions.maximum == 1

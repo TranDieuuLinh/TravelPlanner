@@ -2,7 +2,8 @@
 
 Trạng thái: đã triển khai route-detail enrichment cho selected arcs và
 accommodation transfers, fallback có warning khi thiếu geometry, fallback đường
-chim bay khi Valhalla không sẵn sàng, một vòng affected-day repair, timeline validation, public
+chim bay khi Valhalla không sẵn sàng, affected-day repair lặp đến khi route
+detail ổn định, timeline validation, public
 `ItineraryPlannerOutput`, phase timings và root/API field `plannerOutput`.
 Valhalla detail chỉ được gọi sau solver; Planner không query DB và không sửa
 PlaceChecker.
@@ -32,11 +33,14 @@ finalize_output       sort timeline, totals, warnings, unscheduled
 Runtime mặc định giữ một CP-SAT search worker cho mỗi daily repair và sparse graph `K=10` theo
 `safeTravelMinutes` từ matrix. Forced relationship, meal-access, priority và
 component-bridge arcs luôn được union lại sau nearest-neighbor pruning.
-Hai solver pass của mỗi ngày có timeout mặc định tương ứng 2 và 5 giây.
-Deployment cần SLA khác có thể inject `SolverConfig`. Pass utility dùng relative gap 5%; pass
-priority `user_input > URL` vẫn exact trong daily subproblem. Greedy/local-search order được đưa vào
+Hai solver pass của mỗi ngày không có wall-clock timeout mặc định. Deployment
+cần SLA khác có thể inject `SolverConfig`. Pass priority `user_input > URL` vẫn
+exact trong daily subproblem; pass utility không deadline dừng ở nghiệm khả thi
+đầu tiên dựa trên hint. Greedy/local-search order được đưa vào
 CP-SAT bằng solution hint; CP-SAT vẫn có quyền sửa selection, time và route để
 thỏa hard constraint.
+Valhalla matrix và route-detail request cũng không có timeout mặc định; lỗi
+HTTP/provider thực sự vẫn đi qua approximate fallback và phát warning.
 Greedy không dùng tổng activity duration làm điều kiện loại sớm. Nó tạo activity
 skeleton trước, giữ placeholder cho ba meal, rồi ưu tiên restaurant theo tổng
 travel từ activity trước qua restaurant đến activity sau. Daily CP-SAT vẫn sở
@@ -50,7 +54,8 @@ còn khả dụng trong day-domain và hard wait cap 150 phút. Nếu full-day s
 solve vẫn `INFEASIBLE`, runtime retry đúng một lần không hard wait cap nhưng giữ
 progressive idle penalty. Nếu pool food unique vẫn làm ngày vô nghiệm, fallback
 cuối chỉ mở lại restaurant đã dùng; activity đã dùng vẫn bị loại. Timeout/
-`UNKNOWN` không kích hoạt relaxation hay reuse. Khi ghép ngày, Planner kiểm tra
+`UNKNOWN` hoặc `INFEASIBLE` ở locked route repair kích hoạt hybrid replan với
+compact per-day pool; daily shortlist vẫn có thể mở rộng pool khi cần. Khi ghép ngày, Planner kiểm tra
 lại explicit budget, tối thiểu 7 giờ nghỉ và thời gian transfer accommodation; vi phạm
 trả infeasible, không xuất lịch sai.
 
@@ -120,9 +125,17 @@ Repair policy:
 3. Khóa assignment/route của các ngày không bị ảnh hưởng.
 4. Re-solve ngày đó với priority count được bảo vệ tối đa.
 5. Chỉ re-enrich route detail của ngày đã thay đổi.
+6. Nếu route mới lại vượt matrix và phá timeline, áp correction mới rồi lặp lại.
 
-Giới hạn một repair round mặc định để tránh loop. Nếu vẫn không hợp lệ,
-trả warning/error có cấu trúc; không âm thầm xuất timeline sai.
+Nếu repair có day locks trả `INFEASIBLE` hoặc `UNKNOWN`, runtime retry một lần bằng hybrid
+replan toàn chuyến trên routing đã sửa. Retry này vẫn tối ưu priority nhưng cho
+phép thay/drop optional candidate và đổi các ngày trước đó; sau đó route detail
+được lấy lại cho toàn bộ ngày. Baseline selection, order, start time, meal và
+accommodation được đưa vào locked solve dưới dạng hint, không phải hard lock.
+
+Chuỗi enrichment/repair không có wall-clock timeout mặc định. Mỗi vòng chỉ tiếp
+tục khi route detail tạo ra correction travel-time mới; validation cuối vẫn trả
+error có cấu trúc nếu timeline không hợp lệ, không âm thầm xuất timeline sai.
 
 ## Output contract
 

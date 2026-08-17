@@ -21,16 +21,27 @@ class SearchPlacesGapSource:
         *,
         provider_name: str,
         source_kind: RetrievalSourceKind,
+        max_anchor_queries: int | None = None,
     ) -> None:
         self.search_tool = search_tool
         self.provider_name = provider_name
         self.source_kind = source_kind
+        self.max_anchor_queries = (
+            max(1, max_anchor_queries) if max_anchor_queries is not None else None
+        )
 
     async def search(
         self,
         query: TargetedRetrievalQuery,
     ) -> list[RetrievalEvidence]:
         anchor_ids = query.anchor_place_ids or [None]
+        if self.max_anchor_queries is not None:
+            anchor_ids = anchor_ids[: self.max_anchor_queries]
+        elif self.source_kind == RetrievalSourceKind.external:
+            # One browser lookup is enough for a discovery gap. Trying every
+            # anchor multiplies Playwright launches without improving locality,
+            # because the external query already includes the ADM scope.
+            anchor_ids = anchor_ids[:1]
         matches = []
         seen: set[str] = set()
         provider_errors = 0

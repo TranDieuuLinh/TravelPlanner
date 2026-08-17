@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     explorer_audio_chunk_seconds: float = Field(default=60.0, gt=0)
     explorer_youtube_audio_chunk_seconds: int = Field(default=300, ge=30, le=900)
     explorer_youtube_audio_chunk_overlap_seconds: int = Field(default=5, ge=0, le=30)
-    explorer_youtube_audio_max_concurrency: int = Field(default=8, ge=1, le=20)
+    explorer_youtube_audio_max_concurrency: int = Field(default=1, ge=1, le=20)
     explorer_youtube_max_duration_seconds: int = Field(default=14_400, ge=60)
     explorer_max_video_seconds: float = Field(default=180.0, gt=0)
     explorer_max_media_mb: int = Field(default=120, ge=1)
@@ -103,10 +103,10 @@ class Settings(BaseSettings):
     google_maps_scraper_enabled: bool = True
     google_maps_scraper_timeout_seconds: float = Field(default=90.0, gt=0)
     google_maps_scraper_max_alias_queries: int = Field(default=2, ge=0, le=5)
-    google_maps_scraper_max_concurrency: int = Field(default=3, ge=1, le=5)
+    google_maps_scraper_max_concurrency: int = Field(default=2, ge=1, le=5)
     route_provider: Literal["valhalla", "disabled"] = "valhalla"
     valhalla_base_url: str = "http://localhost:8002"
-    valhalla_timeout_seconds: float = Field(default=15.0, gt=0)
+    valhalla_timeout_seconds: float | None = Field(default=None, gt=0)
     valhalla_graph_version: str = "local"
     itinerary_log_search_progress: bool = True
 

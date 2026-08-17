@@ -76,6 +76,7 @@ def create_schedule_variables(
         )
     if variables.accommodation_selected:
         model.Add(sum(variables.accommodation_selected.values()) == 1)
+        _exclude_dominated_accommodations(model, problem, variables)
     food_ids = {food.place_id for food in problem.valid_food}
     for candidate_id in sorted(problem.candidate_by_id):
         selected = variables.remember(model.NewBoolVar(f"selected:{candidate_id}"))
@@ -138,6 +139,31 @@ def create_schedule_variables(
             )
         _add_drink_dessert_constraints(model, problem, variables, day)
     return variables
+
+
+def _exclude_dominated_accommodations(
+    model: cp_model.CpModel,
+    problem: PreparedPlanningProblem,
+    variables: PlannerVariables,
+) -> None:
+    by_location: dict[tuple[float, float], list[str]] = {}
+    for accommodation in problem.accommodations:
+        location = (
+            round(accommodation.coordinates.latitude, 6),
+            round(accommodation.coordinates.longitude, 6),
+        )
+        by_location.setdefault(location, []).append(accommodation.place_id)
+    for accommodation_ids in by_location.values():
+        preferred = min(
+            accommodation_ids,
+            key=lambda accommodation_id: (
+                problem.accommodation_cost_per_person_by_id[accommodation_id],
+                accommodation_id,
+            ),
+        )
+        for accommodation_id in accommodation_ids:
+            if accommodation_id != preferred:
+                model.Add(variables.accommodation_selected[accommodation_id] == 0)
 
 
 def _add_drink_dessert_constraints(
