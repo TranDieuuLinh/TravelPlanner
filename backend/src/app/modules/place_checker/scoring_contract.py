@@ -15,6 +15,8 @@ class CandidateScoreComponents(ContractModel):
     quality: float = Field(ge=0, le=1)
     uniqueness: float = Field(ge=0, le=1)
     data_confidence: float = Field(ge=0, le=1)
+    rating_quality: float = Field(ge=0, le=1)
+    review_quality: float = Field(ge=0, le=1)
 
 
 class ScoredCandidate(ContractModel):

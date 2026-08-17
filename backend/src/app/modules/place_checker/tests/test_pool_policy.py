@@ -24,40 +24,40 @@ from app.modules.place_checker.retrieval import TargetedRetrievalService
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 
 
-def test_activity_pool_target_is_fourteen_places_per_day() -> None:
-    assert activity_pool_target_for_days(1) == 14
-    assert activity_pool_target_for_days(4) == 56
-    assert activity_pool_target_for_days(7) == 98
+def test_activity_pool_target_is_twenty_places_per_day() -> None:
+    assert activity_pool_target_for_days(1) == 20
+    assert activity_pool_target_for_days(4) == 80
+    assert activity_pool_target_for_days(7) == 140
     assert activity_pool_target_for_days(30) == 420
 
 
 def test_food_reserve_target_remains_separate() -> None:
-    assert food_pool_target_for_days(1) == 12
-    assert food_pool_target_for_days(3) == 36
+    assert food_pool_target_for_days(1) == 16
+    assert food_pool_target_for_days(3) == 48
 
 
-def test_entertainment_reserve_target_is_four_per_day() -> None:
-    assert entertainment_pool_target_for_days(1) == 4
-    assert entertainment_pool_target_for_days(3) == 12
+def test_entertainment_reserve_target_is_six_per_day() -> None:
+    assert entertainment_pool_target_for_days(1) == 6
+    assert entertainment_pool_target_for_days(3) == 18
 
 
 def test_combined_pool_has_independent_travel_and_restaurant_targets() -> None:
-    assert combined_pool_target_for_days(1) == 35
-    assert combined_pool_target_for_days(3) == 95
-    assert combined_pool_target_for_days(5) == 155
-    assert pool_query_limit_for_days(1) == 28
+    assert combined_pool_target_for_days(1) == 47
+    assert combined_pool_target_for_days(3) == 119
+    assert combined_pool_target_for_days(5) == 191
+    assert pool_query_limit_for_days(1) == 40
     assert pool_query_limit_for_days(3) == 60
 
 
 def test_planner_pool_shortfall_is_a_hard_per_type_measurement() -> None:
     assert planner_pool_shortfall(days=1, travel_place_count=13, food_count=8) == (
-        14,
+        20,
         3,
         1,
         0,
     )
     assert planner_pool_shortfall(days=1, travel_place_count=14, food_count=10) == (
-        14,
+        20,
         3,
         0,
         0,
@@ -89,10 +89,10 @@ def test_food_hard_minimum_also_requires_each_meal_type() -> None:
 
 
 def test_pool_target_is_shared_across_discovery_gaps() -> None:
-    assert per_gap_pool_target(4, 4) == 14
+    assert per_gap_pool_target(4, 4) == 20
     assert per_gap_pool_target(4, 2) == 20
     assert per_gap_pool_target(4, 1) == 20
-    assert per_gap_pool_target(7, 8) == 13
+    assert per_gap_pool_target(7, 8) == 18
 
 
 def test_generic_travel_query_uses_bounded_places_per_trip_day() -> None:
@@ -111,8 +111,8 @@ def test_generic_travel_query_uses_bounded_places_per_trip_day() -> None:
         gap, analysis_context(days=3), None, anchor_place_ids=[], limit=6
     )
 
-    assert one_day.limit == 14
-    assert three_days.limit == 42
+    assert one_day.limit == 20
+    assert three_days.limit == 60
 
 
 class RecordingSource:

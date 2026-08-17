@@ -46,6 +46,8 @@ trong graph state/request hiện tại; việc lưu plan production vẫn phải
 trip-chat/revision ownership riêng, không ghi trực tiếp từ Planner.
 `excludedCandidates`, accommodation route geometry và solver audit metadata
 cũng chỉ là contract/runtime state, không tạo thêm database ownership.
+Beam Search evaluation và `MatrixCell.food_to_food` cũng là dữ liệu dẫn xuất
+trong graph state/request, không tạo bảng hoặc migration mới.
 
 Observability thay đổi hiện tại không thêm table hoặc migration. Trace được giữ
 tối đa 500 request trong snapshot cục bộ
@@ -376,18 +378,36 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 
 ### `knowledge_entities`
 
-Ngày sửa đổi cuối cùng: 2026-08-11.
+Ngày sửa đổi cuối cùng: 2026-08-17.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
 | `id` | varchar | Không | Mã entity. |
 | `canonical_name` | varchar | Không | Tên chuẩn. |
 | `normalized_name` | varchar | Không | Tên đã chuẩn hóa. |
-| `entity_type` | varchar | Không | Loại entity. |
+| `entity_type` | varchar | Không | Loại entity; gồm `Entertainment` cho các địa điểm giải trí/wellness được phân loại riêng bên cạnh `TravelPlace`. |
 | `status` | varchar | Không | Trạng thái entity. |
 | `created_at` | timestamptz | Không | Thời điểm tạo. |
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
 | `review_count` | integer | Có | Tổng số review theo dữ liệu nguồn; không thay thế các row trong `reviews`. |
+
+Migration `011_entertainment_node.sql` chỉ đổi `entity_type` từ `TravelPlace`
+sang `Entertainment` cho nhóm tên đã được rà soát (spa, massage, billiard/billard,
+bida, karaoke, gym, fitness hoặc nail). Migration không đổi `id`, không xoá
+entity và không chạm vào `knowledge_relationships`, `knowledge_properties` hay
+các bảng dữ liệu liên quan. Vì vậy các quan hệ hiện có tiếp tục trỏ tới cùng
+node; truy vấn `travel place` lọc chính xác `TravelPlace`, còn hint
+`entertainment`/`wellness` lọc `Entertainment`.
+
+Migration `012_costume_entertainment_places.sql` tiếp tục phân loại các
+`TravelPlace` chuyên cosplay/hóa trang thành `Entertainment`, dựa trên tên node
+hoặc quan hệ `Offer_Item` tới `ActivityItem` tương ứng; migration cũng giữ
+nguyên ID và các quan hệ hiện có.
+
+Migration `013_outdoor_entertainment_places.sql` phân loại các địa điểm cung
+cấp `Cắm trại` hoặc `Cưỡi ngựa` thành `Entertainment`. Các địa điểm gắn với
+`Tham gia hoạt động mua bán địa phương` hoặc chợ không bị chuyển bởi migration
+này và tiếp tục là `TravelPlace`.
 
 ### `knowledge_aliases`
 

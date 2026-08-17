@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from math import ceil, log1p
 
 from app.modules.place_checker.planner_candidate_metadata import source_metadata
@@ -12,6 +13,7 @@ from app.shared.tools.bayesian_rating import (
 COMPOSITION_BASE = 14
 SPECIAL_SLOTS = 6
 POPULAR_SLOTS = 4
+MAX_DIVERSITY_TAG_OCCURRENCES = 3
 NON_DIVERSITY_TAG_PREFIXES = (
     "item:",
     "pool_category:",
@@ -70,7 +72,12 @@ def select_activity_coverage(
         popular,
         max(0, popular_target - selected_popular),
     )
-    _take(selected, selected_keys, ranked, limit - len(selected))
+    _take_diverse_fill(
+        selected,
+        selected_keys,
+        ranked,
+        limit - len(selected),
+    )
     return _with_ranks(selected)
 
 
@@ -135,6 +142,58 @@ def _take(
         selected.append(item)
         selected_keys.add(key)
         added += 1
+
+
+def _take_diverse_fill(
+    selected: list[ScoredCandidate],
+    selected_keys: set[str],
+    candidates: list[ScoredCandidate],
+    count: int,
+) -> None:
+    """Fill the reserve while soft-capping repeated broad tags."""
+    if count <= 0:
+        return
+
+    tag_counts = Counter(
+        tag
+        for item in selected
+        for tag in _diversity_tags(item)
+    )
+    remaining = [
+        item
+        for item in candidates
+        if item.candidate.candidate_key not in selected_keys
+    ]
+    for _ in range(count):
+        if not remaining:
+            break
+        eligible = [
+            item
+            for item in remaining
+            if not any(
+                tag_counts[tag] >= MAX_DIVERSITY_TAG_OCCURRENCES
+                for tag in _diversity_tags(item)
+            )
+        ]
+        pool = eligible or remaining
+        chosen = min(pool, key=lambda item: _diversity_fill_key(item, tag_counts))
+        selected.append(chosen)
+        selected_keys.add(chosen.candidate.candidate_key)
+        tag_counts.update(_diversity_tags(chosen))
+        remaining.remove(chosen)
+
+
+def _diversity_fill_key(
+    item: ScoredCandidate,
+    tag_counts: Counter[str],
+) -> tuple[float, int, float, str]:
+    tags = _diversity_tags(item)
+    return (
+        sum(tag_counts[tag] for tag in tags),
+        max((tag_counts[tag] for tag in tags), default=0),
+        -item.rerank_score,
+        item.candidate.candidate_key,
+    )
 
 
 def _is_special(item: ScoredCandidate) -> bool:

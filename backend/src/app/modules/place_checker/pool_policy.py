@@ -3,9 +3,9 @@ from __future__ import annotations
 import math
 
 
-ACTIVITY_CANDIDATES_PER_DAY = 14
-FOOD_CANDIDATES_PER_DAY = 12
-ENTERTAINMENT_CANDIDATES_PER_DAY = 4
+ACTIVITY_CANDIDATES_PER_DAY = 20
+FOOD_CANDIDATES_PER_DAY = 16
+ENTERTAINMENT_CANDIDATES_PER_DAY = 6
 MAX_ACTIVITY_POOL_TARGET = 420
 MAX_FOOD_POOL_TARGET = 300
 MAX_ENTERTAINMENT_POOL_TARGET = 120
@@ -16,19 +16,19 @@ MEALS_PER_DAY = 3
 
 def activity_pool_target_for_days(days: int) -> int:
     """Return the TravelPlace reserve required for the trip duration."""
-    return min(MAX_ACTIVITY_POOL_TARGET, max(14, days * ACTIVITY_CANDIDATES_PER_DAY))
+    return min(MAX_ACTIVITY_POOL_TARGET, max(20, days * ACTIVITY_CANDIDATES_PER_DAY))
 
 
 def food_pool_target_for_days(days: int) -> int:
     """Return the restaurant reserve target, separate from activity capacity."""
-    return min(MAX_FOOD_POOL_TARGET, max(10, days * FOOD_CANDIDATES_PER_DAY))
+    return min(MAX_FOOD_POOL_TARGET, max(16, days * FOOD_CANDIDATES_PER_DAY))
 
 
 def entertainment_pool_target_for_days(days: int) -> int:
     """Return the optional DrinkDessert/Entertainment reserve target."""
     return min(
         MAX_ENTERTAINMENT_POOL_TARGET,
-        max(4, days * ENTERTAINMENT_CANDIDATES_PER_DAY),
+        max(6, days * ENTERTAINMENT_CANDIDATES_PER_DAY),
     )
 
 
@@ -70,4 +70,4 @@ def pool_query_limit_for_days(days: int) -> int:
 
 def per_gap_pool_target(days: int, discovery_gap_count: int) -> int:
     target = activity_pool_target_for_days(days)
-    return min(20, max(4, math.ceil(target / max(1, discovery_gap_count))))
+    return min(20, max(6, math.ceil(target / max(1, discovery_gap_count))))

@@ -22,6 +22,8 @@ TYPE_BY_HINT = {
     "travel place": {"TravelPlace"},
     "attraction": {"TravelPlace"},
     "experience": {"TravelPlace"},
+    "entertainment": {"Entertainment"},
+    "wellness": {"Entertainment"},
     "restaurant": {"Restaurant"},
     "food": {"Restaurant"},
     "food venue": {"Restaurant"},
@@ -29,15 +31,14 @@ TYPE_BY_HINT = {
     "coffee": {"DrinkDessert"},
     "drink": {"DrinkDessert"},
     "drink dessert": {"DrinkDessert"},
-    "entertainment": {"Entertainment"},
     "hotel": {"Accommodation"},
     "accommodation": {"Accommodation"},
 }
 CANONICAL_TYPE = {
     "TravelPlace": "travel_place",
+    "Entertainment": "entertainment",
     "Restaurant": "restaurant",
     "DrinkDessert": "drink_dessert",
-    "Entertainment": "entertainment",
     "Accommodation": "accommodation",
 }
 

@@ -16,8 +16,14 @@ from app.modules.place_checker.pool_policy import (
     food_pool_target_for_days,
     pool_query_limit_for_days,
 )
+from app.modules.place_checker.planner_category import planner_category
 from app.modules.place_checker.price_policy import planner_cost
 from app.modules.place_checker.reranking import CandidateDiversityReranker
+from app.modules.place_checker.reputation_scoring import (
+    CategoryReputationProfile,
+    build_reputation_profiles,
+    reputation_components,
+)
 from app.modules.place_checker.retrieval_contract import (
     RetrievalBatch,
     RetrievedCandidate,
@@ -34,16 +40,18 @@ from app.shared.tools.search_places.normalization import normalize_text
 from app.shared.tools.search_places.scoring import distance_km, text_similarity
 
 WEIGHTS = {
-    "intent_match": 0.18,
-    "preference_match": 0.12,
-    "gap_value": 0.16,
-    "budget_fit": 0.12,
-    "geo_fit": 0.10,
-    "people_fit": 0.08,
-    "time_fit": 0.08,
+    "intent_match": 0.15,
+    "preference_match": 0.10,
+    "gap_value": 0.13,
+    "budget_fit": 0.10,
+    "geo_fit": 0.08,
+    "people_fit": 0.06,
+    "time_fit": 0.07,
     "quality": 0.05,
-    "uniqueness": 0.06,
+    "uniqueness": 0.05,
     "data_confidence": 0.05,
+    "rating_quality": 0.10,
+    "review_quality": 0.06,
 }
 
 
@@ -68,6 +76,7 @@ class CandidateScoringService:
         candidates = [
             candidate for gap in retrieval.gaps for candidate in gap.candidates
         ]
+        reputation_profiles = build_reputation_profiles(candidates)
         existing_categories, existing_experiences, anchors = self._existing(
             existing_places
         )
@@ -78,6 +87,7 @@ class CandidateScoringService:
                 existing_categories,
                 existing_experiences,
                 anchors,
+                reputation_profiles,
             )
             for candidate in candidates
         ]
@@ -121,11 +131,16 @@ class CandidateScoringService:
         existing_categories: set[str],
         existing_experiences: set[str],
         anchors: list[Coordinates],
+        reputation_profiles: dict[str, CategoryReputationProfile],
     ) -> ScoredCandidate:
         labels = self._labels(candidate)
-        category = normalize_text(candidate.category)
+        category = planner_category(candidate.category)
         experience = normalize_text(candidate.experience_type)
         distance = self._nearest_distance(candidate.coordinates, anchors)
+        rating_quality, review_quality = reputation_components(
+            candidate,
+            reputation_profiles,
+        )
         components = CandidateScoreComponents(
             intent_match=self._intent_match(candidate, labels),
             preference_match=self._preference_match(context.preferences, labels),
@@ -142,6 +157,8 @@ class CandidateScoringService:
                 else 0.35
             ),
             data_confidence=max(item.confidence for item in candidate.evidence),
+            rating_quality=rating_quality,
+            review_quality=review_quality,
         )
         component_values = components.model_dump()
         base = sum(WEIGHTS[name] * value for name, value in component_values.items())
@@ -371,7 +388,7 @@ class CandidateScoringService:
                 continue
             metadata = evaluation.place.metadata
             if metadata.category:
-                categories.add(normalize_text(metadata.category))
+                categories.add(planner_category(metadata.category))
             experiences.update(normalize_text(tag) for tag in metadata.tags if tag)
             if metadata.coordinates:
                 anchors.append(metadata.coordinates)

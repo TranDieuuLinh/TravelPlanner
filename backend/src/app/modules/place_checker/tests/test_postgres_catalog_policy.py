@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCatalog
 from app.modules.place_checker.adapters.postgres_catalog_mapping import (
     PostgresCatalogMappingMixin,
+    TYPE_BY_HINT,
 )
 from app.modules.place_checker.adapters.postgres_food_query import (
     SPECIAL_FOOD_RESTAURANT_SQL,
@@ -27,6 +28,11 @@ def test_generic_travel_pool_uses_adm_candidates_without_experience_bucket_cap()
     assert "activity.entity_type = 'ActivityItem'" in PLACE_SEARCH_SQL
     assert "'entityType', target.entity_type" in PLACE_SEARCH_SQL
     assert "key = 'time_windows'" in PLACE_SEARCH_SQL
+
+
+def test_entertainment_type_has_dedicated_hint_without_polluting_travel_place() -> None:
+    assert TYPE_BY_HINT["entertainment"] == {"Entertainment"}
+    assert "Entertainment" not in TYPE_BY_HINT["travel place"]
 
 
 def test_postgres_search_uses_trigram_prefilter_and_bounded_top_k() -> None:

@@ -178,6 +178,8 @@ def create_enrich_selected_routes_node(
     estimator: TransportCostEstimator | None,
     config: SolverConfig,
     weights: ObjectiveWeights,
+    *,
+    beam_mode: bool = False,
 ):
     async def enrich(state: ItineraryPlannerState) -> dict:
         if state.get("error") or "optimization_result" not in state:
@@ -229,6 +231,11 @@ def create_enrich_selected_routes_node(
                         "were shifted without changing selected places or route order."
                     )
                 else:
+                    if beam_mode:
+                        return {
+                            "error": "Beam Search route detail could not reflow the selected timeline.",
+                            "error_code": "beam_route_reflow_failed",
+                        }
                     try:
                         optimization, repair_scope, repair_warning = (
                             await _repair_optimization(

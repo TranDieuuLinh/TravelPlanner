@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from ortools.sat.python import cp_model
 
@@ -79,6 +80,7 @@ class OptimizationResult:
     objective_policy_version: str
     passes: tuple[SolverPassResult, ...]
     source_mix: tuple[SourceMixPeriodResult, ...]
+    evaluation: Any | None = None
 
 
 def extract_result(

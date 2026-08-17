@@ -15,6 +15,7 @@ from app.modules.itinerary_planner.ports import (
     RoutingMatrixProvider,
 )
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
+from app.modules.itinerary_planner.matrix_annotations import annotate_food_to_food
 from app.modules.itinerary_planner.routing_models import (
     STRAIGHT_LINE_PROVIDER,
     STRAIGHT_LINE_WARNING,
@@ -360,6 +361,7 @@ async def build_routing_problem(
         )
         if cache is not None and matrix.provider != STRAIGHT_LINE_PROVIDER:
             await cache.put(cache_key, matrix)
+    matrix = annotate_food_to_food(matrix, node_to_candidates, problem)
     expected_nodes = tuple(location.node_id for location in locations)
     _validate_matrix(matrix, expected_nodes, profile)
     travel = _all_candidate_travel(

@@ -50,9 +50,21 @@ giới HTTP. Thư mục `orchestration/` sở hữu root graph và ánh xạ cá
 contract giữa các module. Business rule về du lịch không nên đặt trong
 `orchestration/`.
 
+`itinerary_planner` hiện giữ graph hybrid CP-SAT làm runtime mặc định và có
+submodule `beam_search/` chạy song song cho rollout thử nghiệm. Beam dùng
+PreparedPlanningProblem và global Valhalla matrix, không thay đổi graph mặc
+định hoặc database ownership.
+Beam chỉ cấm lặp `TravelPlace`; food và leisure được phép lặp khi cần, nhưng
+thứ tự xếp hạng ưu tiên ít lặp hơn theo `Entertainment -> DrinkDessert ->
+Restaurant`.
+
 Module `observability` lưu bounded trace cục bộ và phát timing log an toàn cho
 từng root graph stage cùng tổng request. Các dòng này dùng cùng `request_id` để
 đối chiếu với trace mà không ghi nội dung prompt hoặc raw provider payload.
+
+Knowledge Graph và Place Checker tách pool `Entertainment` khỏi `TravelPlace`.
+`Entertainment` là node place-like cho các địa điểm giải trí/wellness; mapping
+runtime dùng hint riêng và không đưa loại này vào hint tổng quát `travel place`.
 
 ## Ranh giới module
 

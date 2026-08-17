@@ -1,4 +1,7 @@
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
+from app.modules.place_checker.activity_pool_selection import select_activity_coverage
+from app.modules.place_checker.planner_category import planner_category
+from app.modules.place_checker.pool_balancing import CandidatePoolBalancer
 from app.modules.place_checker.scoring import CandidateScoringService
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 from app.modules.place_checker.tests.test_scoring_reranking import (
@@ -206,3 +209,37 @@ def test_accommodation_pool_keeps_five_candidates_for_percentile_selection() -> 
 
     assert len(result.ranked) == 5
     assert all(item.candidate.category == "accommodation" for item in result.ranked)
+
+
+def test_cafe_category_is_not_counted_as_travel_place() -> None:
+    assert planner_category("cafe") == "drink_dessert"
+    assert planner_category("DrinkDessert") == "drink_dessert"
+    assert CandidatePoolBalancer._entity_type("cafe") == "entertainment"
+
+
+def test_activity_pool_soft_caps_repeated_broad_tags_when_alternatives_exist() -> None:
+    culture = [
+        candidate(f"culture-{index}", category="travel_place", tags=["culture"])
+        for index in range(8)
+    ]
+    nature = [
+        candidate(f"nature-{index}", category="travel_place", tags=["nature"])
+        for index in range(8)
+    ]
+    shopping = [
+        candidate(f"shopping-{index}", category="travel_place", tags=["shopping"])
+        for index in range(8)
+    ]
+    ranked = CandidateScoringService().rank(
+        retrieval(*culture, *nature, *shopping),
+        analysis_context(days=1),
+        empty_places(),
+        reserve_limit_per_gap=60,
+    ).ranked
+
+    selected = select_activity_coverage(ranked, 9)
+    selected_tags = [item.candidate.tags[0] for item in selected]
+
+    assert selected_tags.count("culture") <= 3
+    assert selected_tags.count("nature") >= 3
+    assert selected_tags.count("shopping") >= 3
