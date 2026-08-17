@@ -240,7 +240,7 @@ tiêu thụ payload qua preprocessing, routing matrix, hybrid daily repair, rout
 finalization.
 Compact builder chỉ chuyển place/food có giá dùng được; `typical_cost` được lấy
 từ trung bình khoảng min/max, một đầu mút có sẵn, hoặc `0` cho tier `free`.
-`places[].sourcePlaces` phân biệt nguồn `input` và `url`; `sourceTimeHint` và
+`places[].sourcePlaces` phân biệt nguồn `input` (người dùng chọn trực tiếp), `url` (nguồn URL do người dùng cung cấp) và `system` (gợi ý từ assistant/information-finder hoặc transcript cũ, mang tính tùy chọn, không bắt buộc; chỉ khi lượt người dùng hiện tại tham chiếu rõ ràng qua current-turn explicit reference promotion mới được chuyển sang `input`); `sourceTimeHint` và
 `addressHint` được giữ nhưng không có `sourceOrder` hay `sourceDay`.
 Draft generator nằm sau port; prompt-only và source-import có provider cấu hình
 riêng. Source-import chia từng source/artifact dài thành chunk khoảng 20.000 ký

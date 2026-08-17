@@ -33,7 +33,7 @@ class ExplorerImageInput(ExplorerModel):
         return self
 
 
-PlaceOrigin = Literal["input", "url"]
+PlaceOrigin = Literal["input", "url", "system"]
 EvidenceType = Literal[
     "raw_prompt",
     "image_ocr",

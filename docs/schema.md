@@ -113,9 +113,12 @@ không có `schemaVersion` và gồm:
 - `days`, `startDate`, `timezone`; nếu prompt không có ngày thì ngày bắt đầu là
   ngày mai, nếu không có duration thì `days=3`;
 - `places`, trong đó mỗi place có `sourcePlaces`, `sourceTimeHint` và
-  `addressHint`; mỗi source có thể mang `platform`, `extractorVersion`,
-  `modelVersion`, `cacheStatus` và các field provenance này được Place Checker
-  giữ nguyên; không có `sourceOrder`/`sourceDay`;
+  `addressHint`; `sourcePlaces` phân biệt nguồn `input` (người dùng chọn trực tiếp),
+  `url` (nguồn URL do người dùng cung cấp) và `system` (gợi ý từ assistant/information-finder
+  hoặc transcript cũ, mang tính tùy chọn, không bắt buộc; chỉ khi lượt người dùng hiện tại
+  tham chiếu rõ ràng qua current-turn explicit reference promotion mới được chuyển sang `input`);
+  mỗi source có thể mang `platform`, `extractorVersion`, `modelVersion`, `cacheStatus` và
+  các field provenance này được Place Checker giữ nguyên; không có `sourceOrder`/`sourceDay`;
 - `inputItems`, chỉ lấy food, drink hoặc activity cụ thể, có thể resolve được và
   được nêu rõ trong raw prompt; sở thích/chủ đề chung được đưa vào
   `shortPreferences`;

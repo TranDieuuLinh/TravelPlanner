@@ -23,6 +23,7 @@ from app.modules.supervisor.public import (
 )
 from app.orchestration.root_state import RootState
 from app.orchestration.memory_projection import (
+    build_blocked_clarification,
     information_query,
     memory_field,
     merge_memory_places,
@@ -118,7 +119,11 @@ class RootNodes:
             if dur:
                 output.days = dur
             if memory:
-                output.places = merge_memory_places(output.places or [], memory)
+                output.places = merge_memory_places(
+                    output.places or [],
+                    memory,
+                    resolved_references=state.get("resolved_references"),
+                )
             travelers = memory_field(memory, "travelers")
             if travelers:
                 output.people = output.people.model_copy(
@@ -175,7 +180,9 @@ class RootNodes:
                     "inputADM": explorer.input_adm,
                     "places": self._place_checker_places(
                         merge_memory_places(
-                            explorer.places or [], state.get("conversation_memory")
+                            explorer.places or [],
+                            state.get("conversation_memory"),
+                            resolved_references=state.get("resolved_references"),
                         )
                     ),
                     "inputItems": explorer.input_items,
@@ -205,13 +212,11 @@ class RootNodes:
                 ],
             }
             if output.status.value == "blocked":
+                clarification_q, response_msg = build_blocked_clarification(output)
                 update.update(
                     {
-                        "clarification_question": (
-                            "Một địa điểm bắt buộc chưa được xác minh. "
-                            "Bạn có thể bổ sung tên hoặc địa chỉ chính xác hơn không?"
-                        ),
-                        "response": "PlaceChecker cần làm rõ dữ liệu trước khi lập lịch.",
+                        "clarification_question": clarification_q,
+                        "response": response_msg,
                     }
                 )
             else:
@@ -231,6 +236,7 @@ class RootNodes:
                 "places": merge_memory_places(
                     state["explorer_output"].places or [],
                     state.get("conversation_memory"),
+                    resolved_references=state.get("resolved_references"),
                 ),
                 "input_items": state["explorer_output"].input_items,
                 "url_notes": state["explorer_output"].url_notes,

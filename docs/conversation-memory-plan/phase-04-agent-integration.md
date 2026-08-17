@@ -1,6 +1,6 @@
 # Phase 04 — Tích hợp Explorer, Information Finder, Place Checker và Planner
 
-Cập nhật lần cuối: 2026-08-14
+Cập nhật lần cuối: 2026-08-17
 
 ## Explorer
 
@@ -15,7 +15,7 @@ Explorer nhận projection gồm destination, duration, preferences, mentioned/s
 
 ## Place Checker
 
-Place Checker chỉ đọc destination/ADM context, mentioned/selected places, resolved reference đơn nhất, constraints và source provenance. Các place candidate từ memory được bổ sung sau candidate Explorer và giữ `source_url`/excerpt trong evidence; candidate tham chiếu mơ hồ không được tự động đưa vào pool. Nó trả `input_name`, `canonical_place_id`, `status`, `confidence`, `evidence`, `warnings`.
+Place Checker chỉ đọc destination/ADM context, mentioned/selected places, resolved reference đơn nhất, constraints và source provenance. Các place candidate từ memory được bổ sung sau candidate Explorer và giữ `source_url`/excerpt trong evidence (phân biệt `input`, `url` và `system` provenance, trong đó `system` là gợi ý assistant/transcript mang tính tùy chọn, không bắt buộc, chỉ promote sang `input` khi có current-turn explicit reference); candidate tham chiếu mơ hồ không được tự động đưa vào pool. Nó trả `input_name`, `canonical_place_id`, `status`, `confidence`, `evidence`, `warnings`.
 
 Memory module merge canonical resolution/evidence. Place Checker không sở hữu memory và không tự thay thế địa điểm user bằng candidate KG.
 

@@ -40,7 +40,10 @@ class RuleBasedReferenceResolver:
         plural_deictic = [
             "cac diem ben tren", "nhung dia diem tren", "may cho o tren",
             "cac diem tren", "nhung cho do", "nhung dia diem do",
-            "cac cho do", "nhung noi do",
+            "cac cho do", "nhung noi do", "nhung cho vua ke",
+            "cac diem vua ke", "nhung diem vua ke", "cac dia diem vua ke",
+            "nhung cho vua goi y", "cac diem vua goi y", "di het",
+            "tat ca cac diem tren", "tat ca cac diem",
         ]
         if any(kw in no_accent_msg for kw in plural_deictic):
             phrase = "những chỗ đó" if "nhung cho do" in no_accent_msg else "các điểm bên trên"
