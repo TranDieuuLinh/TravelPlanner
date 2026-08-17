@@ -69,7 +69,12 @@ async def invoke_explorer(
     request: Request,
     graph=Depends(get_explorer_graph),
 ) -> ExplorerOutput:
-    request_id = str(uuid4())
+    request_id = (
+        request.headers.get("x-trace-id")
+        or request.headers.get("x-request-id")
+        or str(uuid4())
+    )
+    request.state.trace_id = request_id
     started_at = perf_counter()
     observability: ObservabilityService = request.app.state.observability_service
     trace_callback = observability.start_trace(
@@ -134,7 +139,12 @@ async def invoke_agent(
     request: Request,
     graph=Depends(get_graph),
 ) -> InvokeResponse:
-    request_id = str(uuid4())
+    request_id = (
+        request.headers.get("x-trace-id")
+        or request.headers.get("x-request-id")
+        or str(uuid4())
+    )
+    request.state.trace_id = request_id
     started_at = perf_counter()
     graph_input = {
         "request_id": request_id,

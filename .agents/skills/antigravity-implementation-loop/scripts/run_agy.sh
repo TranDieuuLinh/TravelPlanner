@@ -13,4 +13,8 @@ command -v agy >/dev/null || { echo "agy is not installed or not on PATH" >&2; e
 
 # agy 1.1.x supports print mode and JSON output. Keep the worker in the current
 # working tree; this script intentionally does not perform any Git operation.
-agy --print --output-format json --print-timeout 30m "$(<"$prompt_file")" | tee "$output_file"
+extra_args=()
+if [[ "${AGY_SKIP_PERMISSIONS:-0}" == "1" ]]; then
+  extra_args+=(--dangerously-skip-permissions)
+fi
+agy --mode accept-edits "${extra_args[@]}" --output-format json --print-timeout 30m -p "$(<"$prompt_file")" | tee "$output_file"

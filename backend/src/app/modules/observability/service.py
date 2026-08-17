@@ -1,8 +1,13 @@
 from typing import Any
 
+from langchain_core.callbacks import AsyncCallbackHandler
+
 from app.modules.observability.contract import ObservabilityPage, ObservabilityStatus
-from app.modules.observability.local_callback import LocalTraceCallback
 from app.modules.observability.local_store import LocalObservabilityStore
+from app.shared.observability import (
+    ObservabilityManager,
+    create_observability_manager,
+)
 
 
 class ObservabilityError(Exception):
@@ -14,12 +19,16 @@ class ObservabilityError(Exception):
 
 
 class ObservabilityService:
-    def __init__(self, store: LocalObservabilityStore | None = None) -> None:
-        self.store = store or LocalObservabilityStore()
+    def __init__(
+        self,
+        store: LocalObservabilityStore | None = None,
+        manager: ObservabilityManager | None = None,
+    ) -> None:
+        self.store = store or (manager.local_store if manager else None) or LocalObservabilityStore()
+        self.manager = manager or create_observability_manager(local_store=self.store)
 
-    def start_trace(self, *, request_id: str, metadata: dict[str, Any]) -> LocalTraceCallback:
-        self.store.start_trace(request_id, metadata)
-        return LocalTraceCallback(self.store, request_id)
+    def start_trace(self, *, request_id: str, metadata: dict[str, Any]) -> AsyncCallbackHandler:
+        return self.manager.start_trace(request_id=request_id, metadata=metadata)
 
     async def status(self) -> ObservabilityStatus:
         return ObservabilityStatus(**self.store.status())
@@ -46,9 +55,18 @@ class ObservabilityService:
         duration_ms: float | None = None,
         output: Any = None,
     ) -> None:
-        self.store.complete_trace(
-            request_id, route=route, success=success,
-            message_length=message_length, warning_count=warning_count,
-            source_count=source_count, has_itinerary=has_itinerary,
-            error_code=error_code, duration_ms=duration_ms, output=output,
+        await self.manager.record_agent_invoke(
+            request_id=request_id,
+            route=route,
+            success=success,
+            message_length=message_length,
+            warning_count=warning_count,
+            source_count=source_count,
+            has_itinerary=has_itinerary,
+            error_code=error_code,
+            duration_ms=duration_ms,
+            output=output,
         )
+
+    async def aclose(self) -> None:
+        await self.manager.shutdown()

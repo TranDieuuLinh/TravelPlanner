@@ -95,19 +95,48 @@ class GeminiLlmClient:
             response_json_schema=response_json_schema,
             tools=tools,
         )
+        meta_holder: dict[str, Any] = {}
+        trace_metadata = {
+            "provider": "gemini",
+            "model": self._model,
+            "structuredOutput": response_json_schema is not None,
+            "temperature": temperature,
+            "max_output_tokens": max_output_tokens,
+        }
+
+        async def _run() -> str:
+            text, meta = await self._send_payload(payload)
+            meta_holder.update(meta)
+            trace_metadata.update(
+                {
+                    "attempts": meta.get("attempts", 1),
+                    "status_code": meta.get("statusCode"),
+                }
+            )
+            return text
+
         return await traced_call(
             "gemini.generate",
-            lambda: self._send_payload(payload),
+            _run,
             kind="llm",
             input_summary={
                 "model": self._model,
+                "prompt": user_prompt,
                 "promptChars": len(user_prompt),
                 "hasSystemPrompt": bool(system_prompt),
+                "systemPrompt": system_prompt,
                 "structuredOutput": response_json_schema is not None,
+                "temperature": temperature,
+                "maxOutputTokens": max_output_tokens,
                 "toolCount": len(tools or []),
             },
-            output_summary=lambda value: {"responseChars": len(value)},
-            metadata={"provider": "gemini", "model": self._model},
+            output_summary=lambda value: {
+                "responseChars": len(value),
+                "response": value,
+                "usage": meta_holder.get("usage"),
+                "attempts": meta_holder.get("attempts", 1),
+            },
+            metadata=trace_metadata,
         )
 
     async def generate_media(
@@ -141,26 +170,56 @@ class GeminiLlmClient:
             tools=None,
             parts=parts,
         )
+        meta_holder: dict[str, Any] = {}
+        trace_metadata = {
+            "provider": "gemini",
+            "model": self._model,
+            "structuredOutput": response_json_schema is not None,
+            "temperature": temperature,
+            "max_output_tokens": max_output_tokens,
+        }
+
+        async def _run() -> str:
+            text, meta = await self._send_payload(payload)
+            meta_holder.update(meta)
+            trace_metadata.update(
+                {
+                    "attempts": meta.get("attempts", 1),
+                    "status_code": meta.get("statusCode"),
+                }
+            )
+            return text
+
         return await traced_call(
             "gemini.generate_media",
-            lambda: self._send_payload(payload),
+            _run,
             kind="llm",
             input_summary={
                 "model": self._model,
+                "prompt": user_prompt,
                 "promptChars": len(user_prompt),
                 "mediaCount": len(media),
                 "mediaTypes": sorted({item.mime_type for item in media}),
                 "structuredOutput": response_json_schema is not None,
+                "temperature": temperature,
+                "maxOutputTokens": max_output_tokens,
             },
-            output_summary=lambda value: {"responseChars": len(value)},
-            metadata={"provider": "gemini", "model": self._model},
+            output_summary=lambda value: {
+                "responseChars": len(value),
+                "response": value,
+                "usage": meta_holder.get("usage"),
+                "attempts": meta_holder.get("attempts", 1),
+            },
+            metadata=trace_metadata,
         )
 
-    async def _send_payload(self, payload: dict[str, Any]) -> str:
+    async def _send_payload(self, payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         last_error: Exception | None = None
-
         attempt_limit = min(self._key_attempt_limit, self.key_count)
+        attempts = 0
+
         for _ in range(attempt_limit):
+            attempts += 1
             lease = await self._key_pool.acquire()
             try:
                 response = await self._http_client.post(
@@ -194,7 +253,12 @@ class GeminiLlmClient:
                 await self._release_failed_key(lease, response)
                 continue
             await self._key_pool.release(lease)
-            return self._extract_text(response)
+            text, usage = self._extract_text_and_usage(response)
+            return text, {
+                "usage": usage,
+                "attempts": attempts,
+                "statusCode": response.status_code,
+            }
 
         if last_error is not None:
             raise last_error
@@ -304,11 +368,21 @@ class GeminiLlmClient:
         )
 
     @staticmethod
-    def _extract_text(response: httpx.Response) -> str:
+    def _extract_text_and_usage(response: httpx.Response) -> tuple[str, dict[str, int]]:
         try:
             body = response.json()
         except ValueError as exc:
             raise LlmResponseError("Gemini returned a non-JSON response.") from exc
+
+        usage: dict[str, int] = {}
+        usage_meta = body.get("usageMetadata")
+        if isinstance(usage_meta, dict):
+            if isinstance(usage_meta.get("promptTokenCount"), int):
+                usage["input"] = usage_meta["promptTokenCount"]
+            if isinstance(usage_meta.get("candidatesTokenCount"), int):
+                usage["output"] = usage_meta["candidatesTokenCount"]
+            if isinstance(usage_meta.get("totalTokenCount"), int):
+                usage["total"] = usage_meta["totalTokenCount"]
 
         candidates = body.get("candidates")
         if not isinstance(candidates, list) or not candidates:
@@ -326,6 +400,11 @@ class GeminiLlmClient:
         ).strip()
         if not text:
             raise LlmResponseError("Gemini returned no text content.")
+        return text, usage
+
+    @staticmethod
+    def _extract_text(response: httpx.Response) -> str:
+        text, _ = GeminiLlmClient._extract_text_and_usage(response)
         return text
 
     async def aclose(self) -> None:

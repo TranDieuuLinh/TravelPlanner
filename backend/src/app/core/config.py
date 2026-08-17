@@ -29,10 +29,22 @@ class Settings(BaseSettings):
         "creator@example.com|Creator Demo|Password123!|creator,"
         "admin@travelplanner.local|TravelPlanner Admin|Password123!|admin"
     )
-    langfuse_host: str = "http://localhost:3005"
+    langfuse_enabled: bool = False
+    # LANGFUSE_BASE_URL is the SDK v4 name. Keep LANGFUSE_HOST as a
+    # backward-compatible fallback for existing deployments.
+    langfuse_base_url: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
-    langfuse_timeout_seconds: float = 10.0
+    langfuse_timeout_seconds: float = Field(default=10.0, gt=0)
+    langfuse_flush_timeout_seconds: float = Field(default=5.0, gt=0)
+    langfuse_sample_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    langfuse_release: str | None = None
+    langfuse_environment: str | None = None
+    # Keep prompts/responses out of third-party observability by default.
+    langfuse_capture_input_output: bool = False
+    langfuse_max_captured_chars: int = Field(default=2000, ge=100, le=50000)
+    langfuse_debug: bool = False
     tavily_api_key: str | None = None
     tavily_search_depth: Literal["basic", "advanced"] = "basic"
     tavily_max_results: int = 5

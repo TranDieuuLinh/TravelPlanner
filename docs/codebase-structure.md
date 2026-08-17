@@ -438,7 +438,22 @@ từ `parentId`; trang Steps luôn hiển thị `traceId` và liên kết về r
 step đó. Frontend dùng contract `TraceSummary`, `TraceDetail` và
 `TraceObservation` thay cho một record không định kiểu cho trace detail.
 
-`shared/observability.py` là capability kỹ thuật dùng chung, không chứa business
-rule. Nó bọc lời gọi provider thành child Runnable chỉ khi request hiện tại có
-callback, đồng thời chỉ đưa input/output summary đã chọn vào trace. Local adapter
-trong module `observability` vẫn sở hữu JSON store, callback và admin API.
+`shared/observability/` là capability kỹ thuật dùng chung, không chứa business
+rule. Module cung cấp `ObservabilityManager`, `TraceCallbackHandler`, và adapter
+`LangfuseObservabilityAdapter` tích hợp Langfuse Cloud (`https://cloud.langfuse.com`).
+Mọi request LLM qua shared Gemini client đều ghi nhận model, latency, status, token
+usage (`usageMetadata` input/output/total) và retry attempts. Khi tắt hoặc không có
+credentials, hệ thống hoàn toàn no-op và không gọi network SDK. Dữ liệu nhạy cảm
+(API key, Bearer token, password trong connection string, credential keys) luôn được
+tự động redact và truncate có giới hạn độ dài trước khi gửi. Local adapter trong
+module `observability` tiếp tục phục vụ JSON store và admin API.
+
+Để bật Langfuse Cloud, đặt `LANGFUSE_ENABLED=true`,
+`LANGFUSE_BASE_URL=https://cloud.langfuse.com`, `LANGFUSE_PUBLIC_KEY` và
+`LANGFUSE_SECRET_KEY` trong môi trường deploy. `LANGFUSE_HOST` vẫn được hỗ trợ
+để tương thích cấu hình cũ. Có thể đặt
+`LANGFUSE_SAMPLE_RATE`, `LANGFUSE_RELEASE`, `LANGFUSE_ENVIRONMENT` và
+`LANGFUSE_MAX_CAPTURED_CHARS`; `LANGFUSE_CAPTURE_INPUT_OUTPUT` mặc định là `false`
+để không gửi prompt/response. Trace ghi nhận request ID, route, session/thread,
+thời gian, trạng thái, warning/source counts; các generation ghi model/provider,
+structured-output, temperature, retry attempts, HTTP status và Gemini token usage.

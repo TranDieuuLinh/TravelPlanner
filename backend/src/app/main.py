@@ -48,6 +48,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 checkpoint_close = getattr(checkpointer, "aclose", None)
                 if checkpoint_close is not None:
                     closers.append(checkpoint_close())
+            obs_service = getattr(application.state, "observability_service", None)
+            obs_close = getattr(obs_service, "aclose", None)
+            if obs_close is not None:
+                closers.append(obs_close())
             if closers:
                 await asyncio.gather(*closers)
 
@@ -56,6 +60,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    @application.middleware("http")
+    async def add_trace_id_header(request, call_next):
+        response = await call_next(request)
+        trace_id = getattr(request.state, "trace_id", None)
+        if trace_id:
+            response.headers["X-Trace-ID"] = str(trace_id)
+        return response
+
     application.state.auth_service = build_auth_service(settings)
     application.state.knowledge_graph_service = build_knowledge_graph_service(settings)
     application.state.observability_service = build_observability_service(settings)

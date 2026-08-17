@@ -141,12 +141,18 @@ async def send_message(
     service: TripChatService = Depends(_service),
 ):
     started_at = perf_counter()
-    request_id = str(uuid4())
+    request_id = (
+        request.headers.get("x-trace-id")
+        or request.headers.get("x-request-id")
+        or str(uuid4())
+    )
+    request.state.trace_id = request_id
     observability = request.app.state.observability_service
     trace_callback = observability.start_trace(
         request_id=request_id,
         metadata={
             "requestId": request_id,
+            "userId": str(user.id),
             "threadId": chat_id,
             "entryPoint": "trip_chat.message",
             "messageLength": len(payload.content),
