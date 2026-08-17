@@ -47,6 +47,7 @@ class ItineraryRouteLeg(PlannerContractModel):
     encoded_polyline: str | None = None
     provider: str
     geometry_available: bool
+    cost_per_person: int = Field(default=0, ge=0)
 
 
 class DailyCostBreakdown(PlannerContractModel):

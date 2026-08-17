@@ -6,7 +6,10 @@ import {
   type CurrentTripChat,
   type CurrentTripChatSummary,
 } from "@/features/planner/lib/trip-chat-mapping";
-import type { TransportLeg } from "@/features/planner/contracts/transport";
+import type {
+  TransportLeg,
+  TransportOption,
+} from "@/features/planner/contracts/transport";
 
 export type {
   CurrentLocationRouteInput,
@@ -90,12 +93,25 @@ export type PlanItem = {
   sourceLink?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  durationMinutes?: number | null;
+  costPerPerson?: number | null;
+};
+
+export type PlanCostBreakdown = {
+  accommodation: number;
+  food: number;
+  localTransport: number;
+  activities: number;
+  misc: number;
+  total: number;
+  currency: string;
 };
 
 export type PlanDay = {
   day: number;
   items: PlanItem[];
   transportLegs: TransportLeg[];
+  costBreakdown?: PlanCostBreakdown | null;
 };
 export type UnscheduledPlace = {
   placeId?: string | null;
@@ -154,6 +170,7 @@ export type TravelPlan = {
     pricePerNight: number;
     currency: string;
     nights: number;
+    personalNotes?: string | null;
   } | null;
   budget?: {
     amountPerPerson: number | null;
@@ -905,6 +922,42 @@ export async function updateTripChatItemPersonalNotes(input: {
   return mapFullCurrentTripChat(chat);
 }
 
+export async function updateTripChatAccommodation(input: {
+  chatId: string;
+  expectedRevision: number;
+  accommodation: {
+    placeId?: string | null;
+    name?: string;
+    address?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    personalNotes?: string | null;
+  };
+}): Promise<TripChat> {
+  const chat = await apiFetch<CurrentTripChat>(
+    `/v1/trip-chats/${encodeURIComponent(input.chatId)}/plan/accommodation`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        expectedRevision: input.expectedRevision,
+        ...input.accommodation,
+      }),
+    },
+  );
+  return mapFullCurrentTripChat(chat);
+}
+
+export async function removeTripChatAccommodation(input: {
+  chatId: string;
+  expectedRevision: number;
+}): Promise<TripChat> {
+  const chat = await apiFetch<CurrentTripChat>(
+    `/v1/trip-chats/${encodeURIComponent(input.chatId)}/plan/accommodation?expectedRevision=${input.expectedRevision}`,
+    { method: "DELETE" },
+  );
+  return mapFullCurrentTripChat(chat);
+}
+
 export async function removeTripChatItem(input: {
   chatId: string;
   expectedRevision: number;
@@ -962,34 +1015,30 @@ export async function selectTripChatTransportOption(input: {
   expectedRevision: number;
   day: number;
   legIndex: number;
-  mode: string;
-  optionKey?: string;
-  source?: string;
-  distanceMeters?: number;
-  estimatedDurationMinutes?: number;
+  option: TransportOption;
 }): Promise<TripChat> {
-  const form = new FormData();
-  form.append("expectedRevision", String(input.expectedRevision));
-  form.append("mode", input.mode);
-  if (input.optionKey) form.append("optionKey", input.optionKey);
-  if (input.source) form.append("source", input.source);
-  if (input.distanceMeters != null) {
-    form.append("distanceMeters", String(input.distanceMeters));
-  }
-  if (input.estimatedDurationMinutes != null) {
-    form.append(
-      "estimatedDurationMinutes",
-      String(input.estimatedDurationMinutes)
-    );
-  }
-
-  return apiFetch<TripChat>(
-    `/trip-chats/${input.chatId}/plan/days/${input.day}/transport-legs/${input.legIndex}/selection`,
+  const chat = await apiFetch<CurrentTripChat>(
+    `/v1/trip-chats/${encodeURIComponent(input.chatId)}/plan/days/${input.day}/transport-legs/${input.legIndex}/selection`,
     {
       method: "PUT",
-      body: form
+      body: JSON.stringify({
+        expectedRevision: input.expectedRevision,
+        mode: input.option.mode,
+        source: input.option.source,
+        distanceMeters: Math.round(input.option.distanceMeters),
+        estimatedDurationMinutes: Math.round(
+          input.option.estimatedDurationMinutes
+        ),
+        geometryCoordinates: input.option.geometryCoordinates,
+        verified: input.option.verified,
+        estimatedCostPerPerson: input.option.estimatedCostPerPerson,
+        currency: input.option.currency,
+        fetchedAt: input.option.fetchedAt,
+        details: input.option.details,
+      }),
     }
   );
+  return mapFullCurrentTripChat(chat);
 }
 
 export async function retryTripChatTransportLeg(input: {

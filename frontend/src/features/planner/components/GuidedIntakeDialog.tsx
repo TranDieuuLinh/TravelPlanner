@@ -3,37 +3,21 @@
 import { useRef } from "react";
 import { PenguinMascot } from "@/components/PenguinMascot";
 
-type GuidedIntakeStep = "destination" | "dates" | "budget" | "travelers" | "note";
-type TravelerCounts = { adults: number; children: number; infants: number; pets: number };
+type GuidedIntakeStep = "destination" | "dates" | "budget" | "note";
 
 const guidedIntakeQuestions: Record<GuidedIntakeStep, string> = {
   destination: "Bạn muốn đi đâu?",
   dates: "Khi nào bạn muốn đi?",
   budget: "Ngân sách của bạn?",
-  travelers: "Bạn đi cùng ai?",
   note: "Có lưu ý gì không?",
 };
 
 const guidedIntakePlaceholders: Record<GuidedIntakeStep, string> = {
   destination: "Ví dụ: Kyoto, Đà Lạt, miền Tây…",
   dates: "Ví dụ: 12–15/09 hoặc cuối tuần sau…",
-  budget: "Ví dụ: khoảng 8 triệu cho cả nhóm…",
-  travelers: "Ví dụ: 2 người lớn và 1 bé…",
+  budget: "Ví dụ: khoảng 4 triệu mỗi người…",
   note: "Thêm một lưu ý nếu có…",
 };
-
-const travelerOptions: ReadonlyArray<{
-  key: keyof TravelerCounts;
-  label: string;
-  description: string;
-  minimum: number;
-  maximum: number;
-}> = [
-  { key: "adults", label: "Người lớn", description: "Từ 13 tuổi", minimum: 1, maximum: 20 },
-  { key: "children", label: "Trẻ em", description: "Từ 2–12 tuổi", minimum: 0, maximum: 20 },
-  { key: "infants", label: "Em bé", description: "Dưới 2 tuổi", minimum: 0, maximum: 10 },
-  { key: "pets", label: "Thú cưng", description: "Mang theo trong chuyến đi", minimum: 0, maximum: 5 },
-];
 
 type GuidedIntakeDialogProps = {
   open: boolean;
@@ -41,7 +25,6 @@ type GuidedIntakeDialogProps = {
   draft: string;
   startDate: string;
   endDate: string;
-  counts: TravelerCounts;
   saving: boolean;
   onClose: () => void;
   onDraftChange: (value: string) => void;
@@ -49,8 +32,6 @@ type GuidedIntakeDialogProps = {
   onEndDateChange: (value: string) => void;
   onSubmitDates: () => void;
   onSubmitAnswer: (answer: string) => void;
-  onSubmitTravelers: () => void;
-  onTravelerCountChange: (key: keyof TravelerCounts, delta: number) => void;
 };
 
 export function GuidedIntakeDialog({
@@ -59,7 +40,6 @@ export function GuidedIntakeDialog({
   draft,
   startDate,
   endDate,
-  counts,
   saving,
   onClose,
   onDraftChange,
@@ -67,8 +47,6 @@ export function GuidedIntakeDialog({
   onEndDateChange,
   onSubmitDates,
   onSubmitAnswer,
-  onSubmitTravelers,
-  onTravelerCountChange,
 }: GuidedIntakeDialogProps) {
   const guidedInputRef = useRef<HTMLInputElement>(null);
   return (
@@ -86,7 +64,7 @@ export function GuidedIntakeDialog({
                     aria-modal="true"
                     className={`guidedIntakeDialog isDestination ${
                       step === "dates" ? "isDates" : ""
-                    } ${step === "travelers" ? "isTravelers" : ""}`}
+                    }`}
                     role="dialog"
                   >
                     <button
@@ -140,82 +118,6 @@ export function GuidedIntakeDialog({
                                 value={endDate}
                               />
                             </label>
-                          </div>
-                          <div className="guidedIntakeActions">
-                            <button
-                              className="guidedIntakeUpdate"
-                              disabled={saving}
-                              type="submit"
-                            >
-                              {saving ? "Đang cập nhật…" : "Cập nhật"}
-                            </button>
-                          </div>
-                        </form>
-                      ) : step === "travelers" ? (
-                        <form
-                          className="guidedTravelerPicker"
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            void onSubmitTravelers();
-                          }}
-                        >
-                          <div className="guidedTravelerRows">
-                            {travelerOptions.map((option) => {
-                              const count = counts[option.key];
-                              return (
-                                <div
-                                  className="guidedTravelerRow"
-                                  key={option.key}
-                                >
-                                  <span>
-                                    <strong>{option.label}</strong>
-                                    <small>{option.description}</small>
-                                  </span>
-                                  <div className="guidedCounter">
-                                    <button
-                                      aria-label={`Giảm ${option.label.toLocaleLowerCase(
-                                        "vi-VN"
-                                      )}`}
-                                      disabled={count <= option.minimum}
-                                      onClick={() =>
-                                        onTravelerCountChange(option.key, -1)
-                                      }
-                                      type="button"
-                                    >
-                                      <svg
-                                        aria-hidden="true"
-                                        viewBox="0 0 24 24"
-                                      >
-                                        <path d="M5 12h14" />
-                                      </svg>
-                                    </button>
-                                    <output
-                                      aria-live="polite"
-                                      aria-label={`${option.label}: ${count}`}
-                                    >
-                                      {count}
-                                    </output>
-                                    <button
-                                      aria-label={`Tăng ${option.label.toLocaleLowerCase(
-                                        "vi-VN"
-                                      )}`}
-                                      disabled={count >= option.maximum}
-                                      onClick={() =>
-                                        onTravelerCountChange(option.key, 1)
-                                      }
-                                      type="button"
-                                    >
-                                      <svg
-                                        aria-hidden="true"
-                                        viewBox="0 0 24 24"
-                                      >
-                                        <path d="M12 5v14M5 12h14" />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
                           </div>
                           <div className="guidedIntakeActions">
                             <button

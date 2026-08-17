@@ -48,15 +48,22 @@ chỉ tạo warning vì Planner vẫn có thể dùng general food pool theo rou
 output gửi cả `foodCoverage` gồm hard/reserve assignments và missing slots để
 Planner biết feasibility đã được kiểm tra trước.
 
-TravelPlace reserve chạy các query độc lập cho culture, nature, shopping,
-nightlife, workshop, performance, outdoor, family, special experience và local
-activity. Selection giữ một đại diện cho mỗi `pool_category` hoặc `style:*` có
-dữ liệu trước khi bù theo tỷ lệ tham chiếu 6/14 candidate có evidence
+TravelPlace reserve chạy các query khám phá độc lập cho culture, nature,
+shopping, nightlife, workshop, performance, outdoor, family, special
+experience và local activity. Đây là query intent, không phải theme của place.
+Selection giữ một đại diện cho mỗi tag KG có ý nghĩa trước khi bù theo tỷ lệ
+tham chiếu 6/14 candidate có evidence
 `Special_Experience`, 4/14 candidate có Bayesian popularity signal và phần còn
-lại theo ranking. Thematic query bắt buộc match relation/style term; một
-`Special_Experience` không liên quan không được dùng để lấp mọi theme.
+lại theo ranking. `pool_category` chỉ lưu provenance và không tạo diversity.
+Query khám phá bắt buộc match relation/style term; một `Special_Experience`
+không liên quan không được dùng để lấp mọi query.
 `Special_Experience` trạng thái `pending` không được tính là special. Bucket
 thiếu được pool khác bù; đây không phải phân ngày hoặc quyết định itinerary.
+
+Compact output tách tag phẳng khỏi `styles` lấy từ `Has_Style` đã duyệt và gửi
+`audience={adultOnly,kidSuitable}`. Trip gửi `party={adults,kids}` cùng
+`preferences={tags,avoidTags,styles}`; Planner tiếp tục quyết định eligibility,
+preference, style và tag-repetition trong lịch cuối.
 
 ## Input từ Explorer
 

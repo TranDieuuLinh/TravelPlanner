@@ -51,7 +51,7 @@ solve vẫn `INFEASIBLE`, runtime retry đúng một lần không hard wait cap 
 progressive idle penalty. Nếu pool food unique vẫn làm ngày vô nghiệm, fallback
 cuối chỉ mở lại restaurant đã dùng; activity đã dùng vẫn bị loại. Timeout/
 `UNKNOWN` không kích hoạt relaxation hay reuse. Khi ghép ngày, Planner kiểm tra
-lại explicit budget, 9 giờ nghỉ và thời gian transfer accommodation; vi phạm
+lại explicit budget, tối thiểu 7 giờ nghỉ và thời gian transfer accommodation; vi phạm
 trả infeasible, không xuất lịch sai.
 
 Node chỉ đọc/ghi state và gọi service. Retry, timeout và fallback policy nằm

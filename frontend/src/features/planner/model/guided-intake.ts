@@ -4,7 +4,6 @@ export type GuidedIntakeStep =
   | "destination"
   | "dates"
   | "budget"
-  | "travelers"
   | "note"
   | "complete";
 
@@ -12,17 +11,9 @@ export type GuidedIntakeAnswers = Partial<
   Record<Exclude<GuidedIntakeStep, "complete">, string>
 >;
 
-export type TravelerCounts = {
-  adults: number;
-  children: number;
-  infants: number;
-  pets: number;
-};
-
 export const guidedIntakeOrder: Exclude<GuidedIntakeStep, "complete">[] = [
   "destination",
   "dates",
-  "travelers",
   "budget",
   "note",
 ];
@@ -34,57 +25,8 @@ export const guidedIntakeQuestions: Record<
   destination: "Bạn muốn đi đâu?",
   dates: "Khi nào bạn muốn đi?",
   budget: "Ngân sách của bạn?",
-  travelers: "Bạn đi cùng ai?",
   note: "Có lưu ý gì không?",
 };
-
-export const travelerOptions: ReadonlyArray<{
-  key: keyof TravelerCounts;
-  label: string;
-  description: string;
-  minimum: number;
-  maximum: number;
-}> = [
-  {
-    key: "adults",
-    label: "Người lớn",
-    description: "Từ 13 tuổi",
-    minimum: 1,
-    maximum: 20,
-  },
-  {
-    key: "children",
-    label: "Trẻ em",
-    description: "Từ 2–12 tuổi",
-    minimum: 0,
-    maximum: 20,
-  },
-  {
-    key: "infants",
-    label: "Em bé",
-    description: "Dưới 2 tuổi",
-    minimum: 0,
-    maximum: 10,
-  },
-  {
-    key: "pets",
-    label: "Thú cưng",
-    description: "Mang theo trong chuyến đi",
-    minimum: 0,
-    maximum: 5,
-  },
-];
-
-export function travelerAnswer(counts: TravelerCounts): string {
-  return [
-    counts.adults ? `${counts.adults} người lớn` : "",
-    counts.children ? `${counts.children} trẻ em` : "",
-    counts.infants ? `${counts.infants} em bé` : "",
-    counts.pets ? `${counts.pets} thú cưng` : "",
-  ]
-    .filter(Boolean)
-    .join(", ");
-}
 
 export function budgetFromAnswer(
   answer: string,
@@ -120,7 +62,6 @@ export function buildGuidedIntakeRequest(
     destination: "Điểm đến",
     dates: "Thời gian",
     budget: "Ngân sách",
-    travelers: "Nhóm đi",
     note: "Điều cần lưu ý",
   };
   const details = guidedIntakeOrder.flatMap((step) => {

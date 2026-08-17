@@ -57,8 +57,9 @@ def test_root_exposes_new_planner_output_without_legacy_conversion() -> None:
             "day": 1,
             "date": "2026-08-20",
             "stops": [
-                {
-                    "placeId": "place-1",
+                    {
+                        "itemId": "planner:1:place-1",
+                        "placeId": "place-1",
                     "name": "Hồ Hoàn Kiếm",
                     "kind": "place",
                     "priority": "special_experience",

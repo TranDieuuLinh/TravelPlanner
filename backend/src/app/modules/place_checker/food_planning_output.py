@@ -1,8 +1,13 @@
 from app.modules.place_checker.food_selection_contract import SelectedFoodRestaurant
 from app.modules.place_checker.output_contract import (
+    PlannerAudience,
     PlannerOutputFood,
     PlannerPrice,
     PlannerTimeWindow,
+)
+from app.modules.place_checker.planner_semantics import (
+    audience_values,
+    candidate_semantics,
 )
 from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
 from app.shared.contracts.source_note import SourceNote
@@ -54,6 +59,12 @@ class SelectedFoodPlanningProjector:
         meals = cls._meals(metadata.opening_hours)
         if not meals:
             return None
+        tags, styles = candidate_semantics(metadata.tags, metadata.relationships)
+        adult_only, kid_suitable = audience_values(
+            adults=True,
+            children=metadata.children_suitable,
+            infants=metadata.infants_suitable,
+        )
         bayesian_note = (
             f" Bayesian rating {selection.bayesian_rating:.2f}/5."
             if selection.bayesian_rating is not None
@@ -76,14 +87,11 @@ class SelectedFoodPlanningProjector:
                 ),
                 source_type="knowledge_graph",
             ),
-            tags=list(
-                dict.fromkeys(
-                    [
-                        *metadata.tags,
-                        f"food-item:{selection.food_item_id}",
-                        f"food:{selection.food_item_name}",
-                    ]
-                )
+            tags=tags,
+            styles=styles,
+            audience=PlannerAudience(
+                adult_only=adult_only,
+                kid_suitable=kid_suitable,
             ),
             image_urls=metadata.image_urls,
             rating=metadata.rating,

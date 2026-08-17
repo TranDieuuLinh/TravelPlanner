@@ -217,7 +217,7 @@
 .regionStoryItem summary { width: fit-content; cursor: pointer; font-weight: 750; }
 .regionStoryItem q { display: block; margin-top: 5px; border-left: 2px solid rgba(54, 95, 90, .24); padding-left: 8px; line-height: 1.5; }
 .regionStoryItem a { width: fit-content; color: var(--brand); font-size: .58rem; font-weight: 800; text-decoration: underline; text-underline-offset: 2px; }
-.tripQuickFacts { display: grid; grid-template-columns: repeat(3,1fr); padding: 14px 10px; }
+.tripQuickFacts { display: grid; grid-template-columns: repeat(2,1fr); padding: 14px 10px; }
 .tripQuickFacts div { display: grid; gap: 3px; min-width: 0; border-right: 1px solid var(--line); padding: 0 10px; }
 .tripQuickFacts div:last-child { border-right: 0; }
 .tripQuickFacts span, .budgetSummary span { color: var(--muted); font-size: .55rem; }
@@ -227,6 +227,37 @@
 .budgetSummary > div { display: grid; gap: 2px; min-width: 0; }
 .budgetSummary strong { overflow: hidden; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
 .budgetSummary small { color: var(--brand-dark); font-size: .55rem; font-weight: 800; white-space: nowrap; }
+.plannerBudgetCard { position: relative; display: grid; gap: 16px; margin: 0; overflow: hidden; border: 0; border-radius: 18px; padding: 18px; background: linear-gradient(135deg, #fbfcfb 0%, #f3f6f4 100%); box-shadow: 0 10px 28px rgba(32, 61, 55, .065); }
+.plannerBudgetCard > header { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) minmax(150px, auto); align-items: start; gap: 18px; }
+.plannerBudgetHeading { display: flex; min-width: 0; align-items: baseline; gap: 7px; padding-top: 2px; }
+.plannerBudgetHeading > strong { overflow: hidden; color: #172f2a; font-size: .82rem; line-height: 1.2; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+.plannerBudgetHeading > span { color: #9aa5a2; font-size: .62rem; }
+.plannerBudgetHeading > small { flex: 0 0 auto; color: #71807c; font-size: .57rem; font-weight: 750; }
+.plannerBudgetComparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 32px; }
+.plannerBudgetGroup { display: grid; min-width: 0; gap: 16px; }
+.plannerBudgetTotal, .plannerBudgetTarget { display: grid; min-width: 0; align-content: start; gap: 5px; padding: 0; background: transparent; }
+.plannerBudgetTotal { background: transparent; }
+.plannerBudgetTotal span, .plannerBudgetTarget > span { color: #71807c; font-size: .56rem; font-weight: 700; }
+.plannerBudgetTotal strong, .plannerBudgetTarget > strong { overflow: hidden; color: #1f5c50; font-size: 1.34rem; line-height: 1; letter-spacing: -.035em; text-overflow: ellipsis; white-space: nowrap; }
+.plannerBudgetCard > header .plannerBudgetTarget { justify-self: end; text-align: right; }
+.plannerBudgetCard > header .plannerBudgetTarget > strong { font-size: .78rem; line-height: 1.15; }
+.plannerBudgetTarget > strong { color: #314d47; }
+.plannerBudgetTarget > small { width: fit-content; padding: 0; color: #276657; font-size: .48rem; font-weight: 800; }
+.plannerBudgetTarget > small.is-over { color: #a24e3c; }
+.plannerBudgetGroupDetails { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.plannerBudgetItem { display: grid; min-width: 0; gap: 4px; padding: 0; background: transparent; }
+.plannerBudgetItem > span { color: #7b8985; font-size: .51rem; font-weight: 700; line-height: 1.25; }
+.plannerBudgetItem > strong { color: #2a403b; font-size: .66rem; line-height: 1.25; overflow-wrap: anywhere; }
+.plannerBudgetNotes { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 5px; padding: 0; background: transparent; }
+.plannerBudgetNotes > span { color: #526a64; font-size: .52rem; font-weight: 850; text-transform: uppercase; }
+.plannerBudgetNotes > p { margin: 0; color: #71807c; font-size: .56rem; line-height: 1.45; }
+@media (max-width: 520px) {
+  .plannerBudgetCard > header { grid-template-columns: minmax(0, 1fr) minmax(110px, auto); gap: 10px; }
+  .plannerBudgetComparison { gap: 12px; }
+  .plannerBudgetGroupDetails { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .plannerBudgetTotal strong, .plannerBudgetTarget > strong { font-size: 1.05rem; }
+  .plannerBudgetCard > header .plannerBudgetTarget > strong { font-size: .68rem; }
+}
 .interestGroup { display: grid; gap: 7px; padding: 0 16px 16px; }
 .interestGroup .sectionMicroTitle { margin: 0; }
 .finderNotice { display: grid; grid-template-columns: 32px 1fr; gap: 10px; border: 1px solid #f6f7fb; border-radius: 14px; padding: 13px 14px; background: #ffffff; }
@@ -2913,21 +2944,22 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
 .candidateMapPopup small { color: #365f5a; font-size: .7rem; font-weight: 800; }
 .candidateMapPopup span { color: var(--muted); font-size: .76rem; line-height: 1.5; }
 .candidateMapPopup .candidateMapPopupAddress { padding-left: 20px; background: no-repeat left 2px / 15px 15px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23142323' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z'/%3E%3Ccircle cx='12' cy='10' r='2.5'/%3E%3C/svg%3E"); }
-.candidateMapPopup .candidateMapPopupHours { min-width: 0; color: #3c4043; font-size: .76rem; line-height: 1.5; }
-.candidateMapPopupHours summary { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) 18px; align-items: start; gap: 6px; border-radius: 4px; cursor: pointer; list-style: none; }
+.candidateMapPopup .candidateMapPopupHours { min-width: 0; color: #3c4043; font-size: .72rem; line-height: 1.4; }
+.candidateMapPopupHours summary { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) 16px; align-items: center; gap: 6px; border: 0; border-radius: 4px; padding: 3px 0; background: transparent; cursor: pointer; list-style: none; }
 .candidateMapPopupHours summary::-webkit-details-marker { display: none; }
 .candidateMapPopupHours summary:focus-visible { outline: 2px solid #1a73e8; outline-offset: 3px; }
-.candidateMapPopup .candidateMapPopupHoursLabel { color: #5f6368; font-weight: 750; white-space: nowrap; }
-.candidateMapPopupHours summary > strong { min-width: 0; padding-right: 0; color: #202124; font-size: inherit; font-weight: 700; overflow-wrap: anywhere; }
-.candidateMapPopupHoursChevron { width: 18px; height: 18px; margin-top: -1px; fill: none; stroke: #5f6368; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; transition: transform .16s ease; }
+.candidateMapPopup .candidateMapPopupHoursLabel { color: #5f6368; font-weight: 500; white-space: nowrap; }
+.candidateMapPopupHours summary > strong { min-width: 0; padding-right: 0; color: #202124; font-size: inherit; font-weight: 500; overflow-wrap: anywhere; }
+.candidateMapPopupHoursChevron { width: 16px; height: 16px; fill: none; stroke: #5f6368; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; transition: transform .16s ease; }
 .candidateMapPopupHours[open] .candidateMapPopupHoursChevron { transform: rotate(180deg); }
 .candidateMapPopupHours summary[aria-disabled="true"] { cursor: default; }
 .candidateMapPopupHours summary[aria-disabled="true"] .candidateMapPopupHoursChevron { visibility: hidden; }
-.candidateMapPopupHoursSchedule { display: grid; gap: 7px; margin-top: 9px; border-top: 1px solid #e8eaed; padding-top: 9px; }
-.candidateMapPopupHoursSchedule > div { display: grid; min-width: 0; grid-template-columns: minmax(72px, .7fr) minmax(0, 1.3fr); gap: 12px; color: #3c4043; }
+.candidateMapPopupHoursSchedule { display: grid; gap: 1px; max-height: 156px; margin-top: 5px; border: 0; border-top: 1px solid #dadce0; border-radius: 0; padding: 6px 0 0; background: transparent; overflow-y: auto; }
+.candidateMapPopupHoursSchedule > div { display: grid; min-width: 0; grid-template-columns: 58px minmax(0, 1fr); gap: 10px; border-radius: 0; padding: 3px 0; background: transparent; color: #3c4043; }
 .candidateMapPopupHoursSchedule span,
 .candidateMapPopupHoursSchedule strong { min-width: 0; padding-right: 0; color: #3c4043; font: inherit; overflow-wrap: anywhere; }
 .candidateMapPopupHoursSchedule strong { font-weight: 500; }
+.candidateMapPopupHoursSchedule .isActiveDay { background: transparent; }
 .candidateMapPopupHoursSchedule .isActiveDay span,
 .candidateMapPopupHoursSchedule .isActiveDay strong { color: #202124; font-weight: 700; }
 .candidateMapPopup .candidateMapPopupRating {

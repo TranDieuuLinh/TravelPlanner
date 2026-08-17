@@ -5,12 +5,19 @@ from typing import Any
 from uuid import uuid4
 
 from app.modules.trip_chat.contract import (
+    AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
+    TransportSelectionStatus,
     TripChat,
     TripChatMessage,
     TripChatSummary,
 )
-from app.modules.trip_chat.plan_snapshot import update_stop_personal_notes
+from app.modules.trip_chat.plan_snapshot import (
+    delete_accommodation,
+    select_transport_option,
+    update_accommodation,
+    update_stop_personal_notes,
+)
 
 
 def _json(value: Any) -> Any:
@@ -206,6 +213,96 @@ class PostgresTripChatRepository:
                     personal_notes=personal_notes,
                 ):
                     return "item_not_found"
+                await connection.execute(
+                    """UPDATE agent_trip_chats
+                       SET revision=revision+1,
+                           current_planner_output=$1::jsonb,
+                           updated_at=$2
+                       WHERE id=$3 AND user_id=$4""",
+                    json.dumps(output),
+                    datetime.now(timezone.utc),
+                    chat_id,
+                    user_id,
+                )
+        return "updated"
+
+    async def update_accommodation(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        changes: dict[str, Any] | None,
+        delete: bool = False,
+    ) -> AccommodationUpdateStatus:
+        pool = await self._get_pool()
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                row = await connection.fetchrow(
+                    """SELECT revision, current_planner_output
+                       FROM agent_trip_chats
+                       WHERE id=$1 AND user_id=$2 FOR UPDATE""",
+                    chat_id,
+                    user_id,
+                )
+                if row is None:
+                    return "chat_not_found"
+                if row["revision"] != expected_revision:
+                    return "revision_conflict"
+                output = deepcopy(_json(row["current_planner_output"]))
+                changed = (
+                    delete_accommodation(output)
+                    if delete
+                    else update_accommodation(output, changes=changes or {})
+                )
+                if not changed:
+                    return "accommodation_not_found"
+                await connection.execute(
+                    """UPDATE agent_trip_chats
+                       SET revision=revision+1,
+                           current_planner_output=$1::jsonb,
+                           updated_at=$2
+                       WHERE id=$3 AND user_id=$4""",
+                    json.dumps(output),
+                    datetime.now(timezone.utc),
+                    chat_id,
+                    user_id,
+                )
+        return "updated"
+
+    async def select_transport_option(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        day: int,
+        leg_index: int,
+        selection: dict[str, Any],
+    ) -> TransportSelectionStatus:
+        pool = await self._get_pool()
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                row = await connection.fetchrow(
+                    """SELECT revision, current_planner_output
+                       FROM agent_trip_chats
+                       WHERE id=$1 AND user_id=$2 FOR UPDATE""",
+                    chat_id,
+                    user_id,
+                )
+                if row is None:
+                    return "chat_not_found"
+                if row["revision"] != expected_revision:
+                    return "revision_conflict"
+                output = deepcopy(_json(row["current_planner_output"]))
+                status = select_transport_option(
+                    output,
+                    day=day,
+                    leg_index=leg_index,
+                    selection=selection,
+                )
+                if status != "updated":
+                    return status
                 await connection.execute(
                     """UPDATE agent_trip_chats
                        SET revision=revision+1,

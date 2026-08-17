@@ -12,19 +12,15 @@ from app.shared.tools.bayesian_rating import (
 COMPOSITION_BASE = 14
 SPECIAL_SLOTS = 6
 POPULAR_SLOTS = 4
-THEMATIC_POOL_CATEGORIES = frozenset(
-    {
-        "culture",
-        "nature",
-        "shopping",
-        "nightlife",
-        "workshop",
-        "performance",
-        "outdoor",
-        "family",
-        "special_experience",
-        "local_activity",
-    }
+NON_DIVERSITY_TAG_PREFIXES = (
+    "item:",
+    "pool_category:",
+    "relationship:",
+    "retrieval:",
+    "style:",
+)
+NON_DIVERSITY_TAGS = frozenset(
+    {"experience:special_experience", "travel place", "travel_place"}
 )
 
 
@@ -43,7 +39,7 @@ def select_activity_coverage(
     selected: list[ScoredCandidate] = []
     selected_keys: set[str] = set()
 
-    _take_group_coverage(selected, selected_keys, ranked, limit)
+    _take_tag_coverage(selected, selected_keys, ranked, limit)
 
     special = [item for item in ranked if _is_special(item)]
     selected_special = sum(_is_special(item) for item in selected)
@@ -78,16 +74,17 @@ def select_activity_coverage(
     return _with_ranks(selected)
 
 
-def _take_group_coverage(
+def _take_tag_coverage(
     selected: list[ScoredCandidate],
     selected_keys: set[str],
     ranked: list[ScoredCandidate],
     limit: int,
 ) -> None:
-    """Reserve one candidate per available theme/style before score-only fill."""
+    """Reserve one candidate per meaningful KG tag before score-only fill."""
     groups: dict[str, list[ScoredCandidate]] = {}
     for item in ranked:
-        groups.setdefault(_diversity_group(item), []).append(item)
+        for tag in _diversity_tags(item):
+            groups.setdefault(tag, []).append(item)
     ordered_groups = sorted(
         groups,
         key=lambda group: (
@@ -95,29 +92,31 @@ def _take_group_coverage(
             group,
         ),
     )
-    for group in ordered_groups[:limit]:
+    for group in ordered_groups:
+        if len(selected) >= limit:
+            break
+        if any(
+            item.candidate.candidate_key in selected_keys
+            for item in groups[group]
+        ):
+            continue
         _take(selected, selected_keys, groups[group], 1)
 
 
-def _diversity_group(item: ScoredCandidate) -> str:
+def _diversity_tags(item: ScoredCandidate) -> set[str]:
     candidate = item.candidate
-    if candidate.pool_category in THEMATIC_POOL_CATEGORIES:
-        return f"pool:{candidate.pool_category}"
     tags = [
         *candidate.tags,
         *(candidate.metadata.tags if candidate.metadata else []),
     ]
-    styles = sorted(
-        tag.casefold() for tag in tags if tag.casefold().startswith("style:")
-    )
-    if styles:
-        return styles[0]
-    return (
-        candidate.pool_category
-        or candidate.experience_type
-        or candidate.category
-        or "unknown"
-    ).casefold()
+    normalized = {
+        tag.strip().casefold()
+        for tag in tags
+        if tag.strip()
+        and tag.strip().casefold() not in NON_DIVERSITY_TAGS
+        and not tag.strip().casefold().startswith(NON_DIVERSITY_TAG_PREFIXES)
+    }
+    return normalized or {(candidate.category or "unknown").casefold()}
 
 
 def _take(

@@ -77,6 +77,9 @@ Module `conversation_memory` đã hoàn thành Phase 01–06. Module sở hữu 
 Place Checker tạo note, Itinerary Planner truyền note và Trip Chat lưu snapshot.
 Rule URL ưu tiên Google/KG thuộc Place Checker; Trip Chat chỉ mutation trường
 `personalNotes` do người dùng sở hữu.
+Trip Chat cũng sở hữu mutation accommodation trong planner snapshot: frontend
+có thể sửa địa điểm lưu trú, lưu ghi chú cá nhân hoặc xóa nơi lưu trú; adapter
+in-memory và PostgreSQL cùng kiểm tra revision trước khi cập nhật JSONB.
 
 
 FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của
@@ -86,16 +89,21 @@ sparse arcs trên contract `trip + places + food + accommodations + excludedCand
 hybrid planner gồm geographic day-domain, greedy shortlist, 2-opt/swap và
 CP-SAT hai pass theo từng ngày: pass priority exact giữ thứ tự
 `user_input > URL`, sau đó pass utility tối ưu chất lượng lịch.
+Geographic day-domain dùng dense medoids cùng assignment capacity để giữ
+activity reserve cân bằng theo ngày; outlier không được chiếm riêng một day
+center thiếu mật độ, còn candidate user/URL giữ toàn bộ ngày khả thi.
 Runtime composition đặt `ITINERARY_LOG_SEARCH_PROGRESS=true` để OR-Tools phát
 search progress; test graph vẫn có thể truyền `SolverConfig` tắt log để tránh
 output nhiễu.
-Composition root inject Valhalla từ cấu hình cùng Xanh SM Hanoi fare estimator;
+Composition root inject Valhalla từ cấu hình cùng Xanh SM fare estimator;
 fallback đường chim bay được gắn tại provider boundary và luôn phát warning.
 Fare estimator thuộc `shared/tools/transport_cost.py` để city-cost estimation
 và Planner dùng cùng một policy/version thay vì sở hữu hai bảng giá.
-`shared/tools/daily_budget.py` giữ profile chi phí theo destination và dùng lại
-fare estimator. Hiện mới có profile Hà Nội; destination khác không được âm thầm
-dùng giá Hà Nội.
+PlaceChecker dựng ngân sách ước lượng từ các candidate đã query trong cây ADM:
+P25/P50/P80 tương ứng low/medium/high cho Accommodation, Restaurant và
+TravelPlace. Transportation dùng cùng Xanh SM fare estimator cho các ADM Việt
+Nam. Thiếu giá ở một nhóm bắt buộc thì giữ budget `unspecified`, không tạo số
+tiền giả.
 Phase 5 lấy detail cho selected arcs và accommodation transfers, repair tối đa một vòng khi duration
 thực tế phá timeline, rồi tạo public `ItineraryPlannerOutput`. Root/API trả nó
 qua `plannerOutput`; legacy `itinerary` được giữ riêng cho PlanEditor. Root
@@ -104,6 +112,9 @@ Mỗi itinerary day có `costBreakdown` gồm accommodation, food, localTranspor
 activities, misc và total trên một người. Planner điền giá stop, route và
 Accommodation được Planner chọn từ tối đa ba phương án có giá và tọa độ do
 PlaceChecker gửi; misc giữ 0 khi chưa có dữ liệu thật.
+Mỗi ordered route leg trong `plannerOutput` cũng công bố `costPerPerson` để UI
+hiển thị giá xe theo chặng; giá này là cùng estimate đã được cộng vào
+`localTransport`, không phải một phép tính lại ở frontend.
 Khi intake chưa có số phòng, accommodation tạm suy ra một phòng cho mỗi hai
 khách rồi chia lại thành giá/người/đêm; tổng số đêm là `days - 1`. Ngày còn
 thuê phòng kết thúc ở accommodation và ngày tiếp theo bắt đầu tại đó. Transfer
@@ -116,6 +127,13 @@ TripChat lưu hai snapshot độc lập: `currentItinerary` cho PlanEditor legac
 `currentPlannerOutput` cho frontend hiển thị output mới. Frontend map
 `days[].stops` thành item và `days[].legs` thành transport leg; guest planner
 cũng gọi trực tiếp `POST /v1/agent/invoke` thay vì adapter plan legacy.
+Thẻ ngân sách cộng `days[].costBreakdown` và hiển thị bốn nhóm riêng:
+TravelPlace, Restaurant/ăn uống, Accommodation và transportation; trên màn
+hình hẹp bốn nhóm tự xuống lưới hai cột.
+Frontend chỉ hiển thị đi bộ cho chặng ngắn hơn 1,5 km. Với chặng có nhiều
+phương án hợp lệ, thao tác chọn option gọi Trip Chat mutation; backend lưu
+`selectedTransport` vào đúng leg trong `currentPlannerOutput` với optimistic
+revision để lựa chọn còn nguyên sau khi tải lại.
 Danh sách TripChat chỉ map contract summary và giữ `hasItinerary`; sau một
 message, frontend áp dụng trực tiếp full chat snapshot vừa nhận để chuyển sang
 itinerary mà không phụ thuộc vào một lượt GET đồng bộ thứ hai. Output không có
@@ -331,8 +349,11 @@ Hai pass không đặt solver timeout mặc định; deployment có SLA phải i
 hạn qua `SolverConfig`.
 Preprocessing giới hạn optional candidate vào tối đa hai ngày thuộc geographic
 center gần nhất; user/URL giữ toàn bộ feasible days và food relationship đi
-cùng TravelPlace. Meal coverage được repair sau projection. Pass utility dùng
-relative gap 5%, còn pass priority vẫn tối ưu exact trước khi khóa riêng count
+cùng TravelPlace. Meal coverage được repair bằng unique matching sau projection;
+nếu cả pool gốc không có ba restaurant khác nhau, meal-occurrence alias nội bộ
+cho phép lặp venue, còn finalization trả `placeId` thật, `itemId` riêng theo meal
+và warning fallback. Pass utility dùng relative gap 5%, còn pass priority vẫn
+tối ưu exact trước khi khóa riêng count
 user input và URL.
 Retrieval ngoài gap phân tích còn mở core pool và thematic pool theo chuyến.
 TravelPlace dùng target `14/ngày`, giữ một đại diện cho mỗi theme/style khả dụng
@@ -390,7 +411,12 @@ in `frontend/src/features/planner/api/plans.ts` maps the current
 planner layout. Transport contracts live in `features/planner/contracts/`;
 directions, reviews and place search use capability-specific adapters in
 `features/planner/api/`. Pure guided-intake policy and formatting live in
-`features/planner/model/` with colocated tests.
+`features/planner/model/` with colocated tests. Planner không còn hiển thị thanh
+metadata Điểm đến/Thời gian/Nhóm đi/Ngân sách/Lưu ý; intake người dùng cũng
+không hỏi nhóm đi. Thẻ ngân sách của điểm đến so sánh tổng dự kiến với ngân
+sách ở hàng tiêu đề. Thẻ tách tổng địa điểm/ăn uống trên đầu người với tổng
+nhóm gồm chi phí khách sạn theo số đêm và di chuyển, sau đó hiển thị chi tiết
+cùng lưu ý chuyến đi hoặc trạng thái chưa có lưu ý.
 
 `admin-frontend/app/globals.css` cũng chỉ giữ các import. Style admin được chia
 theo shell/run, responsive, Knowledge Graph và AI import trong

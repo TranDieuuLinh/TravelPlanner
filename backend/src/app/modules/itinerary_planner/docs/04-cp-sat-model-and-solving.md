@@ -4,7 +4,7 @@ Trạng thái: đã triển khai hybrid planner, dùng geographic day-domain,
 greedy shortlist, 2-opt/swap và OR-Tools CP-SAT repair theo từng ngày.
 CP-SAT repair giữ schedule variables, optional
 intervals, opening windows, `AddNoOverlap`, `AddCircuit`, travel precedence,
-ba bữa/ngày, budget/người gồm Xanh SM night surcharge, nghỉ liên ngày 9 giờ,
+ba bữa/ngày, budget/người gồm Xanh SM night surcharge, nghỉ liên ngày tối thiểu 7 giờ,
 hai pass lexicographic, integer utility và result/component extraction.
 
 ## Mục tiêu
@@ -152,12 +152,18 @@ sum(meal[f,d,m] for eligible food f) = 1
 ```
 
 Food được chọn trở thành route node và optional interval. Duration theo
-meal policy, không nhân đôi với `durationMinutes` của food input. Một venue
-mặc định tối đa một lần trong chuyến:
+meal policy, không nhân đôi với `durationMinutes` của food input. Một candidate
+nội bộ mặc định tối đa một lần trong chuyến:
 
 ```text
 sum(meal[f,d,m] for all d,m) <= 1
 ```
+
+Khi và chỉ khi preprocessing chứng minh pool gốc không có unique matching cho
+ba meal slot của một ngày, mỗi lần dùng lại venue được biểu diễn bằng một
+meal-occurrence alias có `candidateId` riêng và đúng một supported meal. Solver
+vẫn giữ constraint trên từng alias; finalization ánh xạ các alias về cùng
+public `placeId`, tạo `itemId` khác nhau và giữ warning fallback trong output.
 
 Meal start phải nằm trong flexible start window và toàn bộ interval phải nằm
 trong opening hours của food.
@@ -221,20 +227,23 @@ Candidate thường phải kết thúc trong `480..1380`. Chỉ ID nằm trong
 `late_night_eligible_ids` mới được kết thúc muộn hơn 23:00, tối đa `1620`, và
 vẫn phải nằm trong opening window.
 
-Giữa stop cuối ngày `d` và stop đầu ngày `d+1` phải có ít nhất 9 giờ nghỉ:
+Giữa stop cuối ngày `d` và stop đầu ngày `d+1` phải có ít nhất 7 giờ nghỉ:
 
 ```text
-firstStart[d+1] + 1440 - lastEnd[d] >= 540
+firstStart[d+1] + 1440 - lastEnd[d] >= 420
 ```
 
-Ví dụ kết thúc 03:00 (`1620`) thì ngày sau bắt đầu sớm nhất 12:00 (`720`).
+`420` phút là ngưỡng khả thi tối thiểu, không phải thời lượng nghỉ cố định.
+Solver được phép để khoảng nghỉ dài hơn (thường 7-10 giờ) tùy lịch hai ngày.
+
+Ví dụ kết thúc 03:00 (`1620`) thì ngày sau bắt đầu sớm nhất 10:00 (`600`).
 Breakfast window được phép trễ đến 12:00 trên recovery day; target 08:00 vẫn
 giữ ngày bình thường bắt đầu sớm.
 
 Trong hybrid assembly, `08:00` là giờ bắt đầu stop đầu chứ không phải giờ sớm
 nhất được rời accommodation. Transfer có thể bắt đầu trước 08:00; validation
 nghỉ đêm vẫn trừ cả thời gian quay về accommodation ngày trước và thời gian đi
-tới stop đầu ngày sau trước khi kiểm tra minimum 9 giờ.
+tới stop đầu ngày sau trước khi kiểm tra minimum 7 giờ.
 
 ## Lexicographic solving theo ngày
 
@@ -313,11 +322,13 @@ tận dụng.
 ```text
 specialExperienceValue = coefficient * selected[i]
 preferenceValue = matched preferences / total preferences * coefficient
+styleValue = matched requested styles / total requested styles * coefficient
 placeQualityValue = Bayesian review quality * selected[i]
 unknownOpeningCost = small coefficient * selected[i]
 ```
 
-Nếu không có preferences, preference value bằng 0; không gán neutral bonus.
+Nếu không có tag/style preference, component tương ứng bằng 0; không gán
+neutral bonus.
 Bayesian prior được tính trên candidate pool của planning problem: mean là trung
 bình rating có dữ liệu, prior weight là median review count nhưng không thấp hơn
 20. Adjusted rating dùng weighted mean; quality 0..1 còn nhân review reliability
@@ -334,7 +345,7 @@ Với edge một chiều `i -> j`, tạo `sameDay[i,j,d]` là AND của hai
 assigned variables. Cộng một lần nếu cùng ngày. Không cộng adjacency
 bonus; travel penalty đã khuyến khích route gần.
 
-### Diversity chỉ dùng tags
+### Diversity chỉ dùng tags phẳng
 
 Không tạo pairwise variable cho mọi candidate. Với canonical tag `t`:
 
@@ -342,16 +353,11 @@ Không tạo pairwise variable cho mọi candidate. Với canonical tag `t`:
 tagCount[t,d] = sum(assigned[i,d] * hasTag[i,t])
 ```
 
-Tạo threshold variables cho lần lặp thứ 2/3/4. Cấu hình tag group:
-
-```text
-strong: museum, shopping, nightlife, spa, sightseeing, hands_on
-medium: indoor, outdoor, walking, performance, photography
-light: culture, history, nature, local_experience
-```
-
-Strong repeat phạt nhiều hơn light repeat. Food tách count theo venue/dish/cuisine;
-lặp venue phạt mạnh nhất.
+Mỗi lần tag semantic lặp sau candidate đầu tiên tạo same-day cost. Tag kỹ thuật,
+generic `travel_place` và style không tham gia. Với mỗi route arc activity →
+activity, Jaccard overlap của hai tập tag tạo
+`consecutiveTagRepetitionCost`; hai stop giống nhau đặt liền nhau bị phạt mạnh
+hơn chỉ cùng ngày. Food giữ diversity count riêng.
 
 ### Travel, waiting và meals
 
@@ -419,5 +425,6 @@ number không thể audit.
 - User/URL count không giảm sau pass tương ứng; cost tính per-person.
 - Special-near không có selection bonus riêng.
 - Relationship một chiều không bị chấm hai lần.
-- Tags lặp tạo convex penalty; raw style không xuất trong model.
+- Tags lặp tạo same-day và consecutive penalty; style là component riêng và
+  bằng 0 khi user không yêu cầu.
 - Cùng input, seed và matrix cho output deterministic khi solver chứng minh optimum.

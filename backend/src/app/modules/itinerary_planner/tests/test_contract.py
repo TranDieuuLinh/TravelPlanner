@@ -19,6 +19,8 @@ def test_camel_case_input_round_trips_with_aliases() -> None:
     assert parsed.trip.budget.currency == "VND"
     assert parsed.food[0].supported_meals[0].value == "breakfast"
     assert parsed.food[0].venue_type.value == "restaurant"
+    assert parsed.trip.party is not None
+    assert parsed.trip.party.kids == 0
     assert dumped["trip"]["startDate"] == "2026-08-20"
     assert dumped["places"][0]["durationMinutes"] == 60
     assert "openingHours" in dumped["places"][0]
@@ -26,6 +28,29 @@ def test_camel_case_input_round_trips_with_aliases() -> None:
     assert dumped["places"][0]["offeredActivityIds"] == []
     assert dumped["places"][0]["timeSource"] == "unknown"
     assert dumped["food"][0]["venueType"] == "restaurant"
+    assert dumped["trip"]["preferences"]["tags"] == [
+        "Culture",
+        "local experience",
+    ]
+
+
+def test_accepts_legacy_preference_list_and_rejects_invalid_audience() -> None:
+    raw = payload(places=[candidate("legacy")])
+    raw["trip"].pop("party")
+    raw["trip"]["preferences"] = ["history"]
+
+    parsed = ItineraryPlannerInput.model_validate(raw)
+
+    assert parsed.trip.party is not None
+    assert parsed.trip.party.adults == parsed.trip.people
+    assert parsed.trip.preferences.tags == ["history"]
+
+    raw["places"][0]["audience"] = {
+        "adultOnly": True,
+        "kidSuitable": True,
+    }
+    with pytest.raises(ValidationError, match="adult-only"):
+        ItineraryPlannerInput.model_validate(raw)
 
 
 def test_food_venue_type_round_trips_and_rejects_unknown_values() -> None:

@@ -31,12 +31,13 @@ def test_relationship_is_counted_once_and_repeated_tags_are_penalized() -> None:
     result, _, _ = solve_payload(base_payload(places=[first, second]))
 
     assert result.objective_components["relationshipValue"] == 250
-    assert result.objective_components["activityDiversityCost"] > 0
+    assert result.objective_components["sameDayTagRepetitionCost"] > 0
     assert "specialNearBonus" not in result.objective_components
     assert result.passes[-1].objective_value == result.objective_value
     positive = {
         "specialExperienceValue",
         "preferenceValue",
+        "styleValue",
         "placeQualityValue",
         "popularityValue",
         "timeFitValue",
@@ -61,7 +62,7 @@ def test_vietnamese_knowledge_graph_tags_drive_diversity_penalty() -> None:
         "văn_hóa",
         "kiến_trúc",
     ]
-    assert result.objective_components["activityDiversityCost"] > 0
+    assert result.objective_components["sameDayTagRepetitionCost"] > 0
 
 
 def test_preference_selects_matching_candidate_when_only_one_can_fit() -> None:
@@ -88,7 +89,55 @@ def test_preference_selects_matching_candidate_when_only_one_can_fit() -> None:
     assert result.objective_components["preferenceValue"] == 600
 
 
-def test_nine_hour_rest_delays_next_day_after_late_activity() -> None:
+def test_style_selects_matching_candidate_only_when_user_requests_it() -> None:
+    preferred = candidate(
+        "slow_place",
+        styles=["slow_travel"],
+        opening_hours={"1": [{"startMinute": 600, "endMinute": 660}]},
+    )
+    alternative = candidate(
+        "fast_place",
+        styles=["adventure"],
+        opening_hours={"1": [{"startMinute": 600, "endMinute": 660}]},
+    )
+    raw = base_payload(places=[preferred, alternative])
+    raw["trip"]["preferences"] = {
+        "tags": [],
+        "avoidTags": [],
+        "styles": ["slow_travel"],
+    }
+    for meal in raw["food"]:
+        meal["tags"] = ["meal"]
+
+    result, _, _ = solve_payload(raw)
+
+    assert "slow_place" in {stop.place_id for stop in result.scheduled_stops}
+    assert result.objective_components["styleValue"] == 400
+
+
+def test_consecutive_places_with_overlapping_tags_are_penalized() -> None:
+    first = candidate(
+        "temple_a",
+        priority="user_input",
+        duration_minutes=30,
+        relationships=["temple_b"],
+        opening_hours={"1": [{"startMinute": 540, "endMinute": 570}]},
+    )
+    second = candidate(
+        "temple_b",
+        priority="user_input",
+        duration_minutes=30,
+        relationships=["temple_a"],
+        opening_hours={"1": [{"startMinute": 570, "endMinute": 600}]},
+    )
+    first["tags"] = second["tags"] = ["temple", "history", "indoor"]
+
+    result, _, _ = solve_payload(base_payload(places=[first, second]))
+
+    assert result.objective_components["consecutiveTagRepetitionCost"] > 0
+
+
+def test_seven_hour_rest_allows_flexible_next_day_start_after_late_activity() -> None:
     nightlife = candidate(
         "late_show",
         priority="user_input",
@@ -107,7 +156,7 @@ def test_nine_hour_rest_delays_next_day_after_late_activity() -> None:
         stop.start_minute for stop in result.scheduled_stops if stop.day == 2
     )
     assert late.end_minute == 1500
-    assert first_day_two + 1440 - late.end_minute >= 540
+    assert first_day_two + 1440 - late.end_minute >= 420
 
 
 def test_bayesian_quality_prefers_reliable_reviews_over_sparse_five_star() -> None:

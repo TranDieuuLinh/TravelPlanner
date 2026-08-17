@@ -19,6 +19,9 @@ Retrieval/system provisional vẫn không planner-eligible.
 | `GET /health` | Không có | `{ "status": "ok" }` |
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
 | `PATCH /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/personal-notes` | `expectedRevision`, `personalNotes` | `TripChat` với planner snapshot đã cập nhật |
+| `PATCH /v1/trip-chats/{chatId}/plan/accommodation` | `expectedRevision` và các trường nơi lưu trú cần sửa, gồm `personalNotes` | `TripChat` với accommodation và route reference đã cập nhật |
+| `DELETE /v1/trip-chats/{chatId}/plan/accommodation` | `expectedRevision` | `TripChat` đã bỏ accommodation, transfer leg và phần chi phí lưu trú |
+| `PUT /v1/trip-chats/{chatId}/plan/days/{day}/transport-legs/{legIndex}/selection` | `expectedRevision` và transport option đã chuẩn hóa | `TripChat` với `selectedTransport` đã lưu trên leg |
 | `POST /auth/login` | `LoginInput` | `LoginResponse` + cookies |
 | `POST /auth/register` | `RegisterInput` | `LoginResponse` + cookies |
 | `GET /me` | Session cookie | `AuthUser` |
@@ -223,13 +226,14 @@ tọa độ và `pricePerNight`.
 
 Budget boundary ưu tiên số tiền người dùng nhập. Explorer chuẩn hóa
 `group_total` thành `per_person`; PlaceChecker giữ nguyên amount này và đánh dấu
-`source=explicit`. Khi không có amount và destination là Hà Nội, shared daily
-budget profile tạo `dailyEstimate = accommodation + food + localTransport +
-activities`, sau đó tính activity/food/transport theo ngày nhưng accommodation
-theo `max(days - 1, 0)` đêm và gắn `source=estimated_daily_cost`. Profile dùng
-positive-price KG percentiles
-P25/P50/P80 quan sát ngày 2026-08-14, ba bữa/ngày, 2/3/4 activities và
-4/5/6 chặng 5 km tương ứng low/medium/high.
+`source=explicit`. Khi không có amount, PlaceChecker tạo profile động từ các
+candidate có giá đã query trong cây ADM. Low/medium/high lấy P25/P50/P80 riêng
+cho Accommodation, Restaurant và TravelPlace; profile dùng ba bữa/ngày,
+2/3/4 activities và 4/5/6 chặng Xanh SM 5 km. `dailyEstimate` bằng
+`accommodation + food + localTransport + activities`; tổng chuyến tính ba nhóm
+theo ngày nhưng accommodation theo `max(days - 1, 0)` đêm và gắn
+`source=estimated_daily_cost`. Nếu thiếu giá của một pool bắt buộc thì budget
+giữ `unspecified` thay vì suy đoán bằng dữ liệu vùng khác.
 
 `PlaceCheckerResult.foodRestaurantSelections` giữ mỗi Restaurant một lần sau
 dedup, cùng mọi TravelPlace anchor liên quan. Adapter tính khoảng cách tối đa
@@ -265,20 +269,35 @@ này. Waiting giữa hai stop liên tiếp bị giới hạn tối đa 150 phút
 `safeTravel` đã gồm routing buffer; khi pool/opening
 window không dựng được chuỗi liên tục, solver trả `INFEASIBLE` thay vì xuất
 ngày chỉ có ba bữa ăn.
-Optional candidate của chuyến từ ba ngày được giới hạn vào tối đa hai ngày gần
-geographic centers nhất trước khi tạo biến; user/URL không bị giới hạn và food
-liên kết đi theo TravelPlace. Pass utility có relative gap 5%, trong khi hai
-pass priority vẫn exact.
+Optional candidate của chuyến từ ba ngày được gán vào một đến tối đa hai ngày
+bằng dense-medoid assignment có activity reserve cân bằng; candidate cô lập
+không được chiếm một day center nếu vùng 20 km quanh nó thiếu reserve. User/URL
+không bị giới hạn và food liên kết đi theo TravelPlace. Pass utility có relative
+gap 5%, trong khi hai pass priority vẫn exact.
+Sau day-domain projection, Planner ưu tiên khôi phục phép ghép ba bữa với ba
+restaurant khác nhau từ pool gốc. Chỉ khi pool gốc không có unique matching,
+Planner tạo meal-occurrence alias nội bộ để cùng venue có thể phục vụ nhiều bữa,
+ánh xạ lại public `placeId`, tạo `itemId` theo meal và phát warning rõ ràng.
+Planner vẫn dừng sớm nếu một ngày thiếu activity reserve, thiếu hai activity
+separator, thiếu hẳn meal window hoặc candidate-day mất opening window. Sau khi
+dựng sparse arcs, gate thứ hai kiểm tra có route-connected component chứa tối
+thiểu hai activity và ba meal occurrence khả thi.
 
 `ItineraryPlannerOutput` gồm accommodation đã chọn, số đêm, ngày/stops/ordered route
 legs, cost và budget trên
 một người, cùng `costBreakdown` mỗi ngày tách accommodation, food,
-localTransport, activities và misc. Solver passes/objective metadata, priority `unscheduled`, optional
+localTransport, activities và misc. Mỗi ordered route leg có `costPerPerson`
+trên một người từ cùng fare estimator dùng cho `localTransport`.
+Solver passes/objective metadata, priority `unscheduled`, optional
 discard count, warnings, phase timings và `sourceMix` audit target/actual cho
 morning 70/30 và evening 60/40. Quota source là soft penalty có fallback, còn
 opening hours vẫn là hard constraint. `InvokeResponse.itinerary` vẫn là
 contract legacy phục vụ PlanEditor; output mới được trả riêng qua
 `plannerOutput` để biểu diễn overnight, geometry và solver metadata.
+Trip Chat cho phép user sửa/xóa accommodation và lưu `personalNotes` trên
+chính accommodation trong snapshot. Đổi `placeId` cập nhật các ordered route
+leg tham chiếu nơi lưu trú; xóa nơi lưu trú đồng thời bỏ transfer leg và phần
+chi phí accommodation khỏi tổng chi phí snapshot.
 Budget `explicit` vẫn là hard cap; `estimated_daily_cost` là soft target và có
 `budgetOverageCost`, nên plan khả thi có thể vượt estimate và phải phát warning.
 Root chỉ công bố `plannerOutput` thành công khi output chứa đúng toàn bộ số ngày
@@ -391,6 +410,10 @@ Mỗi `currentPlannerOutput.days[].stops[]` có `itemId` ổn định, source-ow
 chọn URL note trước; nếu không có thì dùng mô tả Google Maps/Knowledge Graph.
 Endpoint personal-notes chỉ cập nhật `personalNotes` với revision check, không
 được sửa source note.
+Transport selection endpoint cập nhật nguyên tử `selectedTransport` trên đúng
+leg và tăng revision. UI áp policy hậu xử lý: khoảng cách dưới 1,5 km chỉ hiện
+đi bộ; các option khác chỉ hiện khi chặng không thuộc ngưỡng này và provider
+data đạt điều kiện availability.
 
 ## Auto-attach Style rules
 

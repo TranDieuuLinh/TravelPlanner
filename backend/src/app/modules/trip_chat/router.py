@@ -8,11 +8,13 @@ from app.modules.auth.public import AuthUser, require_current_user
 from app.modules.trip_chat.contract import (
     CreateTripChatInput,
     SendTripChatMessageInput,
+    SelectTransportOptionInput,
     TripChat,
     TripChatBootstrap,
     TripChatMessageResponse,
     TripChatSummary,
     UpdatePersonalNotesInput,
+    UpdateAccommodationInput,
 )
 from app.modules.trip_chat.service import TripChatService
 from app.modules.conversation_memory.public import UserPreferenceMemory
@@ -35,6 +37,35 @@ def _not_found() -> None:
         status_code=404,
         detail={"code": "TRIP_CHAT_NOT_FOUND", "message": "Không tìm thấy trip chat."},
     )
+
+
+def _raise_plan_mutation_error(status: str) -> None:
+    if status == "chat_not_found":
+        _not_found()
+    if status == "revision_conflict":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "TRIP_CHAT_REVISION_CONFLICT",
+                "message": "Lịch trình đã thay đổi; vui lòng tải lại trước khi lưu.",
+            },
+        )
+    if status == "accommodation_not_found":
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "TRIP_CHAT_ACCOMMODATION_NOT_FOUND",
+                "message": "Không tìm thấy nơi lưu trú trong lịch trình.",
+            },
+        )
+    if status in {"day_not_found", "leg_not_found"}:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "TRIP_CHAT_TRANSPORT_LEG_NOT_FOUND",
+                "message": "Không tìm thấy chặng di chuyển trong lịch trình.",
+            },
+        )
 
 
 @router.get("", response_model=list[TripChatSummary])
@@ -213,6 +244,82 @@ async def update_personal_notes(
                 "message": "Không tìm thấy địa điểm trong lịch trình.",
             },
         )
+    if chat is None:
+        _not_found()
+    return chat
+
+
+@router.patch("/{chat_id}/plan/accommodation", response_model=TripChat)
+async def update_plan_accommodation(
+    chat_id: str,
+    payload: UpdateAccommodationInput,
+    user: AuthUser = Depends(require_current_user),
+    service: TripChatService = Depends(_service),
+):
+    changes = payload.model_dump(
+        by_alias=True,
+        exclude={"expected_revision"},
+        exclude_unset=True,
+    )
+    status, chat = await service.update_accommodation(
+        user.id,
+        chat_id,
+        expected_revision=payload.expected_revision,
+        changes=changes,
+    )
+    _raise_plan_mutation_error(status)
+    if chat is None:
+        _not_found()
+    return chat
+
+
+@router.delete("/{chat_id}/plan/accommodation", response_model=TripChat)
+async def delete_plan_accommodation(
+    chat_id: str,
+    expected_revision: int = Query(alias="expectedRevision", ge=0),
+    user: AuthUser = Depends(require_current_user),
+    service: TripChatService = Depends(_service),
+):
+    status, chat = await service.update_accommodation(
+        user.id,
+        chat_id,
+        expected_revision=expected_revision,
+        changes=None,
+        delete=True,
+    )
+    _raise_plan_mutation_error(status)
+    if chat is None:
+        _not_found()
+    return chat
+
+
+@router.put(
+    "/{chat_id}/plan/days/{day}/transport-legs/{leg_index}/selection",
+    response_model=TripChat,
+)
+async def select_plan_transport_option(
+    chat_id: str,
+    day: int,
+    leg_index: int,
+    payload: SelectTransportOptionInput,
+    user: AuthUser = Depends(require_current_user),
+    service: TripChatService = Depends(_service),
+):
+    selection = payload.model_dump(
+        mode="json",
+        by_alias=True,
+        exclude={"expected_revision"},
+        exclude_none=True,
+    )
+    status, chat = await service.select_transport_option(
+        user.id,
+        chat_id,
+        expected_revision=payload.expected_revision,
+        day=day,
+        leg_index=leg_index,
+        selection=selection,
+    )
+    _raise_plan_mutation_error(status)
     if chat is None:
         _not_found()
     return chat

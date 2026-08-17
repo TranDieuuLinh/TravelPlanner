@@ -25,6 +25,10 @@ from app.modules.itinerary_planner.preprocessing import (
     PlanningPreflightError,
     prepare_planning_problem,
 )
+from app.modules.itinerary_planner.preflight import (
+    ProjectedPoolPreflightError,
+    validate_routing_connectivity,
+)
 from app.modules.itinerary_planner.route_enrichment import (
     RouteEnrichmentResult,
     apply_route_corrections,
@@ -56,6 +60,11 @@ async def prepare_problem_node(state: ItineraryPlannerState) -> dict:
                 ]
             ),
         }
+    except ProjectedPoolPreflightError as exc:
+        return {
+            "error": str(exc),
+            "error_code": "projected_pool_preflight_failed",
+        }
     return {
         "prepared_problem": prepared,
         "warnings": list(prepared.warnings),
@@ -84,8 +93,14 @@ def create_build_travel_matrix_node(
                 neighbor_limit=neighbor_limit,
                 provider_namespace=provider_namespace,
             )
+            validate_routing_connectivity(state["prepared_problem"], routing_problem)
         except RoutingPhaseError as exc:
             return {"error": str(exc), "error_code": exc.code.value}
+        except ProjectedPoolPreflightError as exc:
+            return {
+                "error": str(exc),
+                "error_code": "routing_connectivity_preflight_failed",
+            }
         return {
             "routing_problem": routing_problem,
             "warnings": [*state.get("warnings", []), *routing_problem.warnings],

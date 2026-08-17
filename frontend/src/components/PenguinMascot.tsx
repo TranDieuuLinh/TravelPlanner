@@ -5,7 +5,6 @@ type PenguinMascotVariant =
   | "chatSpeaking"
   | "curious"
   | "hi"
-  | "intakePeek"
   | "logo"
   | "plan"
   | "search";
@@ -15,7 +14,6 @@ const mascotSources: Record<PenguinMascotVariant, string> = {
   chatSpeaking: "/images/penguin-travel-chat-speaking.png",
   curious: "/images/penguin-curious.png",
   hi: "/images/penguin-hi.png",
-  intakePeek: "/images/penguin-intake-peek.png",
   logo: "/images/penguin-logo.png",
   plan: "/images/penguin-plan.png",
   search: "/images/penguin-search.png",

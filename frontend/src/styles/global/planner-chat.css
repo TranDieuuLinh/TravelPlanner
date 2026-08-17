@@ -2238,24 +2238,6 @@
   white-space: nowrap;
 }
 
-.plannerIntakePenguin {
-  position: absolute;
-  z-index: 3;
-  top: 50%;
-  right: -24px;
-  width: 41px;
-  height: 50px;
-  margin-top: -25px;
-  pointer-events: none;
-}
-
-.plannerIntakePenguin .penguinMascot {
-  display: block;
-  width: 41px;
-  height: 50px;
-  object-fit: contain;
-}
-
 .guidedIntakeOverlay {
   position: fixed;
   z-index: 2500;
@@ -2608,13 +2590,6 @@
   .plannerEntryTopbar { padding: 8px 10px; }
   .plannerIntakeNav { border-radius: 999px; }
   .plannerIntakeNav button { min-width: auto; padding: 7px 10px; }
-  .plannerIntakePenguin {
-    right: -29px;
-    width: 36px;
-    height: 44px;
-    margin-top: -22px;
-  }
-  .plannerIntakePenguin .penguinMascot { width: 36px; height: 44px; }
   .guidedIntakeOverlay { inset: var(--mobile-shell-top, 62px) 0 var(--mobile-shell-bottom, 66px); padding: 12px; align-items: end; }
   .guidedIntakeDialog { width: 100%; min-height: 0; max-height: 88dvh; grid-template-columns: 1fr; grid-template-rows: 116px auto; overflow-y: auto; border-radius: 24px; }
   .guidedIntakeMascot img { width: 104px; height: 104px; }

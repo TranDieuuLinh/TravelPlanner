@@ -41,6 +41,8 @@ export type PlannerOutputLeg = {
   encodedPolyline?: string | null;
   provider: string;
   geometryAvailable: boolean;
+  costPerPerson?: number;
+  selectedTransport?: TransportOption | null;
 };
 
 export type ItineraryPlannerOutput = {
@@ -54,6 +56,7 @@ export type ItineraryPlannerOutput = {
     rating?: number | null;
     reviewCount?: number | null;
     pricePerNight: { cost: number; currency: string };
+    personalNotes?: string | null;
   } | null;
   accommodationNights?: number;
   days: Array<{
@@ -112,6 +115,7 @@ function plannerLegToTransportLeg(
   toItemId: string | null,
   fromPlace: string,
   toPlace: string,
+  currency: string,
 ): TransportLeg {
   const geometryCoordinates = decodeValhallaPolyline(leg.encodedPolyline);
   const car: TransportOption = {
@@ -121,10 +125,13 @@ function plannerLegToTransportLeg(
     geometryCoordinates,
     source: leg.provider,
     verified: leg.geometryAvailable && geometryCoordinates.length >= 2,
+    estimatedCostPerPerson: leg.costPerPerson ?? null,
+    currency,
   };
 
+  let defaultLeg: TransportLeg;
   if (leg.distanceMeters >= WALKING_DISPLAY_THRESHOLD_METERS) {
-    return {
+    defaultLeg = {
       ...car,
       fromItemId,
       toItemId,
@@ -132,22 +139,43 @@ function plannerLegToTransportLeg(
       toPlace,
       alternatives: [],
     };
+  } else {
+    defaultLeg = {
+      ...car,
+      fromItemId,
+      toItemId,
+      fromPlace,
+      toPlace,
+      mode: "walk",
+      estimatedDurationMinutes: Math.max(
+        1,
+        Math.ceil(leg.distanceMeters / WALKING_METERS_PER_MINUTE),
+      ),
+      source: "post_planner_walking_estimate",
+      verified: false,
+      estimatedCostPerPerson: 0,
+      currency,
+      alternatives: [car],
+    };
   }
 
+  const selected = leg.selectedTransport;
+  if (!selected) return defaultLeg;
+
+  const sameOption = (option: TransportOption) =>
+    option.mode === selected.mode
+    && option.source === selected.source
+    && option.distanceMeters === selected.distanceMeters
+    && option.estimatedDurationMinutes === selected.estimatedDurationMinutes;
+  const alternatives = [defaultLeg, ...(defaultLeg.alternatives ?? [])]
+    .filter((option) => !sameOption(option));
   return {
-    ...car,
+    ...selected,
     fromItemId,
     toItemId,
     fromPlace,
     toPlace,
-    mode: "walk",
-    estimatedDurationMinutes: Math.max(
-      1,
-      Math.ceil(leg.distanceMeters / WALKING_METERS_PER_MINUTE),
-    ),
-    source: "post_planner_walking_estimate",
-    verified: false,
-    alternatives: [car],
+    alternatives,
   };
 }
 
@@ -260,6 +288,8 @@ export function plannerOutputToTravelPlan(
         openingHours: plannerOpeningHoursToEntries(stop.openingHours, output.days),
         latitude: stop.coordinates.latitude,
         longitude: stop.coordinates.longitude,
+        durationMinutes: stop.durationMinutes,
+        costPerPerson: stop.costPerPerson,
       };
     });
     const transportLegs: TransportLeg[] = day.legs.map((leg) =>
@@ -269,9 +299,15 @@ export function plannerOutputToTravelPlan(
         itemIdByPlace.get(leg.toPlaceId) ?? null,
         nameByPlace.get(leg.fromPlaceId) ?? leg.fromPlaceId,
         nameByPlace.get(leg.toPlaceId) ?? leg.toPlaceId,
+        output.currency,
       )
     );
-    return { day: day.day, items, transportLegs };
+    return {
+      day: day.day,
+      items,
+      transportLegs,
+      costBreakdown: day.costBreakdown,
+    };
   });
 
   return {
@@ -292,6 +328,7 @@ export function plannerOutputToTravelPlan(
           pricePerNight: output.accommodation.pricePerNight.cost,
           currency: output.accommodation.pricePerNight.currency,
           nights: output.accommodationNights ?? 0,
+          personalNotes: output.accommodation.personalNotes ?? null,
         }
       : null,
     budget: {

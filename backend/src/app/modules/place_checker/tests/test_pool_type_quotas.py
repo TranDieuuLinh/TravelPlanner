@@ -117,7 +117,7 @@ def test_activity_reserve_covers_special_and_popular_candidates() -> None:
     assert len(selected_ids & {item.candidate_key for item in popular}) >= 4
 
 
-def test_activity_reserve_keeps_available_theme_and_style_groups() -> None:
+def test_activity_reserve_keeps_available_knowledge_tags() -> None:
     groups = [
         "culture",
         "nature",
@@ -134,12 +134,13 @@ def test_activity_reserve_keeps_available_theme_and_style_groups() -> None:
         candidate(
             f"theme-{group}",
             category="travel_place",
+            tags=[group],
             pool_category=group,
         )
         for group in groups
     ]
     styled = candidate("styled", category="travel_place").model_copy(
-        update={"tags": ["style:Thư giãn & Chăm sóc bản thân"]}
+        update={"tags": ["relaxing"]}
     )
     dominant = [
         candidate(f"dominant-{index}", category="travel_place")

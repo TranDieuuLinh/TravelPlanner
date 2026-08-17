@@ -33,7 +33,8 @@ TẦNG 2 — HARD CONSTRAINTS
 - mỗi candidate tối đa một lần
 - route bắt đầu/kết thúc hợp lệ
 - ngày thường kết thúc tối đa 23:00; nightlife/drinking có thể đến 03:00
-- tối thiểu 9 giờ nghỉ trước stop đầu của ngày tiếp theo
+- tối thiểu 7 giờ nghỉ trước stop đầu của ngày tiếp theo; không khóa thời lượng
+  nghỉ cố định
 
 TẦNG 3 — OBJECTIVE
 Cộng:

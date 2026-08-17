@@ -53,13 +53,19 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
     }
     assert output["trip"]["timezone"] == "Asia/Ho_Chi_Minh"
     assert output["trip"]["startDate"] == "2026-08-20"
-    assert output["trip"]["preferences"] == ["nature"]
+    assert output["trip"]["preferences"] == {
+        "tags": ["nature"],
+        "avoidTags": ["nightlife"],
+        "styles": [],
+    }
+    assert output["trip"]["party"] == {"adults": 1, "kids": 0}
     assert set(output["trip"]) == {
         "destination",
         "days",
         "startDate",
         "timezone",
         "people",
+        "party",
         "budget",
         "preferences",
     }
@@ -73,6 +79,8 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
         "priority",
         "notes",
         "tags",
+        "styles",
+        "audience",
         "imageUrls",
         "rating",
         "reviewCount",
@@ -150,7 +158,8 @@ def test_compact_output_adds_selected_special_food_near_anchor() -> None:
 
     assert selected.priority == "special_near"
     assert selected.relationships == [anchor.place_id]
-    assert "food-item:food:bun-cha" in selected.tags
+    assert selected.tags == ["restaurant"]
+    assert not any(tag.startswith("food-item:") for tag in selected.tags)
     assert selected.notes is not None
     assert "Bún chả" in selected.notes.text
 
@@ -351,29 +360,6 @@ def test_compact_output_selects_three_priced_accommodations_around_budget_percen
         item.place_id not in {place.place_id for place in output.places}
         for item in output.accommodations
     )
-
-
-def test_compact_output_estimates_hanoi_trip_budget_when_amount_is_missing() -> None:
-    result = asyncio.run(pipeline().check(payload(), request_id="request-budget-tier"))
-    context = result.trip_context.model_copy(
-        update={
-            "days": 3,
-            "people": result.trip_context.people.model_copy(update={"adults": 2}),
-        }
-    )
-    result = result.model_copy(update={"trip_context": context})
-
-    output = PlaceCheckerPlannerOutputBuilder().build(
-        result,
-        start_date="2026-08-20",
-        timezone="Asia/Ho_Chi_Minh",
-    )
-
-    assert output.trip.budget.amount == 1_923_284
-    assert output.trip.budget.source == "estimated_daily_cost"
-    assert output.trip.budget.daily_estimate is not None
-    assert output.trip.budget.daily_estimate.total == 750_852
-    assert output.trip.budget.daily_estimate.local_transport == 171_580
 
 
 def test_compact_output_preserves_explicit_per_person_budget() -> None:

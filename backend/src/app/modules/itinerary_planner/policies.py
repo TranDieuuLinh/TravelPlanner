@@ -5,7 +5,9 @@ from app.modules.itinerary_planner.contract import MealType
 ITINERARY_START_MINUTE = 8 * 60
 STANDARD_DAY_END_MINUTE = 23 * 60
 OVERNIGHT_END_MINUTE = 27 * 60
-MINIMUM_OVERNIGHT_REST_MINUTES = 9 * 60
+# Seven hours is the feasibility floor. The optimizer may leave a longer
+# overnight break (commonly 7-10 hours) when the surrounding schedule allows it.
+MINIMUM_OVERNIGHT_REST_MINUTES = 7 * 60
 ACCOMMODATION_RELOCATION_DISTANCE_METERS = 50_000
 IDEAL_INTER_STOP_WAIT_MINUTES = 15
 LIGHT_INTER_STOP_WAIT_MINUTES = 30

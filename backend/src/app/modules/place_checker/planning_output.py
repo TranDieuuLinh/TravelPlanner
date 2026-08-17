@@ -1,7 +1,6 @@
 from app.modules.place_checker.accommodation_planning_output import (
     select_accommodations,
 )
-from app.modules.place_checker.checked_output_contract import CheckedPlace
 from app.modules.place_checker.enums import SourceTier
 from app.modules.place_checker.food_planning_output import (
     SelectedFoodPlanningProjector,
@@ -14,30 +13,24 @@ from app.modules.place_checker.output_contract import (
     PlannerOutputFood,
     PlannerOutputPlace,
     PlannerOutputTrip,
-    PlannerPrice,
-    PlannerTimeWindow,
+    PlannerParty,
+    PlannerPreferences,
 )
-from app.modules.place_checker.planner_budget import build_planner_budget
+from app.modules.place_checker.planner_semantics import split_trip_preferences
+from app.modules.place_checker.planner_budget import (
+    AdmCandidateBudgetEstimator,
+    build_planner_budget,
+)
 from app.modules.place_checker.planner_exclusions import build_excluded_candidate
 from app.modules.place_checker.planner_eligibility import is_planner_eligible
-from app.modules.place_checker.planner_notes import select_planner_source_note
-from app.modules.place_checker.planner_candidate_metadata import (
-    preferred_time_values,
-    source_metadata,
-    time_source,
-)
+from app.modules.place_checker.planning_place_projection import PlannerPlaceProjector
 from app.modules.place_checker.planning_projection import PlaceCheckerPlanningProjector
-from app.modules.place_checker.planning_time_windows import (
-    meals_for_hours,
-    parse_planner_windows,
-)
+from app.modules.place_checker.planning_time_windows import meals_for_hours
 from app.modules.place_checker.pool_policy import (
     food_pool_target_for_days,
     planner_pool_shortfall,
 )
-from app.modules.place_checker.price_policy import has_usable_cost, typical_cost
-from app.shared.tools.daily_budget import DestinationDailyBudgetEstimator
-from app.shared.contracts.source_note import SourceNote
+from app.modules.place_checker.price_policy import has_usable_cost
 
 __all__ = ["PlaceCheckerPlannerOutputBuilder", "PlaceCheckerPlanningProjector"]
 
@@ -47,11 +40,9 @@ class PlaceCheckerPlannerOutputBuilder:
 
     def __init__(
         self,
-        daily_budget_estimator: DestinationDailyBudgetEstimator | None = None,
+        budget_estimator: AdmCandidateBudgetEstimator | None = None,
     ) -> None:
-        self.daily_budget_estimator = (
-            daily_budget_estimator or DestinationDailyBudgetEstimator()
-        )
+        self.budget_estimator = budget_estimator or AdmCandidateBudgetEstimator()
 
     def build(
         self,
@@ -61,6 +52,11 @@ class PlaceCheckerPlannerOutputBuilder:
         timezone: str,
     ) -> PlaceCheckerPlannerOutput:
         places, food, excluded_candidates = self._candidate_pools(result)
+        accommodations = select_accommodations(result)
+        preference_tags, avoid_tags, styles = split_trip_preferences(
+            result.trip_context.preferences,
+            result.trip_context.avoids,
+        )
         return PlaceCheckerPlannerOutput(
             trip=PlannerOutputTrip(
                 destination=(
@@ -71,13 +67,29 @@ class PlaceCheckerPlannerOutputBuilder:
                 start_date=start_date,
                 timezone=timezone,
                 people=result.trip_context.people.total,
-                budget=build_planner_budget(result, self.daily_budget_estimator),
-                preferences=result.trip_context.preferences,
+                party=PlannerParty(
+                    adults=result.trip_context.people.adults,
+                    kids=(
+                        result.trip_context.people.children
+                        + result.trip_context.people.infants
+                    ),
+                ),
+                budget=build_planner_budget(
+                    result,
+                    self.budget_estimator,
+                    places=places,
+                    food=food,
+                ),
+                preferences=PlannerPreferences(
+                    tags=preference_tags,
+                    avoid_tags=avoid_tags,
+                    styles=styles,
+                ),
             ),
             places=places,
             food=food,
             food_coverage=result.food_meal_coverage,
-            accommodations=select_accommodations(result),
+            accommodations=accommodations,
             excluded_candidates=excluded_candidates,
         )
 
@@ -135,9 +147,15 @@ class PlaceCheckerPlannerOutputBuilder:
             if checked.category in {"restaurant", "drink_dessert"}:
                 meals = meals_for_hours(checked.opening.hours)
                 if meals:
-                    food.append(self._food(checked, result.trip_context.days, meals))
+                    food.append(
+                        PlannerPlaceProjector.food(
+                            checked, result.trip_context.days, meals
+                        )
+                    )
             else:
-                places.append(self._place(checked, result.trip_context.days))
+                places.append(
+                    PlannerPlaceProjector.place(checked, result.trip_context.days)
+                )
         seen = {place.place_id for place in [*places, *food] if place.place_id}
         for item in result.resolved_items:
             if (
@@ -160,9 +178,15 @@ class PlaceCheckerPlannerOutputBuilder:
                 meals = meals_for_hours(item.selected.opening_hours)
                 if not meals:
                     continue
-                food.append(self._item_food(item, result.trip_context.days, meals))
+                food.append(
+                    PlannerPlaceProjector.item_food(
+                        item, result.trip_context.days, meals
+                    )
+                )
             else:
-                places.append(self._item_place(item, result.trip_context.days))
+                places.append(
+                    PlannerPlaceProjector.item_place(item, result.trip_context.days)
+                )
             seen.add(item.selected.place_id)
         for selection in result.food_restaurant_selections:
             existing_index = next(
@@ -182,15 +206,6 @@ class PlaceCheckerPlannerOutputBuilder:
                                 [
                                     *current.relationships,
                                     *selection.related_anchor_place_ids,
-                                ]
-                            )
-                        ),
-                        "tags": list(
-                            dict.fromkeys(
-                                [
-                                    *current.tags,
-                                    f"food-item:{selection.food_item_id}",
-                                    f"food:{selection.food_item_name}",
                                 ]
                             )
                         ),
@@ -240,154 +255,3 @@ class PlaceCheckerPlannerOutputBuilder:
             else candidate
             for candidate in candidates
         ]
-
-    @classmethod
-    def _place(cls, checked: CheckedPlace, days: int) -> PlannerOutputPlace:
-        source_kind, offered_activity_ids = source_metadata(
-            checked.relationship_evidence
-        )
-        return PlannerOutputPlace(
-            place_id=checked.place_id,
-            name=checked.canonical_name or "",
-            coordinates=checked.coordinates,
-            address=checked.address,
-            priority=cls._priority(checked),
-            notes=select_planner_source_note(checked),
-            tags=checked.tags,
-            image_urls=checked.image_urls,
-            rating=checked.rating,
-            review_count=checked.review_count,
-            duration_minutes=checked.duration.typical_minutes,
-            opening_hours=cls._opening_hours(checked.opening.hours, days),
-            preferred_time_windows=cls._preferred_windows(checked),
-            source_kind=source_kind,
-            offered_activity_ids=offered_activity_ids,
-            time_source=time_source(
-                direct_values=checked.time_preferences,
-                opening_hours=checked.opening.hours,
-                relationships=checked.relationship_evidence,
-            ),
-            price=cls._price(checked),
-            relationships=cls._related_place_ids(checked),
-        )
-
-    @classmethod
-    def _food(
-        cls, checked: CheckedPlace, days: int, supported_meals: list[str]
-    ) -> PlannerOutputFood:
-        values = cls._place(checked, days).model_dump()
-        return PlannerOutputFood(
-            **values,
-            venue_type=checked.category,
-            supported_meals=supported_meals,
-        )
-
-    @classmethod
-    def _item_place(cls, item, days: int) -> PlannerOutputPlace:
-        option = item.selected
-        relations = option.relationships
-        source_kind, offered_activity_ids = source_metadata(relations)
-        preferred_values, _ = preferred_time_values(
-            direct_values=[], relationships=relations
-        )
-        return PlannerOutputPlace(
-            place_id=option.place_id,
-            name=option.name,
-            coordinates=option.coordinates,
-            address=option.address,
-            priority="user_input",
-            notes=SourceNote(text=item.evidence, source_type="backend"),
-            tags=option.tags,
-            image_urls=option.image_urls,
-            rating=option.rating,
-            review_count=option.review_count,
-            duration_minutes=option.typical_duration_minutes,
-            opening_hours=cls._opening_hours(option.opening_hours, days),
-            preferred_time_windows=parse_planner_windows(preferred_values),
-            source_kind=source_kind,
-            offered_activity_ids=offered_activity_ids,
-            time_source=time_source(
-                direct_values=[],
-                opening_hours=option.opening_hours,
-                relationships=relations,
-            ),
-            price=PlannerPrice(
-                cost=typical_cost(
-                    minimum=option.minimum_cost,
-                    typical=option.typical_cost,
-                    maximum=option.maximum_cost,
-                    tier=option.cost_tier,
-                ),
-                currency=option.cost_currency or "VND",
-            ),
-            relationships=list(
-                dict.fromkeys(
-                    relation.related_entity_id
-                    for relation in relations
-                    if relation.direction == "place_to_place"
-                    and relation.related_entity_id
-                )
-            ),
-        )
-
-    @classmethod
-    def _item_food(
-        cls, item, days: int, supported_meals: list[str]
-    ) -> PlannerOutputFood:
-        values = cls._item_place(item, days).model_dump()
-        return PlannerOutputFood(
-            **values,
-            venue_type=item.selected.category,
-            supported_meals=supported_meals,
-        )
-
-    @staticmethod
-    def _related_place_ids(checked: CheckedPlace) -> list[str]:
-        return list(
-            dict.fromkeys(
-                relation.related_entity_id
-                for relation in checked.relationship_evidence
-                if relation.direction == "place_to_place" and relation.related_entity_id
-            )
-        )
-
-    @staticmethod
-    def _priority(checked: CheckedPlace) -> str:
-        if checked.source_tier == SourceTier.direct_user or checked.mandatory:
-            return "user_input"
-        if checked.source_tier == SourceTier.url:
-            return "url"
-        types = {
-            relation.relationship_type for relation in checked.relationship_evidence
-        }
-        if "Special_Near" in types:
-            return "special_near"
-        return "special_experience"
-
-    @classmethod
-    def _preferred_windows(cls, checked: CheckedPlace) -> list[PlannerTimeWindow]:
-        values, _ = preferred_time_values(
-            direct_values=checked.time_preferences,
-            relationships=checked.relationship_evidence,
-        )
-        return parse_planner_windows(values)
-
-    @classmethod
-    def _opening_hours(
-        cls, values: list[str] | None, days: int
-    ) -> dict[str, list[PlannerTimeWindow]] | None:
-        windows = parse_planner_windows(values or [])
-        return {str(day): windows for day in range(1, days + 1)} if windows else None
-
-    @staticmethod
-    def _price(checked: CheckedPlace) -> PlannerPrice:
-        cost = typical_cost(
-            minimum=checked.cost.minimum,
-            typical=checked.cost.typical,
-            maximum=checked.cost.maximum,
-            tier=checked.cost.tier,
-        )
-        return PlannerPrice(
-            cost=cost,
-            currency=checked.cost.currency or "VND",
-        )

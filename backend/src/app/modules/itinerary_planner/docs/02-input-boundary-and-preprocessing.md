@@ -19,11 +19,19 @@ Root orchestration sau này chỉ được map public contract. Mọi fallback,
 validation và business rule của Planner phải nằm trong module này.
 
 Với chuyến từ ba ngày và đủ TravelPlace làm geographic anchors, preprocessing
-dùng deterministic farthest-first centers rồi giới hạn optional candidate vào
-tối đa hai ngày có center gần nhất. `user_input` và URL giữ nguyên mọi ngày
-khả thi. Restaurant có relationship đi theo day-domain của TravelPlace liên
-kết; sau projection, meal coverage được kiểm tra và tự mở lại food-day gần nhất
-nếu thiếu breakfast/lunch/dinner.
+dùng deterministic dense medoids và assignment có capacity. Mỗi optional
+candidate thuộc một đến tối đa hai ngày khả thi; mỗi ngày giữ activity reserve
+bằng giá trị lớn hơn giữa hai separator và giá trị nhỏ hơn giữa 14 với
+`floor(valid_places / days)`. Candidate cô lập không được làm center nếu vùng
+20 km quanh nó thiếu reserve. `user_input` và URL giữ nguyên mọi ngày khả thi.
+Restaurant có relationship đi theo day-domain của TravelPlace liên kết; sau
+projection, meal coverage dùng phép ghép một-một và tự mở lại các food-day gần
+nhất cho đến khi breakfast/lunch/dinner được phục vụ bởi ba `placeId` khác
+nhau. Một restaurant hỗ trợ cả ba meal type không được tính là ba candidate
+riêng. Chỉ khi pool gốc không tồn tại phép ghép ba `placeId` khác nhau,
+preprocessing mới tạo meal-occurrence alias nội bộ cho từng slot còn thiếu.
+Output ánh xạ alias về `placeId` thật, dùng `itemId` riêng theo meal và phát
+warning `Repeated restaurant fallback`.
 
 ## Public input contract
 
@@ -37,8 +45,13 @@ JSON bên ngoài dùng camelCase; Pydantic/Python dùng snake_case với alias.
     "startDate": "2026-08-20",
     "timezone": "Asia/Ho_Chi_Minh",
     "people": 2,
+    "party": {"adults": 1, "kids": 1},
     "budget": {"amount": 5000000, "currency": "VND"},
-    "preferences": ["culture", "coffee", "local_experience"]
+    "preferences": {
+      "tags": ["culture", "coffee", "local_experience"],
+      "avoidTags": ["nightlife"],
+      "styles": ["slow_travel"]
+    }
   },
   "places": [],
   "food": [],
@@ -63,12 +76,14 @@ tag tự do.
 Mỗi place bắt buộc có:
 
 ```text
-placeId, name, coordinates, priority, tags, durationMinutes,
+placeId, name, coordinates, priority, tags, styles, audience, durationMinutes,
 openingHours, preferredTimeWindows, price, relationships
 ```
 
-Mỗi food dùng cùng shape và thêm `supportedMeals`. Planner chỉ dùng
-`tags`; không có field `styles` và không tính Style riêng.
+Mỗi food dùng cùng shape và thêm `supportedMeals`. `tags` là place-type label
+phẳng; `styles` tách riêng và chỉ có điểm khi trip yêu cầu style. `audience`
+gồm `adultOnly` và `kidSuitable`; unknown không bị tự động coi là không an toàn.
+Input legacy `preferences: string[]` vẫn được đọc như `preferences.tags`.
 
 Candidate có thể mang source-owned
 `notes={text,sourceType,sourceUrl}`. Planner truyền object này nguyên vẹn sang
@@ -249,6 +264,19 @@ Graph trả thêm `errorCode=missing_meal_coverage` và `preflightFailure.missin
 gồm `day` cùng `meal`. Đây là public diagnostic để orchestration có thể yêu cầu
 PlaceChecker mở rộng đúng phần thiếu; runtime hiện không tự lặp lại toàn bộ
 PlaceChecker nếu chưa có expansion provider riêng.
+
+Sau geographic day-domain projection, Planner chạy thêm gate chỉ-đọc. Activity
+assignment đã tự cân bằng reserve; gate xác nhận mỗi ngày đạt giá trị nhỏ hơn
+giữa 14 và `floor(valid_places / days)`, tối thiểu hai activity để tách ba bữa,
+một phép ghép breakfast/lunch/dinner với ba restaurant `placeId` khác nhau, và
+opening window còn tồn tại cho mọi candidate-day. Vi phạm trả
+`errorCode=projected_pool_preflight_failed` trước khi dựng routing matrix.
+
+Sau khi sparse routing graph được dựng, gate connectivity yêu cầu ít nhất một
+weakly-connected component theo ngày chứa hai activity và một distinct
+three-meal matching; food-to-food arc không được tính. Vi phạm trả
+`errorCode=routing_connectivity_preflight_failed` trước optimizer. Hai gate chỉ
+chẩn đoán và dừng sớm, không đổi clustering, day-domain hay meal repair.
 
 ## Tags, preference và relationship index
 

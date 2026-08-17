@@ -9,6 +9,8 @@ def candidate(
     duration_minutes: int = 60,
     relationships: list[str] | None = None,
     image_urls: list[str] | None = None,
+    styles: list[str] | None = None,
+    audience: dict[str, bool | None] | None = None,
 ) -> dict[str, Any]:
     return {
         "placeId": place_id,
@@ -18,6 +20,8 @@ def candidate(
         "priority": priority,
         "notes": None,
         "tags": [" Local Experience ", "local-experience", "CULTURE"],
+        "styles": styles or [],
+        "audience": audience or {"adultOnly": None, "kidSuitable": None},
         "imageUrls": image_urls or [],
         "rating": 4.7,
         "reviewCount": 100,
@@ -63,8 +67,13 @@ def payload(
             "startDate": "2026-08-20",
             "timezone": "Asia/Ho_Chi_Minh",
             "people": 2,
+            "party": {"adults": 2, "kids": 0},
             "budget": {"amount": 5_000_000, "currency": "VND"},
-            "preferences": ["Culture", "local experience"],
+            "preferences": {
+                "tags": ["Culture", "local experience"],
+                "avoidTags": [],
+                "styles": [],
+            },
         },
         "places": places or [],
         "food": foods if foods is not None else [food()],

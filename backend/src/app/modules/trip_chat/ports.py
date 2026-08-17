@@ -1,7 +1,9 @@
 from typing import Any, Protocol
 
 from app.modules.trip_chat.contract import (
+    AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
+    TransportSelectionStatus,
     TripChat,
     TripChatSummary,
 )
@@ -36,6 +38,27 @@ class TripChatRepository(Protocol):
         item_id: str,
         personal_notes: str | None,
     ) -> PlanNoteUpdateStatus: ...
+
+    async def update_accommodation(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        changes: dict[str, Any] | None,
+        delete: bool = False,
+    ) -> AccommodationUpdateStatus: ...
+
+    async def select_transport_option(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        day: int,
+        leg_index: int,
+        selection: dict[str, Any],
+    ) -> TransportSelectionStatus: ...
 
     async def delete_chat(self, user_id: int, chat_id: str) -> bool: ...
 

@@ -12,7 +12,9 @@ from app.modules.conversation_memory.public import (
     WorkingMemoryState,
 )
 from app.modules.trip_chat.contract import (
+    AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
+    TransportSelectionStatus,
     TripChat,
     TripChatBootstrap,
 )
@@ -79,6 +81,58 @@ class TripChatService:
             day=day,
             item_id=item_id,
             personal_notes=normalized,
+        )
+        chat = (
+            await self.repository.get_chat(user_id, chat_id)
+            if status == "updated"
+            else None
+        )
+        return status, chat
+
+    async def update_accommodation(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        changes: dict[str, Any] | None,
+        delete: bool = False,
+    ) -> tuple[AccommodationUpdateStatus, TripChat | None]:
+        normalized = dict(changes or {})
+        for key in ("name", "address", "personalNotes"):
+            if isinstance(normalized.get(key), str):
+                normalized[key] = normalized[key].strip() or None
+        status = await self.repository.update_accommodation(
+            user_id,
+            chat_id,
+            expected_revision=expected_revision,
+            changes=normalized,
+            delete=delete,
+        )
+        chat = (
+            await self.repository.get_chat(user_id, chat_id)
+            if status == "updated"
+            else None
+        )
+        return status, chat
+
+    async def select_transport_option(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        day: int,
+        leg_index: int,
+        selection: dict[str, Any],
+    ) -> tuple[TransportSelectionStatus, TripChat | None]:
+        status = await self.repository.select_transport_option(
+            user_id,
+            chat_id,
+            expected_revision=expected_revision,
+            day=day,
+            leg_index=leg_index,
+            selection=selection,
         )
         chat = (
             await self.repository.get_chat(user_id, chat_id)

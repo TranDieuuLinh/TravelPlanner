@@ -105,7 +105,14 @@ FinalItineraryPlanner trong checkpoint này.
 
 ```json
 {
-  "trip": {},
+  "trip": {
+    "party": {"adults": 2, "kids": 1},
+    "preferences": {
+      "tags": ["history"],
+      "avoidTags": ["nightlife"],
+      "styles": ["slow_travel"]
+    }
+  },
   "places": [],
   "food": [],
   "excludedCandidates": []
@@ -114,7 +121,8 @@ FinalItineraryPlanner trong checkpoint này.
 
 Contract gọn dùng camelCase và gồm `trip.timezone`, `startDate`, tách
 `places`/`food`, biểu diễn giờ bằng `startMinute`/`endMinute`, thêm
-`supportedMeals` cho food. `priority` phân biệt `user_input`,
+`supportedMeals` cho food. Candidate giữ tag phẳng, tách `styles`, và gửi
+`audience={adultOnly,kidSuitable}`. `priority` phân biệt `user_input`,
 `special_experience`, `special_near`; `relationships` chứa canonical place ID
 liên quan thay vì tên tag.
 
@@ -204,7 +212,9 @@ Planner quyết định theo cả ngân sách lẫn route.
 
 - Có `targetAmount`: giữ số tiền đã được Explorer chuẩn hóa theo người; direct
   PlaceChecker payload còn `group_total` được chia đúng một lần.
-- Không có `targetAmount`, destination Hà Nội: dùng shared daily budget profile,
-  nhân daily total với số ngày và phát `source=estimated_daily_cost`,
-  `dailyEstimate` cùng `profileVersion`.
-- Destination chưa có profile: giữ `amount=null`, không mượn giá Hà Nội.
+- Không có `targetAmount`: lấy P25/P50/P80 theo budget level từ pool
+  Accommodation, Restaurant và TravelPlace đã query trong cây ADM; dùng ba
+  bữa/ngày, 2/3/4 activity và 4/5/6 chặng Xanh SM 5 km rồi phát
+  `source=estimated_daily_cost`, `dailyEstimate` cùng `profileVersion`.
+- Thiếu giá của một pool bắt buộc: giữ `amount=null` và `source=unspecified`,
+  không mượn profile của ADM khác.

@@ -5,11 +5,18 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.modules.trip_chat.contract import (
+    AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
+    TransportSelectionStatus,
     TripChat,
     TripChatMessage,
 )
-from app.modules.trip_chat.plan_snapshot import update_stop_personal_notes
+from app.modules.trip_chat.plan_snapshot import (
+    delete_accommodation,
+    select_transport_option,
+    update_accommodation,
+    update_stop_personal_notes,
+)
 
 
 class InMemoryTripChatRepository:
@@ -120,6 +127,70 @@ class InMemoryTripChatRepository:
             personal_notes=personal_notes,
         ):
             return "item_not_found"
+        self._chats[(user_id, chat_id)] = chat.model_copy(
+            update={
+                "revision": chat.revision + 1,
+                "current_planner_output": output,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
+        return "updated"
+
+    async def update_accommodation(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        changes: dict | None,
+        delete: bool = False,
+    ) -> AccommodationUpdateStatus:
+        chat = await self.get_chat(user_id, chat_id)
+        if chat is None:
+            return "chat_not_found"
+        if chat.revision != expected_revision:
+            return "revision_conflict"
+        output = deepcopy(chat.current_planner_output)
+        changed = (
+            delete_accommodation(output)
+            if delete
+            else update_accommodation(output, changes=changes or {})
+        )
+        if not changed:
+            return "accommodation_not_found"
+        self._chats[(user_id, chat_id)] = chat.model_copy(
+            update={
+                "revision": chat.revision + 1,
+                "current_planner_output": output,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
+        return "updated"
+
+    async def select_transport_option(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        day: int,
+        leg_index: int,
+        selection: dict,
+    ) -> TransportSelectionStatus:
+        chat = await self.get_chat(user_id, chat_id)
+        if chat is None:
+            return "chat_not_found"
+        if chat.revision != expected_revision:
+            return "revision_conflict"
+        output = deepcopy(chat.current_planner_output)
+        status = select_transport_option(
+            output,
+            day=day,
+            leg_index=leg_index,
+            selection=selection,
+        )
+        if status != "updated":
+            return status
         self._chats[(user_id, chat_id)] = chat.model_copy(
             update={
                 "revision": chat.revision + 1,

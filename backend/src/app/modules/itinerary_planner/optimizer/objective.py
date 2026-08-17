@@ -5,17 +5,16 @@ from dataclasses import dataclass
 from ortools.sat.python import cp_model
 
 from app.modules.itinerary_planner.contract import CandidateSourceKind
-from app.modules.itinerary_planner.optimizer.config import (
-    LIGHT_TAGS,
-    MEDIUM_TAGS,
-    STRONG_TAGS,
-    ObjectiveWeights,
-)
+from app.modules.itinerary_planner.optimizer.config import ObjectiveWeights
 from app.modules.itinerary_planner.optimizer.review_value import (
     build_popularity_value,
     build_quality_value,
 )
 from app.modules.itinerary_planner.optimizer.source_mix import build_source_mix_cost
+from app.modules.itinerary_planner.optimizer.tag_diversity import (
+    build_consecutive_tag_repetition_cost,
+    build_same_day_tag_repetition_cost,
+)
 from app.modules.itinerary_planner.optimizer.variables import PlannerVariables
 from app.modules.itinerary_planner.policies import (
     ACCOMMODATION_RELOCATION_DISTANCE_METERS,
@@ -45,14 +44,18 @@ def build_objective(
     positive = {
         "specialExperienceValue": _special_value(problem, variables, weights),
         "preferenceValue": _preference_value(problem, variables, weights),
+        "styleValue": _style_value(problem, variables, weights),
         "placeQualityValue": build_quality_value(problem, variables, weights),
         "popularityValue": build_popularity_value(problem, variables, weights),
         "timeFitValue": _time_fit(model, problem, variables, weights),
         "relationshipValue": _relationship_value(model, problem, variables, weights),
     }
     negative = {
-        "activityDiversityCost": _activity_diversity(
-            model, problem, variables, weights
+        "sameDayTagRepetitionCost": build_same_day_tag_repetition_cost(
+            model, problem, variables, weights.diversity_medium
+        ),
+        "consecutiveTagRepetitionCost": build_consecutive_tag_repetition_cost(
+            problem, variables, weights.consecutive_diversity_max
         ),
         "foodDiversityCost": _food_diversity(model, problem, variables, weights),
         "travelTimeCost": _travel_cost(routing, variables, weights),
@@ -94,7 +97,7 @@ def _special_value(problem, variables, weights):
 
 
 def _preference_value(problem, variables, weights):
-    preferences = set(problem.trip.preferences)
+    preferences = set(problem.trip.preferences.tags)
     if not preferences:
         return 0
     terms = []
@@ -104,6 +107,17 @@ def _preference_value(problem, variables, weights):
             variables.selected[candidate_id] * round(ratio * weights.preference_max)
         )
     return sum(terms)
+
+
+def _style_value(problem, variables, weights):
+    styles = set(problem.trip.preferences.styles)
+    if not styles:
+        return 0
+    return sum(
+        variables.selected[candidate_id]
+        * round(len(styles & set(candidate.styles)) / len(styles) * weights.style_max)
+        for candidate_id, candidate in problem.candidate_by_id.items()
+    )
 
 
 def _time_fit(model, problem, variables, weights):
@@ -161,29 +175,6 @@ def _relationship_value(model, problem, variables, weights):
                 model.Add(related >= origin + destination - 1)
                 same_day.append(related)
     return sum(same_day) * weights.relationship
-
-
-def _activity_diversity(model, problem, variables, weights):
-    candidates = [candidate for candidate in problem.valid_places]
-    groups = (
-        (STRONG_TAGS, weights.diversity_strong),
-        (MEDIUM_TAGS, weights.diversity_medium),
-        (LIGHT_TAGS, weights.diversity_light),
-    )
-    costs = []
-    for tags, coefficient in groups:
-        for tag in tags:
-            for day in range(1, problem.trip.days + 1):
-                literals = [
-                    variables.assigned[(candidate.place_id, day)]
-                    for candidate in candidates
-                    if tag in candidate.tags
-                    and (candidate.place_id, day) in variables.assigned
-                ]
-                costs.extend(
-                    _convex_repeat(model, literals, coefficient, f"act:{tag}:{day}")
-                )
-    return sum(costs)
 
 
 def _food_diversity(model, problem, variables, weights):

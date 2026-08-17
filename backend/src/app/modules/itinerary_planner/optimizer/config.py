@@ -16,9 +16,10 @@ class SolverConfig:
 
 @dataclass(frozen=True, slots=True)
 class ObjectiveWeights:
-    policy_version: str = "itinerary-utility-v4-special-popularity"
+    policy_version: str = "itinerary-utility-v5-tags-styles"
     special_experience: int = 1_200
     preference_max: int = 600
+    style_max: int = 400
     quality_max: int = 300
     popularity_max: int = 250
     time_fit: int = 200
@@ -26,6 +27,7 @@ class ObjectiveWeights:
     diversity_strong: int = 180
     diversity_medium: int = 90
     diversity_light: int = 30
+    consecutive_diversity_max: int = 300
     food_diversity: int = 100
     travel_minute: int = 3
     accommodation_long_transfer: int = 5_000

@@ -1,6 +1,6 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-16.
+Cập nhật lần cuối: 2026-08-17.
 
 ## Phạm vi và trạng thái
 
@@ -183,9 +183,17 @@ continues to serve the bounded recent-chat lookup.
 
 Stop trong snapshot giữ hai vùng note độc lập: `notes` là object chỉ đọc gồm
 `text`, `sourceType`, `sourceUrl`; `personalNotes` là chuỗi do user sở hữu.
+Accommodation trong cùng JSONB snapshot cũng có thể giữ `personalNotes`. Các
+thao tác sửa/xóa accommodation dùng optimistic revision trên hàng
+`agent_trip_chats`; không cần thêm cột hoặc migration.
 URL note được chọn trước Google Maps/Knowledge Graph note. Thay đổi ghi chú cá
 nhân cập nhật nguyên tử chính JSONB này với optimistic revision; không có bảng
 note riêng và không lưu raw payload từ URL hoặc Google Maps.
+Lựa chọn phương tiện của user được lưu dưới
+`current_planner_output.days[].legs[].selectedTransport` trong cùng JSONB.
+Mutation khóa row, kiểm tra revision rồi tăng revision; không cần thêm table
+hoặc migration và chỉ lưu option routing đã chuẩn hóa, không lưu raw provider
+payload.
 
 ### `agent_trip_chat_messages`
 

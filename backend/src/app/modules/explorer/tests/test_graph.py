@@ -93,6 +93,12 @@ def test_general_preferences_do_not_become_input_items() -> None:
     assert output.short_preferences == ["culture", "local_food", "walking"]
 
 
+def test_explicit_trip_styles_use_canonical_preference_values() -> None:
+    output = invoke({"rawPrompt": "Du lịch Hà Nội 3 ngày kiểu chill và đi chậm"})
+
+    assert output.short_preferences == ["slow_travel", "relaxed"]
+
+
 def test_named_venue_keeps_only_proper_name_and_links_prompt_item() -> None:
     output = invoke({
         "rawPrompt": (

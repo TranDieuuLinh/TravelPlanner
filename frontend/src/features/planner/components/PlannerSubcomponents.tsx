@@ -1,15 +1,17 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import type {
   TransportLeg,
   TravelPlan,
   UnscheduledPlace,
 } from "@/features/planner/api/plans";
-import type { PlaceReviewsModalPlace } from "@/features/planner/components/PlaceReviewsModal";
 import {
   MapPinIcon,
   TransportModeIcon,
 } from "@/features/planner/components/PlannerIcons";
+import { TransportFareInline } from "@/features/planner/components/TransportFareInline";
 import { formatSourceNoteForDisplay } from "@/features/planner/lib/plan-note";
 import {
   formatDistance,
@@ -18,7 +20,6 @@ import {
 } from "@/features/planner/lib/planner-transport";
 import {
   categoryFromPlaceType,
-  formatCompactCount,
   itineraryDisplayName,
   itinerarySourceLabel,
   SourceProviderIcon,
@@ -41,14 +42,30 @@ export function AccommodationItineraryCard({
   mapKey,
   onFocusMap,
   onZoomMap,
-  onOpenReviews,
+  canManage,
+  menuOpen,
+  noteCount,
+  noteOpen,
+  notePanel,
+  onDelete,
+  onEdit,
+  onToggleMenu,
+  onToggleNote,
   selected,
 }: {
   accommodation: Accommodation;
   mapKey: string;
   onFocusMap: (mapKey: string) => void;
   onZoomMap: (mapKey: string) => void;
-  onOpenReviews?: (place: PlaceReviewsModalPlace) => void;
+  canManage: boolean;
+  menuOpen: boolean;
+  noteCount: number;
+  noteOpen: boolean;
+  notePanel?: ReactNode;
+  onDelete: () => void;
+  onEdit: () => void;
+  onToggleMenu: () => void;
+  onToggleNote: () => void;
   selected: boolean;
 }) {
   return (
@@ -61,6 +78,7 @@ export function AccommodationItineraryCard({
         data-map-place-key={mapKey}
         onClick={() => onFocusMap(mapKey)}
         onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
           onFocusMap(mapKey);
@@ -98,19 +116,7 @@ export function AccommodationItineraryCard({
                   <strong>{accommodation.name}</strong>
                 </button>
               </div>
-              {accommodation.rating != null ? (
-                <ItineraryReviewRating
-                  onOpen={onOpenReviews}
-                  place={{
-                    placeId: accommodation.placeId,
-                    name: accommodation.name,
-                    address: accommodation.address,
-                    rating: accommodation.rating,
-                    reviewCount: accommodation.reviewCount,
-                  }}
-                />
-              ) : null}
-              <div className="itineraryScheduleBadge">
+              <div className="itineraryPriceBadge">
                 <span>
                   {formatAccommodationPrice(
                     accommodation.pricePerNight,
@@ -129,16 +135,101 @@ export function AccommodationItineraryCard({
               title="Nơi lưu trú"
             >
               <svg viewBox="0 0 24 24">
-                <path d="M4 19V8M20 19v-7a3 3 0 0 0-3-3H9a3 3 0 0 0-3 3v7M4 15h16M8 9V6h5a3 3 0 0 1 3 3" />
+                <path d="M5 21V4h14v17M3 21h18M9 21v-4h6v4" />
+                <path d="M9 7v5M15 7v5M9 9.5h6" />
               </svg>
             </span>
+            {canManage ? (
+              <div className="itineraryPlaceQuickActionMenu">
+                <button
+                  aria-expanded={menuOpen}
+                  aria-haspopup="menu"
+                  aria-label={`Mở thao tác cho ${accommodation.name}`}
+                  className="itineraryQuickActionMenuButton"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleMenu();
+                  }}
+                  title="Thao tác"
+                  type="button"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24">
+                    <circle cx="5" cy="12" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="19" cy="12" r="1.5" />
+                  </svg>
+                </button>
+                {menuOpen ? (
+                  <div className="itineraryPlaceQuickActionPopup" role="menu">
+                    <button
+                      aria-label={`Sửa ${accommodation.name}`}
+                      className="itineraryActionButton"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onEdit();
+                      }}
+                      role="menuitem"
+                      title="Sửa nơi lưu trú"
+                      type="button"
+                    >
+                      <svg viewBox="0 0 24 24">
+                        <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z" />
+                      </svg>
+                    </button>
+                    <button
+                      aria-label={`Xóa ${accommodation.name}`}
+                      className="itineraryActionButton danger"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDelete();
+                      }}
+                      role="menuitem"
+                      title="Xóa nơi lưu trú"
+                      type="button"
+                    >
+                      <svg viewBox="0 0 24 24">
+                        <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
-          <div className="itineraryAccommodationDetails">
-            <span>{accommodation.address ?? "Chưa có địa chỉ"}</span>
-            <small>{accommodation.nights} đêm</small>
-          </div>
+          {(canManage || noteCount > 0) ? (
+            <button
+              aria-expanded={noteOpen}
+              aria-label={
+                noteOpen
+                  ? `Đóng ghi chú cho ${accommodation.name}`
+                  : noteCount
+                    ? `Mở ghi chú cho ${accommodation.name}`
+                    : `Thêm ghi chú cho ${accommodation.name}`
+              }
+              className="itineraryActionButton itineraryNoteActionButton"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleNote();
+              }}
+              type="button"
+            >
+              <svg
+                aria-hidden="true"
+                className="itineraryNoteActionIcon"
+                viewBox="0 0 24 24"
+              >
+                <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" />
+                <path d="M14 3v6h6M8 13h8M8 17h5" />
+              </svg>
+              <span className="itineraryNoteActionLabel">Ghi chú</span>
+              {noteCount ? (
+                <span className="activityNotesButtonCount">{noteCount}</span>
+              ) : null}
+            </button>
+          ) : null}
         </div>
       </div>
+      {notePanel}
     </article>
   );
 }
@@ -171,6 +262,7 @@ export function AccommodationRouteStrip({
           <span className="itineraryRouteCopy">
             <small>
               {formatDuration(leg.estimatedDurationMinutes)} · {formatDistance(leg.distanceMeters)}
+              <TransportFareInline option={leg} />
             </small>
           </span>
         </div>
@@ -198,58 +290,11 @@ export function AccommodationRouteStrip({
   );
 }
 
-export function ItineraryReviewRating({
-  onOpen,
-  place,
-}: {
-  onOpen?: (place: PlaceReviewsModalPlace) => void;
-  place: PlaceReviewsModalPlace;
-}) {
-  const content = (
-    <>
-      <span aria-hidden="true">★</span>
-      <strong>{place.rating?.toFixed(1)}</strong>
-      {place.reviewCount != null && place.reviewCount > 0 ? (
-        <small>
-          {formatCompactCount(place.reviewCount)} lượt đánh giá
-        </small>
-      ) : null}
-    </>
-  );
-
-  if (place.placeId && onOpen) {
-    return (
-      <button
-        aria-label={`Đọc đánh giá của ${place.name}`}
-        className="itineraryPlaceRating"
-        onClick={(event) => {
-          event.stopPropagation();
-          onOpen(place);
-        }}
-        title="Đọc đánh giá"
-        type="button"
-      >
-        {content}
-      </button>
-    );
-  }
-
-  return (
-    <div
-      aria-label={`Đánh giá ${place.rating ?? 0} trên 5`}
-      className="itineraryPlaceRating"
-    >
-      {content}
-    </div>
-  );
-}
-
 export function UnscheduledPlacesSection({
   candidateResolutionProgress = {},
   disabled = false,
   onConfirmCandidate,
   onDismissPlace,
-  onOpenReviews,
   places,
 }: {
   candidateResolutionProgress?: Record<
@@ -259,7 +304,6 @@ export function UnscheduledPlacesSection({
   disabled?: boolean;
   onConfirmCandidate?: (place: UnscheduledPlace, matchRank: number) => void;
   onDismissPlace?: (place: UnscheduledPlace) => void;
-  onOpenReviews?: (place: PlaceReviewsModalPlace) => void;
   places: UnscheduledPlace[];
 }) {
   const candidateQueueActive =
@@ -328,17 +372,6 @@ export function UnscheduledPlacesSection({
                           <div className="itineraryPlaceTitle">
                             <strong>{displayName}</strong>
                           </div>
-                          {place.rating != null ? (
-                            <ItineraryReviewRating
-                              onOpen={onOpenReviews}
-                              place={{
-                                placeId: place.placeId ?? "",
-                                name: displayName,
-                                rating: place.rating,
-                                reviewCount: place.reviewCount,
-                              }}
-                            />
-                          ) : null}
                         </div>
                       </header>
                         <div className="itineraryPlaceQuickActions">

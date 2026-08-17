@@ -86,6 +86,15 @@ def project_problem_day(
         warnings=(),
         accommodation_nights=0,
         accommodation_cost_per_person_by_id=MappingProxyType({}),
+        canonical_place_id_by_candidate_id=MappingProxyType(
+            {
+                candidate_id: canonical_id
+                for candidate_id, canonical_id in (
+                    problem.canonical_place_id_by_candidate_id.items()
+                )
+                if candidate_id in candidates
+            }
+        ),
     )
 
 

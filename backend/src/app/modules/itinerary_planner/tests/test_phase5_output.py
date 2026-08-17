@@ -90,6 +90,9 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
         stop.cost_per_person for stop in output.days[0].stops if stop.kind == "place"
     )
     assert breakdown.local_transport > 0
+    assert sum(leg.cost_per_person for leg in output.days[0].legs) == (
+        breakdown.local_transport
+    )
     assert breakdown.accommodation == 0
     assert breakdown.misc == 0
     assert output.unscheduled == []

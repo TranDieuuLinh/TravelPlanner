@@ -211,6 +211,17 @@ class PlannerTimeWindow(ContractModel):
     end_minute: int = Field(ge=0, le=1440)
 
 
+class PlannerAudience(ContractModel):
+    adult_only: bool | None = None
+    kid_suitable: bool | None = None
+
+    @model_validator(mode="after")
+    def values_are_consistent(self) -> "PlannerAudience":
+        if self.adult_only is True and self.kid_suitable is True:
+            raise ValueError("adult-only candidate cannot be kid-suitable")
+        return self
+
+
 class PlannerOutputPlace(ContractModel):
     place_id: str
     name: str
@@ -219,6 +230,8 @@ class PlannerOutputPlace(ContractModel):
     priority: Literal["user_input", "url", "special_experience", "special_near"]
     notes: SourceNote | None = None
     tags: list[str] = Field(default_factory=list)
+    styles: list[str] = Field(default_factory=list)
+    audience: PlannerAudience = Field(default_factory=PlannerAudience)
     image_urls: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
@@ -259,14 +272,26 @@ class PlannerExcludedCandidate(ContractModel):
     message: str
 
 
+class PlannerParty(ContractModel):
+    adults: int = Field(ge=1, le=100)
+    kids: int = Field(ge=0, le=100)
+
+
+class PlannerPreferences(ContractModel):
+    tags: list[str] = Field(default_factory=list)
+    avoid_tags: list[str] = Field(default_factory=list)
+    styles: list[str] = Field(default_factory=list)
+
+
 class PlannerOutputTrip(ContractModel):
     destination: str
     days: int = Field(ge=1)
     start_date: str
     timezone: str
     people: int = Field(ge=1)
+    party: PlannerParty
     budget: PlannerBudget
-    preferences: list[str] = Field(default_factory=list)
+    preferences: PlannerPreferences = Field(default_factory=PlannerPreferences)
 
 
 class PlaceCheckerPlannerOutput(ContractModel):

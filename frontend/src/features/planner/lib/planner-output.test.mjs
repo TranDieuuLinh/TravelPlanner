@@ -37,6 +37,7 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
       address: "Hoàn Kiếm, Hà Nội",
       rating: 4.5,
       reviewCount: 320,
+      personalNotes: "Nhận phòng sau 14h",
       pricePerNight: { cost: 800_000, currency: "VND" },
     },
     accommodationNights: 1,
@@ -91,6 +92,7 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
           encodedPolyline: encodePolyline([[21.035, 105.852], [21.0285, 105.8542]]),
           provider: "valhalla",
           geometryAvailable: true,
+          costPerPerson: 35_000,
         },
         {
           fromPlaceId: "place-ho-guom",
@@ -100,6 +102,16 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
           encodedPolyline: encodePolyline([[21.0285, 105.8542], [21.034, 105.848]]),
           provider: "valhalla",
           geometryAvailable: true,
+          costPerPerson: 30_000,
+          selectedTransport: {
+            mode: "public_transit",
+            distanceMeters: 1200,
+            estimatedDurationMinutes: 18,
+            geometryCoordinates: [[21.0285, 105.8542], [21.034, 105.848]],
+            source: "opentripplanner_transit",
+            verified: true,
+            details: { lines: ["31"] },
+          },
         },
         {
           fromPlaceId: "restaurant-pho",
@@ -109,11 +121,21 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
           encodedPolyline: encodePolyline([[21.034, 105.848], [21.035, 105.852]]),
           provider: "valhalla",
           geometryAvailable: true,
+          costPerPerson: 25_000,
         },
       ],
       activityMinutes: 120,
       travelMinutes: 15,
       costPerPerson: 60_000,
+      costBreakdown: {
+        accommodation: 800_000,
+        food: 60_000,
+        localTransport: 90_000,
+        activities: 0,
+        misc: 0,
+        total: 950_000,
+        currency: "VND",
+      },
     }],
     totalCostPerPerson: 60_000,
     currency: "VND",
@@ -141,6 +163,9 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
   ]);
   assert.equal(plan.days[0].items[0].rating, 4.7);
   assert.equal(plan.days[0].items[0].reviewCount, 1234);
+  assert.equal(plan.days[0].items[0].durationMinutes, 60);
+  assert.equal(plan.days[0].items[1].costPerPerson, 60_000);
+  assert.equal(plan.days[0].costBreakdown.localTransport, 90_000);
   assert.equal(plan.days[0].items[0].itemId, "planner:1:place-ho-guom");
   assert.equal(plan.days[0].items[0].notes.sourceType, "url");
   assert.equal(plan.days[0].items[0].personalNotes, "Nhớ mang ô");
@@ -156,6 +181,11 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
   assert.equal(plan.days[0].transportLegs[0].verified, false);
   assert.equal(plan.days[0].transportLegs[0].alternatives[0].mode, "car");
   assert.equal(plan.days[0].transportLegs[0].alternatives[0].verified, true);
+  assert.equal(plan.days[0].transportLegs[0].estimatedCostPerPerson, 0);
+  assert.equal(plan.days[0].transportLegs[0].alternatives[0].estimatedCostPerPerson, 35_000);
+  assert.equal(plan.days[0].transportLegs[0].alternatives[0].currency, "VND");
+  assert.equal(plan.days[0].transportLegs[1].mode, "public_transit");
+  assert.deepEqual(plan.days[0].transportLegs[1].details.lines, ["31"]);
   assert.deepEqual(plan.days[0].transportLegs[0].geometryCoordinates[0], [21.035, 105.852]);
   assert.deepEqual(plan.accommodation, {
     placeId: "hotel-old-quarter",
@@ -168,6 +198,7 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
     pricePerNight: 800_000,
     currency: "VND",
     nights: 1,
+    personalNotes: "Nhận phòng sau 14h",
   });
   assert.equal(plan.unscheduledPlaces[0].reasonCode, "not_selected_by_optimizer");
 });

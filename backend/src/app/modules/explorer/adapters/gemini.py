@@ -43,6 +43,8 @@ normalization-confidence, normalization-reason, or clarification fields.
 Only concrete raw-prompt food, drink, and activity requests that can be resolved may
 enter input_items. General tastes, themes, and styles such as liking culture, cuisine,
 walking, or nightlife belong in short_preferences, never input_items. Link a concrete
+Normalize explicit trip styles in short_preferences to slow_travel, relaxed, romantic,
+adventure, local_life, luxury, night_owl, or cultural_immersion when applicable.
 request to a named venue with related_place_name. Source-derived requests belong in
 url_notes.
 Never infer trip days or people from source evidence. A price for one ticket, meal, or

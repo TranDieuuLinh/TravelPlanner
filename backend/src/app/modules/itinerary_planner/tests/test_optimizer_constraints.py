@@ -222,6 +222,7 @@ def test_route_is_one_chain_without_candidate_subtour() -> None:
 def test_candidate_prices_are_per_person_and_not_multiplied_by_people() -> None:
     raw = base_payload()
     raw["trip"]["people"] = 3
+    raw["trip"]["party"] = {"adults": 3, "kids": 0}
     shared_coordinates = {"latitude": 21.02, "longitude": 105.84}
     for item in [*raw["places"], *raw["food"]]:
         item["coordinates"] = shared_coordinates

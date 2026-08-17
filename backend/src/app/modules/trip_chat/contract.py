@@ -22,8 +22,43 @@ class UpdatePersonalNotesInput(TripChatModel):
     personal_notes: str | None = Field(default=None, max_length=4000)
 
 
+class UpdateAccommodationInput(TripChatModel):
+    expected_revision: int = Field(ge=0)
+    place_id: str | None = Field(default=None, max_length=500)
+    name: str | None = Field(default=None, min_length=1, max_length=500)
+    address: str | None = Field(default=None, max_length=1000)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    personal_notes: str | None = Field(default=None, max_length=4000)
+
+
+class SelectTransportOptionInput(TripChatModel):
+    expected_revision: int = Field(ge=0)
+    mode: str = Field(min_length=1, max_length=64)
+    source: str = Field(min_length=1, max_length=160)
+    distance_meters: int = Field(ge=0)
+    estimated_duration_minutes: int = Field(ge=0)
+    geometry_coordinates: list[tuple[float, float]] = Field(
+        default_factory=list,
+        max_length=10_000,
+    )
+    verified: bool = False
+    estimated_cost_per_person: int | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    fetched_at: str | None = Field(default=None, max_length=64)
+    details: dict[str, Any] | None = None
+
+
 PlanNoteUpdateStatus = Literal[
     "updated", "chat_not_found", "revision_conflict", "item_not_found"
+]
+
+AccommodationUpdateStatus = Literal[
+    "updated", "chat_not_found", "revision_conflict", "accommodation_not_found"
+]
+
+TransportSelectionStatus = Literal[
+    "updated", "chat_not_found", "revision_conflict", "day_not_found", "leg_not_found"
 ]
 
 

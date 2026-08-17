@@ -148,14 +148,31 @@ class PlannerPrice(PlannerContractModel):
         return normalized
 
 
+class PlannerParty(PlannerContractModel):
+    adults: int = Field(ge=1, le=100)
+    kids: int = Field(ge=0, le=100)
+
+
+class PlannerPreferences(PlannerContractModel):
+    tags: list[str] = Field(default_factory=list, max_length=100)
+    avoid_tags: list[str] = Field(default_factory=list, max_length=100)
+    styles: list[str] = Field(default_factory=list, max_length=100)
+
+
 class PlannerTrip(PlannerContractModel):
     destination: str = Field(min_length=1, max_length=200)
     days: int = Field(ge=1, le=30)
     start_date: date
     timezone: str = Field(min_length=1, max_length=100)
     people: int = Field(ge=1, le=100)
+    party: PlannerParty | None = None
     budget: PlannerBudget
-    preferences: list[str] = Field(default_factory=list, max_length=100)
+    preferences: PlannerPreferences = Field(default_factory=PlannerPreferences)
+
+    @field_validator("preferences", mode="before")
+    @classmethod
+    def accept_legacy_preferences(cls, value):
+        return {"tags": value} if isinstance(value, list) else value
 
     @field_validator("timezone")
     @classmethod
@@ -166,8 +183,27 @@ class PlannerTrip(PlannerContractModel):
             raise ValueError("timezone must be a valid IANA timezone") from exc
         return value
 
+    @model_validator(mode="after")
+    def party_matches_people(self) -> PlannerTrip:
+        if self.party is None:
+            self.party = PlannerParty(adults=self.people, kids=0)
+        elif self.party.adults + self.party.kids != self.people:
+            raise ValueError("people must equal party.adults + party.kids")
+        return self
+
 
 OpeningHours = dict[str, list[TimeInterval] | None] | None
+
+
+class PlannerAudience(PlannerContractModel):
+    adult_only: bool | None = None
+    kid_suitable: bool | None = None
+
+    @model_validator(mode="after")
+    def values_are_consistent(self) -> PlannerAudience:
+        if self.adult_only is True and self.kid_suitable is True:
+            raise ValueError("adult-only candidate cannot be kid-suitable")
+        return self
 
 
 class PlannerCandidate(PlannerContractModel):
@@ -178,6 +214,8 @@ class PlannerCandidate(PlannerContractModel):
     priority: CandidatePriority
     notes: SourceNote | None = None
     tags: list[str] = Field(default_factory=list, max_length=100)
+    styles: list[str] = Field(default_factory=list, max_length=100)
+    audience: PlannerAudience = Field(default_factory=PlannerAudience)
     image_urls: list[str] = Field(default_factory=list, max_length=20)
     rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)

@@ -46,6 +46,42 @@ def test_graph_prepares_new_planner_input() -> None:
     assert result["output"].phase_timings_ms["total"] >= 0
 
 
+def test_graph_repeats_restaurant_only_after_distinct_matching_is_exhausted() -> None:
+    graph = build_itinerary_planner_graph(
+        GeneratedMatrixProvider(), FixedCostEstimator()
+    )
+    planner_input = ItineraryPlannerInput.model_validate(
+        payload(
+            places=[
+                candidate("morning_activity", duration_minutes=60),
+                candidate("afternoon_activity", duration_minutes=60),
+            ],
+            foods=[food("only_restaurant")],
+        )
+    )
+
+    result = asyncio.run(graph.ainvoke({"input": planner_input}))
+
+    assert result.get("error") is None
+    meal_stops = [stop for stop in result["output"].days[0].stops if stop.meal_type]
+    assert {stop.meal_type.value for stop in meal_stops} == {
+        "breakfast",
+        "lunch",
+        "dinner",
+    }
+    assert {stop.place_id for stop in meal_stops} == {"only_restaurant"}
+    assert len({stop.item_id for stop in meal_stops}) == 3
+    assert all(
+        "meal_repeat" not in value
+        for leg in result["output"].days[0].legs
+        for value in (leg.from_place_id, leg.to_place_id)
+    )
+    assert any(
+        "Repeated restaurant fallback" in warning
+        for warning in result["output"].warnings
+    )
+
+
 def test_graph_does_not_inherit_parent_checkpointer() -> None:
     graph = build_itinerary_planner_graph()
 

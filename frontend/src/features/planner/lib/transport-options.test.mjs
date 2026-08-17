@@ -71,11 +71,12 @@ const car = {
   distanceMeters: 1400
 };
 
-test("recommends walking first for a leg under 1.5 km", () => {
+test("shows only walking for a leg under 1.5 km", () => {
   assert.deepEqual(
     visibleTransportOptions([car, walking, route], 1499),
-    [walking, car, route]
+    [walking]
   );
+  assert.deepEqual(visibleTransportOptions([car, route], 1499), []);
 });
 
 test("starts with car and omits walking at or above 1.5 km", () => {

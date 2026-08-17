@@ -80,12 +80,14 @@ export function visibleTransportOptions<T extends TransportOptionAvailability>(
   const walking = showWalking
     ? available.find((option) => isWalkingMode(option.mode))
     : undefined;
+  if (showWalking) return walking ? [walking] : [];
+
   const car = available.find((option) => isCarMode(option.mode));
   const publicTransit = available.filter((option) =>
     isPublicTransitMode(option.mode)
   );
 
-  return [walking, car, ...publicTransit].filter(
+  return [car, ...publicTransit].filter(
     (option, index, result): option is T =>
       option != null
       && result.findIndex((candidate) => candidate?.mode === option.mode) === index

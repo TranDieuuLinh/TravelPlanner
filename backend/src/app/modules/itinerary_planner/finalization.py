@@ -63,10 +63,15 @@ def finalize_itinerary(
     stops_by_day: dict[int, list[ItineraryStop]] = defaultdict(list)
     for stop in optimization.scheduled_stops:
         candidate = problem.candidate_by_id[stop.place_id]
+        canonical_place_id = problem.canonical_place_id_by_candidate_id.get(
+            stop.place_id, stop.place_id
+        )
+        repeated_meal = stop.place_id in problem.canonical_place_id_by_candidate_id
+        item_suffix = f":{stop.meal_type.value}" if repeated_meal else ""
         stops_by_day[stop.day].append(
             ItineraryStop(
-                item_id=f"planner:{stop.day}:{stop.place_id}",
-                place_id=stop.place_id,
+                item_id=f"planner:{stop.day}:{canonical_place_id}{item_suffix}",
+                place_id=canonical_place_id,
                 name=candidate.name,
                 kind="food" if stop.place_id in food_ids else "place",
                 priority=candidate.priority,
@@ -94,13 +99,23 @@ def finalize_itinerary(
         raw_legs_by_day[leg.day].append(leg)
         legs_by_day[leg.day].append(
             ItineraryRouteLeg(
-                from_place_id=leg.origin_id,
-                to_place_id=leg.destination_id,
+                from_place_id=problem.canonical_place_id_by_candidate_id.get(
+                    leg.origin_id, leg.origin_id
+                ),
+                to_place_id=problem.canonical_place_id_by_candidate_id.get(
+                    leg.destination_id, leg.destination_id
+                ),
                 duration_minutes=leg.duration_minutes,
                 distance_meters=leg.distance_meters,
                 encoded_polyline=leg.encoded_polyline,
                 provider=leg.provider,
                 geometry_available=leg.geometry_available,
+                cost_per_person=_transport_cost(
+                    routing,
+                    leg.origin_id,
+                    leg.destination_id,
+                    optimization.scheduled_stops,
+                ),
             )
         )
     accommodation_transport_by_day: dict[int, int] = defaultdict(int)
@@ -117,7 +132,7 @@ def finalize_itinerary(
             else (transfer.candidate_id, transfer.accommodation_id)
         )
         travel = routing.travel_by_candidate_pair[pair]
-        accommodation_transport_by_day[transfer.day] += travel.transport_cost_per_person
+        accommodation_leg_cost = travel.transport_cost_per_person
         if transfer.direction == "end":
             origin = next(
                 stop
@@ -125,9 +140,8 @@ def finalize_itinerary(
                 if stop.place_id == transfer.candidate_id and stop.day == transfer.day
             )
             if origin.end_minute >= LATE_NIGHT_START_MINUTE:
-                accommodation_transport_by_day[transfer.day] += (
-                    travel.late_night_surcharge_per_person
-                )
+                accommodation_leg_cost += travel.late_night_surcharge_per_person
+        accommodation_transport_by_day[transfer.day] += accommodation_leg_cost
         enriched_leg = enriched_accommodation_legs.get((*pair, transfer.day))
         duration_minutes = (
             enriched_leg.duration_minutes if enriched_leg else travel.safe_minutes
@@ -137,8 +151,12 @@ def finalize_itinerary(
         )
         accommodation_minutes_by_day[transfer.day] += duration_minutes
         accommodation_leg = ItineraryRouteLeg(
-            from_place_id=pair[0],
-            to_place_id=pair[1],
+            from_place_id=problem.canonical_place_id_by_candidate_id.get(
+                pair[0], pair[0]
+            ),
+            to_place_id=problem.canonical_place_id_by_candidate_id.get(
+                pair[1], pair[1]
+            ),
             duration_minutes=duration_minutes,
             distance_meters=distance_meters,
             encoded_polyline=(enriched_leg.encoded_polyline if enriched_leg else None),
@@ -146,6 +164,7 @@ def finalize_itinerary(
                 enriched_leg.provider if enriched_leg else routing.matrix.provider
             ),
             geometry_available=bool(enriched_leg and enriched_leg.geometry_available),
+            cost_per_person=accommodation_leg_cost,
         )
         if not accommodation_leg.geometry_available:
             warnings.append(
@@ -181,7 +200,12 @@ def finalize_itinerary(
         )
         transport_cost = (
             sum(
-                _transport_cost(routing, leg.origin_id, leg.destination_id, day_stops)
+                _transport_cost(
+                    routing,
+                    leg.origin_id,
+                    leg.destination_id,
+                    optimization.scheduled_stops,
+                )
                 for leg in raw_legs_by_day[day]
             )
             + accommodation_transport_by_day[day]

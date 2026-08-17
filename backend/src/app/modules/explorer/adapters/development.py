@@ -283,6 +283,12 @@ class RuleBasedExplorerDraftGenerator:
             ("di dao", "walking"),
             ("ca phe", "coffee"),
             ("dia phuong", "local_experience"),
+            ("slow travel", "slow_travel"),
+            ("di cham", "slow_travel"),
+            ("chill", "relaxed"),
+            ("lang man", "romantic"),
+            ("phieu luu", "adventure"),
+            ("sang trong", "luxury"),
         ):
             if marker in normalized:
                 values.append(value)

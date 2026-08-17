@@ -217,7 +217,12 @@ def _candidate_score(
     }[candidate.priority]
     normalized_tags = set(candidate.tags)
     preference = (
-        len(normalized_tags & set(problem.trip.preferences)) * PREFERENCE_MATCH_SCORE
+        len(normalized_tags & set(problem.trip.preferences.tags))
+        * PREFERENCE_MATCH_SCORE
+    )
+    style = (
+        len(set(candidate.styles) & set(problem.trip.preferences.styles))
+        * PREFERENCE_MATCH_SCORE
     )
     special = (
         SPECIAL_EXPERIENCE_SCORE
@@ -228,7 +233,15 @@ def _candidate_score(
     quality = round(quality_by_id[candidate.place_id] * quality_max)
     popular = round(popularity[candidate.place_id] * POPULARITY_SCORE_MAX)
     relationship = len(candidate.relationships) * RELATIONSHIP_SCORE
-    return priority + special + preference + popular + quality + relationship
+    return (
+        priority
+        + special
+        + preference
+        + style
+        + popular
+        + quality
+        + relationship
+    )
 
 
 def _improve_activity_order(

@@ -5,6 +5,8 @@ export type TransportOption = {
   geometryCoordinates: [number, number][];
   source: string;
   verified: boolean;
+  estimatedCostPerPerson?: number | null;
+  currency?: string | null;
   fetchedAt?: string | null;
   details?: {
     transitModes?: string[];

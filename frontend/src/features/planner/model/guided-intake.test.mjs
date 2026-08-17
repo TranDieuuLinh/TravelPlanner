@@ -3,7 +3,6 @@ import test from "node:test";
 import {
   budgetFromAnswer,
   buildGuidedIntakeRequest,
-  travelerAnswer,
 } from "./guided-intake.ts";
 
 const currentBudget = {
@@ -31,22 +30,16 @@ test("builds a request in the supported guided-intake order", () => {
     buildGuidedIntakeRequest({
       budget: "5 triệu",
       destination: "Đà Nẵng",
-      travelers: "2 người lớn",
     }),
     [
       "Giúp mình lên kế hoạch chuyến đi.",
       "- Điểm đến: Đà Nẵng",
-      "- Nhóm đi: 2 người lớn",
       "- Ngân sách: 5 triệu",
     ].join("\n")
   );
 });
 
-test("omits skipped answers and formats traveler counts", () => {
-  assert.equal(
-    travelerAnswer({ adults: 2, children: 1, infants: 0, pets: 1 }),
-    "2 người lớn, 1 trẻ em, 1 thú cưng"
-  );
+test("omits skipped answers", () => {
   assert.equal(
     buildGuidedIntakeRequest({ destination: "Bỏ qua" }),
     "Giúp mình tạo một chuyến đi mới từ các nguồn đã nhập."

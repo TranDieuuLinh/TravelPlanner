@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import re
-from collections.abc import Mapping
-from dataclasses import dataclass, field
 from math import ceil
 from types import MappingProxyType
 
@@ -10,18 +7,36 @@ from app.modules.itinerary_planner.contract import (
     CandidatePriority,
     ItineraryPlannerInput,
     MealType,
-    PlannerAccommodation,
     PlannerCandidate,
     PlannerFoodCandidate,
     PlannerTrip,
 )
-from app.modules.itinerary_planner.day_domains import project_optional_day_domains
+from app.modules.itinerary_planner.candidate_semantics import (
+    eligibility_failure,
+    normalize_candidate,
+    normalize_tags,
+    normalize_trip,
+)
+from app.modules.itinerary_planner.day_domains import (
+    MAX_OPTIONAL_DAYS,
+    project_optional_day_domains,
+)
 from app.modules.itinerary_planner.policies import (
     LATE_NIGHT_TAGS,
     MEAL_POLICIES,
     OVERNIGHT_END_MINUTE,
     STANDARD_DAY_END_MINUTE,
 )
+from app.modules.itinerary_planner.prepared_problem import (
+    Candidate,
+    CandidateDay,
+    CandidateExclusion,
+    MealSlot,
+    MissingMealCoverage,
+    PlanningPreflightError,
+    PreparedPlanningProblem,
+)
+from app.modules.itinerary_planner.preflight import validate_projected_pool
 from app.modules.itinerary_planner.time_windows import (
     PlanningWindow,
     feasible_start_window,
@@ -31,70 +46,6 @@ from app.modules.itinerary_planner.time_windows import (
 )
 
 PRIORITY_CANDIDATES = {CandidatePriority.user_input, CandidatePriority.url}
-
-
-@dataclass(frozen=True, slots=True)
-class CandidateExclusion:
-    place_id: str
-    name: str
-    priority: CandidatePriority
-    reason_code: str
-    message: str
-
-
-@dataclass(frozen=True, slots=True)
-class MissingMealCoverage:
-    day: int
-    meal: MealType
-
-
-class PlanningPreflightError(ValueError):
-    def __init__(self, missing_meals: tuple[MissingMealCoverage, ...]) -> None:
-        self.missing_meals = missing_meals
-        details = ", ".join(
-            f"day {item.day} {item.meal.value}" for item in missing_meals
-        )
-        super().__init__(f"No feasible food candidate for: {details}")
-
-
-Candidate = PlannerCandidate | PlannerFoodCandidate
-CandidateDay = tuple[str, int]
-MealSlot = tuple[str, int, MealType]
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedPlanningProblem:
-    trip: PlannerTrip
-    accommodations: tuple[PlannerAccommodation, ...]
-    accommodation_by_id: Mapping[str, PlannerAccommodation]
-    valid_places: tuple[PlannerCandidate, ...]
-    valid_food: tuple[PlannerFoodCandidate, ...]
-    candidate_by_id: Mapping[str, Candidate]
-    feasible_days: Mapping[str, frozenset[int]]
-    feasible_windows: Mapping[CandidateDay, tuple[PlanningWindow, ...]]
-    preferred_windows: Mapping[str, tuple[PlanningWindow, ...]]
-    meal_eligibility: Mapping[MealSlot, tuple[PlanningWindow, ...]]
-    related_by_place: Mapping[str, frozenset[str]]
-    unknown_opening_ids: frozenset[str]
-    unknown_opening_days: Mapping[str, frozenset[int]]
-    late_night_eligible_ids: frozenset[str]
-    unscheduled_priority: tuple[CandidateExclusion, ...]
-    discarded_optional: tuple[CandidateExclusion, ...]
-    warnings: tuple[str, ...]
-    accommodation_nights: int = 0
-    accommodation_cost_per_person_by_id: Mapping[str, int] = field(
-        default_factory=lambda: MappingProxyType({})
-    )
-
-
-def normalize_tag(value: str) -> str:
-    normalized = re.sub(r"[^\w]+", "_", value.strip().casefold(), flags=re.UNICODE)
-    return normalized.strip("_")
-
-
-def normalize_tags(values: list[str]) -> list[str]:
-    normalized = (normalize_tag(value) for value in values)
-    return list(dict.fromkeys(value for value in normalized if value))
 
 
 def _opening_windows(
@@ -148,12 +99,19 @@ def _prepare_place(
     frozenset[int],
     CandidateExclusion | None,
 ]:
-    normalized = candidate.model_copy(update={"tags": normalize_tags(candidate.tags)})
+    normalized = normalize_candidate(candidate)
+    if failure := eligibility_failure(normalized, trip):
+        return normalized, {}, frozenset(), _exclusion(normalized, *failure)
     if normalized.price.currency != trip.budget.currency:
-        return normalized, {}, frozenset(), _exclusion(
+        return (
             normalized,
-            "currency_mismatch",
-            "Candidate price currency does not match the trip budget currency.",
+            {},
+            frozenset(),
+            _exclusion(
+                normalized,
+                "currency_mismatch",
+                "Candidate price currency does not match the trip budget currency.",
+            ),
         )
 
     feasible: dict[int, tuple[PlanningWindow, ...]] = {}
@@ -180,8 +138,11 @@ def _prepare_place(
     else:
         reason = "duration_exceeds_every_opening_window"
         message = "No opening window can contain the full visit duration."
-    return normalized, {}, frozenset(unknown_days), _exclusion(
-        normalized, reason, message
+    return (
+        normalized,
+        {},
+        frozenset(unknown_days),
+        _exclusion(normalized, reason, message),
     )
 
 
@@ -195,12 +156,20 @@ def _prepare_food(
     frozenset[int],
     CandidateExclusion | None,
 ]:
-    normalized = candidate.model_copy(update={"tags": normalize_tags(candidate.tags)})
+    normalized = normalize_candidate(candidate)
+    if failure := eligibility_failure(normalized, trip):
+        return normalized, {}, {}, frozenset(), _exclusion(normalized, *failure)
     if normalized.price.currency != trip.budget.currency:
-        return normalized, {}, {}, frozenset(), _exclusion(
+        return (
             normalized,
-            "currency_mismatch",
-            "Food price currency does not match the trip budget currency.",
+            {},
+            {},
+            frozenset(),
+            _exclusion(
+                normalized,
+                "currency_mismatch",
+                "Food price currency does not match the trip budget currency.",
+            ),
         )
 
     day_windows: dict[int, tuple[PlanningWindow, ...]] = {}
@@ -235,17 +204,21 @@ def _prepare_food(
 
     if eligibility:
         return normalized, day_windows, eligibility, frozenset(unknown_days), None
-    return normalized, {}, {}, frozenset(unknown_days), _exclusion(
+    return (
         normalized,
-        "unsupported_meal_coverage",
-        "Food is not open for any supported meal window during the trip.",
+        {},
+        {},
+        frozenset(unknown_days),
+        _exclusion(
+            normalized,
+            "unsupported_meal_coverage",
+            "Food is not open for any supported meal window during the trip.",
+        ),
     )
 
 
 def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanningProblem:
-    trip = payload.trip.model_copy(
-        update={"preferences": normalize_tags(payload.trip.preferences)}
-    )
+    trip = normalize_trip(payload.trip)
     valid_places: list[PlannerCandidate] = []
     valid_food: list[PlannerFoodCandidate] = []
     feasible_days: dict[str, frozenset[int]] = {}
@@ -269,9 +242,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
     accommodation_by_id = {item.place_id: item for item in accommodations}
     inferred_rooms = max(1, ceil(trip.people / 2))
     accommodation_cost_by_id = {
-        item.place_id: ceil(
-            item.price_per_night.cost * inferred_rooms / trip.people
-        )
+        item.place_id: ceil(item.price_per_night.cost * inferred_rooms / trip.people)
         for item in accommodations
     }
 
@@ -343,6 +314,16 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
     feasible_windows = day_domains.feasible_windows
     meal_eligibility = day_domains.meal_eligibility
     warnings.extend(day_domains.warnings)
+    meal_aliases = dict(day_domains.meal_aliases)
+    for alias in day_domains.fallback_food:
+        canonical_id = meal_aliases[alias.place_id]
+        valid_food.append(alias)
+        candidates.append(alias)
+        candidate_by_id[alias.place_id] = alias
+        related_by_place[alias.place_id] = related_by_place[canonical_id]
+        if day := next(iter(feasible_days[alias.place_id]), None):
+            if day in unknown_days_by_id.get(canonical_id, frozenset()):
+                unknown_days_by_id[alias.place_id] = frozenset({day})
 
     for place_id in unknown_days_by_id:
         warnings.append(
@@ -372,7 +353,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
             candidate.preferred_time_windows,
             latest_end,
         )
-    return PreparedPlanningProblem(
+    prepared = PreparedPlanningProblem(
         trip=trip,
         accommodations=accommodations,
         accommodation_by_id=MappingProxyType(accommodation_by_id),
@@ -391,7 +372,9 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         discarded_optional=tuple(discarded),
         warnings=tuple(warnings),
         accommodation_nights=accommodation_nights,
-        accommodation_cost_per_person_by_id=MappingProxyType(
-            accommodation_cost_by_id
-        ),
+        accommodation_cost_per_person_by_id=MappingProxyType(accommodation_cost_by_id),
+        canonical_place_id_by_candidate_id=MappingProxyType(meal_aliases),
     )
+    if trip.days > MAX_OPTIONAL_DAYS and len(valid_places) >= trip.days:
+        validate_projected_pool(prepared)
+    return prepared
