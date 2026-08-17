@@ -8,6 +8,7 @@ type PlannerBudgetSummaryProps = {
   budgetTarget?: number | null;
   notes?: string[];
   plan: TravelPlan;
+  travelerCount?: number | null;
 };
 
 const HANOI_TURTLE_TOWER_IMAGE = "/images/hanoi-turtle-tower.jpg";
@@ -24,8 +25,15 @@ export function PlannerBudgetSummary({
   budgetTarget,
   notes = [],
   plan,
+  travelerCount,
 }: PlannerBudgetSummaryProps) {
-  const budget = plannerBudgetBreakdown(plan);
+  // Older persisted planner snapshots do not contain `people`. The current
+  // intake policy defaults an unspecified party to two travelers, so use the
+  // same fallback while those snapshots age out.
+  const effectiveTravelerCount = travelerCount ?? plan.travelerCount ?? 2;
+  const budget = plannerBudgetBreakdown(plan, {
+    travelerCount: effectiveTravelerCount,
+  });
   const userBudget =
     budgetTarget ??
     (plan.budget?.source === "explicit"
@@ -91,16 +99,21 @@ export function PlannerBudgetSummary({
               <strong>{plan.destination}</strong>
               <span aria-hidden="true">·</span>
               <small>{plan.days.length} ngày</small>
+              {effectiveTravelerCount && effectiveTravelerCount > 0 ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <small>Nhóm {effectiveTravelerCount} người</small>
+                </>
+              ) : null}
             </div>
           </header>
           <div className="plannerBudgetTotalRow">
             <div className="plannerBudgetTotal">
-              <span>Chi phí dự kiến <span className="plannerBudgetInfo" title="Tổng chi phí ước tính cho toàn bộ chuyến đi">i</span></span>
+              <span>Chi phí dự kiến <span className="plannerBudgetInfo" title="Chi phí bình quân cho một người">i</span></span>
               <strong>{formatPlannerMoney(budget.perPersonTotal, budget.currency)}</strong>
             </div>
             <span className="plannerBudgetBasis">mỗi người</span>
           </div>
-          <p className="plannerBudgetExplanation">Tổng chi phí ước tính cho toàn bộ chuyến đi</p>
           {userBudget == null ? null : (
             <p className={`plannerBudgetTarget ${budgetDifference != null && budgetDifference < 0 ? "is-over" : ""}`}>
               Ngân sách của bạn: <strong>{formatPlannerMoney(userBudget, budget.currency)}</strong>

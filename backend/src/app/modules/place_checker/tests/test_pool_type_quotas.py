@@ -1,6 +1,9 @@
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 from app.modules.place_checker.activity_pool_selection import select_activity_coverage
-from app.modules.place_checker.planner_category import planner_category
+from app.modules.place_checker.planner_category import (
+    planner_category,
+    planner_category_for_candidate,
+)
 from app.modules.place_checker.pool_balancing import CandidatePoolBalancer
 from app.modules.place_checker.scoring import CandidateScoringService
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
@@ -30,10 +33,10 @@ def test_three_days_keep_independent_place_food_and_entertainment_quotas() -> No
     )
 
     categories = [item.candidate.category for item in result.ranked]
-    assert result.pool_target == 95
-    assert categories.count("travel_place") == 42
-    assert categories.count("restaurant") == 36
-    assert categories.count("entertainment") == 12
+    assert result.pool_target == 137
+    assert categories.count("travel_place") == 50
+    assert categories.count("restaurant") == 40
+    assert categories.count("entertainment") == 18
 
 
 def test_existing_places_reduce_only_their_own_type_quota() -> None:
@@ -57,7 +60,7 @@ def test_existing_places_reduce_only_their_own_type_quota() -> None:
     )
 
     categories = [item.candidate.category for item in result.ranked]
-    assert categories.count("travel_place") == 13
+    assert categories.count("travel_place") == 20
     assert categories.count("restaurant") == 12
 
 
@@ -68,7 +71,7 @@ def test_full_existing_pool_does_not_select_extra_candidates() -> None:
     )
 
     existing = place_batch(
-        *(evaluated_place(f"existing-{index}") for index in range(14))
+        *(evaluated_place(f"existing-{index}") for index in range(22))
     )
     result = CandidateScoringService().rank(
         retrieval(
@@ -120,9 +123,9 @@ def test_activity_reserve_covers_special_and_popular_candidates() -> None:
     )
 
     selected_ids = {item.candidate.candidate_key for item in result.ranked}
-    assert len(result.ranked) == 14
-    assert len(selected_ids & {item.candidate_key for item in special}) >= 6
-    assert len(selected_ids & {item.candidate_key for item in popular}) >= 4
+    assert len(result.ranked) == 22
+    assert len(selected_ids & {item.candidate_key for item in special}) == 8
+    assert len(selected_ids & {item.candidate_key for item in popular}) >= 7
 
 
 def test_activity_reserve_keeps_available_knowledge_tags() -> None:
@@ -215,6 +218,81 @@ def test_cafe_category_is_not_counted_as_travel_place() -> None:
     assert planner_category("cafe") == "drink_dessert"
     assert planner_category("DrinkDessert") == "drink_dessert"
     assert CandidatePoolBalancer._entity_type("cafe") == "entertainment"
+
+
+def test_obvious_leisure_name_cannot_masquerade_as_travel_place() -> None:
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
+            name="ON TOP MUSIC BOX",
+            tags=["travel_place"],
+        )
+        == "entertainment"
+    )
+    assert (
+        CandidatePoolBalancer._entity_type(
+            "travel_place",
+            name="SG Golf Mỹ Đình",
+            tags=["travel_place"],
+        )
+        == "entertainment"
+    )
+    for name in (
+        "Manup Ngõ 2 Nguyễn Viết Xuân & Sân chơi bi-a chuyên nghiệp",
+        "Ngọt Studio - Chụp ảnh cho bé Hà Nội",
+        "An An Entertainment",
+        "Nguyễn Khương - Giải cơ đau vai gáy lưng hông chuyên sâu",
+        "ELLY Trương Định Hoàng Mai Hà Nội",
+        "Carpe Diem - Souvenir, Handcrafted Candles & Gifts",
+        "Gói Gém Concept Store - Souvenirs by Local Artists",
+        "Gói Gém Souvernirs, Gift & Local Art Store - Train Station",
+        "CULCAT",
+        "Garmin Aeon Mall Long Biên - Hà Nội",
+        "Kính Mắt Việt Tín - Tasco Mall Long Biên",
+        "Miniwood Design",
+        "Hanoi Mood:ON Tây Sơn",
+    ):
+        assert (
+            planner_category_for_candidate(
+                "travel_place",
+                name=name,
+                tags=["travel_place"],
+            )
+            == "entertainment"
+        )
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
+            name="Thang Long Water Puppet Theatre",
+            tags=["culture"],
+        )
+        == "travel_place"
+    )
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
+            name="TiredCity 05 Nhà Thờ",
+            tags=["travel_place"],
+            pool_category="shopping",
+        )
+        == "entertainment"
+    )
+    assert (
+        planner_category_for_candidate(
+            "entertainment",
+            name="Quán Mì Vằn Thắn, Sủi Cảo Gia Truyền",
+            tags=["restaurant"],
+        )
+        == "restaurant"
+    )
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
+            name="Hanoi Creative Space",
+            tags=["culture"],
+        )
+        == "travel_place"
+    )
 
 
 def test_activity_pool_soft_caps_repeated_broad_tags_when_alternatives_exist() -> None:

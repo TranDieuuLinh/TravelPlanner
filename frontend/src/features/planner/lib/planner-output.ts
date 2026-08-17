@@ -48,6 +48,7 @@ export type PlannerOutputLeg = {
 export type ItineraryPlannerOutput = {
   destination: string;
   timezone: string;
+  people?: number;
   accommodation?: {
     placeId: string;
     name: string;
@@ -324,6 +325,7 @@ export function plannerOutputToTravelPlan(
     id: options.id ?? `planner-${output.destination}-${output.days[0]?.date ?? "trip"}`,
     title: `${output.destination} · ${output.days.length} ngày`,
     destination: output.destination,
+    travelerCount: output.people ?? null,
     kind: "main",
     days,
     accommodation: output.accommodation

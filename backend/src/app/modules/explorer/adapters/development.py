@@ -269,7 +269,11 @@ class RuleBasedExplorerDraftGenerator:
     @staticmethod
     def _prompt_people(prompt: str) -> ExplorerPeople:
         match = _PEOPLE.search(prompt)
-        return ExplorerPeople(adults=int(match.group("count")) if match else 1)
+        return (
+            ExplorerPeople(adults=int(match.group("count")))
+            if match
+            else ExplorerPeople()
+        )
 
     @staticmethod
     def _preferences(prompt: str) -> list[str]:

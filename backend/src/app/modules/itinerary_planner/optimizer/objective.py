@@ -4,11 +4,21 @@ from dataclasses import dataclass
 
 from ortools.sat.python import cp_model
 
-from app.modules.itinerary_planner.contract import CandidateSourceKind
 from app.modules.itinerary_planner.optimizer.activity_coverage import (
     build_activity_coverage_value,
 )
+from app.modules.itinerary_planner.optimizer.candidate_value import (
+    build_preference_value,
+    build_special_value,
+    build_style_value,
+)
 from app.modules.itinerary_planner.optimizer.config import ObjectiveWeights
+from app.modules.itinerary_planner.optimizer.entertainment_mix import (
+    build_morning_entertainment_excess_cost,
+)
+from app.modules.itinerary_planner.optimizer.popular_place_coverage import (
+    build_popular_place_shortfall_cost,
+)
 from app.modules.itinerary_planner.optimizer.review_value import (
     build_popularity_value,
     build_quality_value,
@@ -49,9 +59,9 @@ def build_objective(
         "activityCoverageValue": build_activity_coverage_value(
             model, problem, variables, weights
         ),
-        "specialExperienceValue": _special_value(problem, variables, weights),
-        "preferenceValue": _preference_value(problem, variables, weights),
-        "styleValue": _style_value(problem, variables, weights),
+        "specialExperienceValue": build_special_value(problem, variables, weights),
+        "preferenceValue": build_preference_value(problem, variables, weights),
+        "styleValue": build_style_value(problem, variables, weights),
         "placeQualityValue": build_quality_value(problem, variables, weights),
         "popularityValue": build_popularity_value(problem, variables, weights),
         "timeFitValue": _time_fit(model, problem, variables, weights),
@@ -79,6 +89,20 @@ def build_objective(
         "sourceMixDeviationCost": build_source_mix_cost(
             model, problem, variables, weights.source_mix_deviation
         ),
+        "morningEntertainmentExcessCost": (
+            build_morning_entertainment_excess_cost(
+                model,
+                problem,
+                variables,
+                weights.morning_entertainment_excess,
+            )
+        ),
+        "popularPlaceShortfallCost": build_popular_place_shortfall_cost(
+            model,
+            problem,
+            variables,
+            weights.popular_place_shortfall,
+        ),
         "budgetOverageCost": (
             variables.budget_overage_units * weights.budget_overage_10k
             if variables.budget_overage_units is not None
@@ -92,39 +116,6 @@ def build_objective(
     }
     utility = sum(positive.values()) - sum(negative.values())
     return ObjectiveExpressions(utility=utility, components={**positive, **negative})
-
-
-def _special_value(problem, variables, weights):
-    return sum(
-        variables.selected[candidate_id] * weights.special_experience
-        for candidate_id, candidate in problem.candidate_by_id.items()
-        if candidate.source_kind
-        in {CandidateSourceKind.special_experience, CandidateSourceKind.both}
-    )
-
-
-def _preference_value(problem, variables, weights):
-    preferences = set(problem.trip.preferences.tags)
-    if not preferences:
-        return 0
-    terms = []
-    for candidate_id, candidate in problem.candidate_by_id.items():
-        ratio = len(preferences & set(candidate.tags)) / len(preferences)
-        terms.append(
-            variables.selected[candidate_id] * round(ratio * weights.preference_max)
-        )
-    return sum(terms)
-
-
-def _style_value(problem, variables, weights):
-    styles = set(problem.trip.preferences.styles)
-    if not styles:
-        return 0
-    return sum(
-        variables.selected[candidate_id]
-        * round(len(styles & set(candidate.styles)) / len(styles) * weights.style_max)
-        for candidate_id, candidate in problem.candidate_by_id.items()
-    )
 
 
 def _time_fit(model, problem, variables, weights):

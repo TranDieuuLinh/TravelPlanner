@@ -1,6 +1,6 @@
 # Cấu trúc codebase hiện tại
 
-Cập nhật lần cuối: 2026-08-17.
+Cập nhật lần cuối: 2026-08-18.
 
 ## Các ứng dụng cấp cao nhất
 
@@ -99,12 +99,18 @@ in-memory và PostgreSQL cùng kiểm tra revision trước khi cập nhật JSO
 
 
 FinalItineraryPlanner đã bỏ scaffold round-robin/estimated routing. Graph của
-module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla matrix,
+module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla matrix
+được ghép từ các provider batch tối đa 2.500 source-target pairs,
 fallback đường chim bay khi Valhalla unavailable, và
 sparse arcs trên contract `trip + places + food + entertainment + accommodations + excludedCandidates`, sau đó chạy Phase 4 OR-Tools
 hybrid planner gồm geographic day-domain, greedy shortlist, 2-opt/swap và
 CP-SAT hai pass theo từng ngày: pass priority exact giữ thứ tự
 `user_input > URL`, sau đó pass utility tối ưu chất lượng lịch.
+PlaceChecker xếp tối đa ba accommodation quanh percentile ngân sách theo khoảng
+cách tới tâm compact TravelPlace pool. Hybrid cố định candidate đầu tiên làm
+anchor trước daily solve; endpoint ngày phải nối được anchor và giữ đủ 7 giờ
+nghỉ. Assembly không fallback sang global CP-SAT để đổi khách sạn và trả
+diagnostic gồm top `placeId`/ngày/constraint khi anchor không khả thi.
 Geographic day-domain không dùng solver phụ: heuristic chọn tâm theo normalized
 KNN density (`K<=10`) và Bayesian quality, greedy gán ngày gần nhất rồi
 rebalance một lần. Preferred pool
@@ -128,19 +134,23 @@ timeline reflow trước khi duration thực tế phá lịch nhưng selection/o
 có thể giữ nguyên. Nếu reflow không thỏa hard constraints, Planner thử day locks;
 nếu repair `INFEASIBLE` hoặc `UNKNOWN`, Planner dùng baseline hint rồi
 hybrid-replan compact pool theo ngày để thay/drop optional candidate. Route
-detail được cache trong request và correction/repair tiếp tục khi có travel-time
+detail được cache trong request. Mọi route detail gây overlap đều kích hoạt
+correction/repair, kể cả chênh 1-2 phút; tolerance chỉ phân loại sai lệch khi
+schedule slack vẫn giữ timeline hợp lệ. Repair tiếp tục khi có travel-time
 correction mới cho đến khi timeline ổn định, không dùng wall-clock timeout mặc
 định, rồi tạo public
-`ItineraryPlannerOutput`. Root/API trả nó
+`ItineraryPlannerOutput`, gồm cả `people` đã dùng để tính giá/người. Root/API trả nó
 qua `plannerOutput`; legacy `itinerary` được giữ riêng cho PlanEditor. Root
 orchestration không còn tạo lịch giả từ `VerifiedPlace` legacy.
 Mỗi itinerary day có `costBreakdown` gồm accommodation, food, localTransport,
 activities, misc và total trên một người. Planner điền giá stop, route và
-Accommodation được Planner chọn từ tối đa ba phương án có giá và tọa độ do
+Accommodation là top candidate trong tối đa ba phương án có giá và tọa độ do
 PlaceChecker gửi; misc giữ 0 khi chưa có dữ liệu thật.
 Mỗi ordered route leg trong `plannerOutput` cũng công bố `costPerPerson` để UI
-hiển thị giá xe theo chặng; giá này là cùng estimate đã được cộng vào
-`localTransport`, không phải một phép tính lại ở frontend.
+quy đổi và hiển thị tổng giá xe của cả nhóm theo chặng; giá/người trong contract
+vẫn là cùng estimate đã được cộng vào `localTransport`, không phải một phép tính
+lại ở frontend. Route legacy chỉ có khoảng cách dùng fallback đã là giá cả xe
+nên không nhân thêm theo số khách.
 Khi intake chưa có số phòng, accommodation tạm suy ra một phòng cho mỗi hai
 khách rồi chia lại thành giá/người/đêm; tổng số đêm là `days - 1`. Ngày còn
 thuê phòng kết thúc ở accommodation và ngày tiếp theo bắt đầu tại đó. Transfer
@@ -153,6 +163,9 @@ TripChat lưu hai snapshot độc lập: `currentItinerary` cho PlanEditor legac
 `currentPlannerOutput` cho frontend hiển thị output mới. Frontend map
 `days[].stops` thành item và `days[].legs` thành transport leg; guest planner
 cũng gọi trực tiếp `POST /v1/agent/invoke` thay vì adapter plan legacy.
+`currentPlannerOutput.people` giữ quy mô nhóm xuyên suốt lúc lưu/tải lại; nếu
+người dùng không nêu số khách, Explorer mặc định hai người, còn số được nêu rõ
+luôn ghi đè mặc định này.
 Thẻ ngân sách cộng `days[].costBreakdown` và hiển thị bốn nhóm riêng:
 TravelPlace, Restaurant/ăn uống, Accommodation và transportation; trên màn
 hình hẹp bốn nhóm tự xuống lưới hai cột.
@@ -406,11 +419,24 @@ và warning fallback. Pass utility dùng relative gap 5%, còn pass priority v�
 tối ưu exact trước khi khóa riêng count
 user input và URL.
 Retrieval ngoài gap phân tích còn mở core pool và thematic pool theo chuyến.
-TravelPlace dùng target `14/ngày`, Restaurant `12/ngày`, và pool optional
-DrinkDessert/Entertainment `4/ngày`; giữ một đại diện cho mỗi theme/style khả dụng
-trước khi bù theo Special Experience/popular. Food dùng reserve `12/ngày`:
-sáu Style food/drink có target mềm `2 × days`, chọn Item trước rồi reverse
-`Offer_Item` sang quán theo anchor region. Food hard minimum vẫn là unique matching cho từng slot
+TravelPlace dùng target `22/ngày`, Restaurant `16/ngày`, và pool optional
+DrinkDessert/Entertainment `6/ngày`; Entertainment tự gợi ý phải có Bayesian
+rating điều chỉnh từ 4,2/5. Compact selection giảm riêng candidate Entertainment
+có thể xếp buổi sáng. Target TravelPlace là retrieval reserve; hard handoff sang
+Planner chỉ cần `8/ngày`, tránh chặn chuyến đi đã có đủ phương án tối ưu.
+Direct-user/URL bypass cap, còn lựa chọn chỉ mở chiều/tối
+không chịu morning cap nhưng vẫn nằm trong quota toàn ngày.
+TravelPlace vẫn giữ một đại diện cho mỗi theme/style khả dụng
+trước khi bù theo Special Experience/popular. Popular phải có ít nhất 500
+review và popularity score từ 0,70; Planner giữ popular candidate khả thi ngoài
+geographic preferred day và phạt mạnh suất landmark thiếu trên từng ngày.
+Semantic guard chuyển music box, karaoke, golf, billiard/bi-a, bowling, studio,
+game center, massage/trị liệu, spa và retail store/souvenir bị gắn TravelPlace
+sai sang Entertainment trước scoring/quota/compact output. Food dùng reserve `16/ngày`:
+ba Style bữa chính được active mặc định; Style food/drink khác chỉ active khi
+được resolve từ preference hoặc input Item. Mỗi Style active có target mềm
+`2 × days`, chọn Item trước rồi reverse `Offer_Item` sang quán theo anchor region.
+Food hard minimum vẫn là unique matching cho từng slot
 `day × breakfast/lunch/dinner`, tối đa 60 candidate. PlaceChecker còn thử một
 reserve matching rời hard set và gửi cả feasibility qua `foodCoverage`.
 Core query over-fetch có giới hạn để bù candidate thiếu metadata; scoring chốt
@@ -442,6 +468,12 @@ validate metadata, rồi chạy unique meal-slot matching. Service chỉ query g
 ADM một lần cho các meal type còn thiếu ở hard/reserve matching và match lại.
 Logic nằm trong `place_checker/food_meal_matching.py`; pool selection bắt buộc
 giữ mọi Restaurant ID đã được hard hoặc reserve matching chọn.
+Selector Style tổng quát resolve `shortPreferences` sang Style ID và tên
+`inputItems` sang canonical Item ID trước khi query. Với Style có Item, adapter
+đi `Has_Style` từ Item rồi reverse `Offer_Item` sang `TravelPlace`, `Restaurant`
+hoặc `DrinkDessert`; chỉ Style không có Item mới fallback direct `Has_Style`.
+Mỗi Style active có target `2 × days`. Bộ đếm Style, Item và tag chỉ tồn tại
+trong request; output giữ provenance và shortfall theo từng Style.
 Identity acceptance mềm dành riêng
 cho URL/direct input nằm trong `place_checker/resolution_policy.py`; policy này
 không áp dụng cho system/retrieval candidate.

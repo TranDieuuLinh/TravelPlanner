@@ -30,3 +30,18 @@ export function estimateGreenSmHanoiFare(distanceMeters: number): number {
 
   return Math.ceil(fare * (1 + PLANNING_BUFFER_PERCENT / 100));
 }
+
+export function resolveTransportGroupFare(
+  distanceMeters: number,
+  estimatedCostPerPerson: number | null | undefined,
+  travelerCount: number,
+): number {
+  if (estimatedCostPerPerson == null) {
+    // Legacy route legs only have a distance. This fallback already estimates
+    // the whole vehicle fare, so it must not be multiplied by party size.
+    return estimateGreenSmHanoiFare(distanceMeters);
+  }
+
+  const normalizedTravelerCount = Math.max(1, Math.round(travelerCount));
+  return Math.ceil(Math.max(0, estimatedCostPerPerson) * normalizedTravelerCount);
+}

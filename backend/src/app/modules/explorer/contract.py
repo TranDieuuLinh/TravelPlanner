@@ -111,7 +111,7 @@ class ExplorerBudget(ExplorerModel):
 
 
 class ExplorerPeople(ExplorerModel):
-    adults: int = Field(default=1, ge=1, le=100)
+    adults: int = Field(default=2, ge=1, le=100)
     children: int = Field(default=0, ge=0, le=100)
     infants: int = Field(default=0, ge=0, le=100)
 

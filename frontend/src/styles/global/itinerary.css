@@ -249,51 +249,65 @@
 }
 
 .itinerary > .plannerBudgetCard {
-  margin: -12px 16px 10px 32px;
+  margin: -12px 16px 8px 32px;
   flex: 0 0 auto;
   gap: 0;
-  border-radius: 24px;
-  padding: 20px;
+  border-radius: 16px;
+  padding: 10px 12px;
 }
 
 /* Keep the budget summary subordinate to the itinerary timeline in the split view. */
 .itinerary > .plannerBudgetCard .plannerBudgetHero {
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetArtwork {
-  min-height: 178px;
-  margin: -20px 0 -20px -20px;
-  border-radius: 0 96px 96px 0;
+  min-height: 94px;
+  margin: -10px 0 -10px -12px;
+  border-radius: 0 52px 52px 0;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetTowerPhoto,
 .itinerary > .plannerBudgetCard .plannerBudgetTowerFallback {
-  height: 178px;
+  height: 94px;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetHeading {
-  margin-bottom: 12px;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+
+.itinerary > .plannerBudgetCard .plannerBudgetLocationIcon {
+  width: 18px;
+  height: 18px;
+}
+
+.itinerary > .plannerBudgetCard .plannerBudgetHeading > strong {
+  font-size: .82rem;
+}
+
+.itinerary > .plannerBudgetCard .plannerBudgetHeading > small {
+  font-size: .7rem;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetTotal > span {
-  font-size: .78rem;
+  font-size: .68rem;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetTotal strong {
-  font-size: clamp(2rem, 4vw, 2.65rem);
+  font-size: clamp(1.4rem, 2.5vw, 1.75rem);
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetTotalRow {
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetBasis {
-  margin-bottom: 2px;
-  padding: 7px 10px;
-  font-size: .68rem;
+  margin-bottom: 0;
+  padding: 5px 8px;
+  font-size: .62rem;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetExplanation {
@@ -303,75 +317,75 @@
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetDistribution {
-  margin-top: 16px;
-  border-radius: 18px;
-  padding: 12px 14px;
+  margin-top: 8px;
+  border-radius: 13px;
+  padding: 6px 10px;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetDistributionHeader {
-  min-height: 40px;
+  min-height: 30px;
   margin: 0;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetDistribution[open] > .plannerBudgetDistributionHeader {
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetDistributionHeader strong,
 .itinerary > .plannerBudgetCard .plannerBudgetDistributionHeader > span {
-  font-size: .72rem;
+  font-size: .66rem;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetItems {
-  gap: 8px;
+  gap: 5px;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetItem {
-  gap: 7px;
-  border-radius: 14px;
-  padding: 10px;
+  gap: 5px;
+  border-radius: 10px;
+  padding: 7px;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetItemHeading {
-  gap: 7px;
+  gap: 5px;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetItemIcon {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetItemHeading > span:last-child {
-  font-size: .68rem;
+  font-size: .62rem;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetItem > strong {
-  font-size: .82rem;
+  font-size: .72rem;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetItem > small {
-  font-size: .64rem;
+  font-size: .58rem;
 }
 
 @media (max-width: 640px) {
   .itinerary > .plannerBudgetCard {
-    margin: -10px 12px 8px;
+    margin: -10px 12px 6px;
   }
 
   .itinerary > .plannerBudgetCard .plannerBudgetHero {
-    grid-template-columns: 1fr;
+    grid-template-columns: 72px minmax(0, 1fr);
   }
 
   .itinerary > .plannerBudgetCard .plannerBudgetArtwork {
-    min-height: 150px;
-    margin: -20px -20px 0;
-    border-radius: 18px 18px 76px 76px;
+    min-height: 86px;
+    margin: -10px 0 -10px -12px;
+    border-radius: 0 48px 48px 0;
   }
 
   .itinerary > .plannerBudgetCard .plannerBudgetTowerPhoto,
   .itinerary > .plannerBudgetCard .plannerBudgetTowerFallback {
-    height: 150px;
+    height: 86px;
   }
 }
 
@@ -3525,6 +3539,14 @@
 .itinerary .transportFareAmount {
   color: #4f5f5a;
   font-weight: 780;
+  white-space: nowrap;
+}
+
+.itinerary .transportFareBasis {
+  margin-left: 3px;
+  color: #71807b;
+  font-size: .52rem;
+  font-weight: 700;
   white-space: nowrap;
 }
 

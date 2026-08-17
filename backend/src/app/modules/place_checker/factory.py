@@ -11,6 +11,9 @@ from app.modules.place_checker.pipeline import PlaceCheckerPipeline
 from app.modules.place_checker.resolution import EntityResolutionService
 from app.modules.place_checker.retrieval import TargetedRetrievalService
 from app.modules.place_checker.service import TripContextBuilder
+from app.modules.place_checker.style_candidate_selection import (
+    StyleCandidateSelectionService,
+)
 from app.shared.tools.search_places import SearchPlacesTool
 from app.shared.tools.search_places.ports import ExternalPlaceSearch
 
@@ -68,6 +71,7 @@ def build_postgres_place_checker_pipeline(
             ensure_core_pools=True,
         ),
         food_selection=FoodRestaurantSelectionService(catalog),
+        style_selection=StyleCandidateSelectionService(catalog),
     )
 
 

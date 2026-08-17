@@ -17,7 +17,7 @@ def test_default_solver_is_deterministic_without_wall_clock_deadlines() -> None:
     assert config.utility_timeout_seconds is None
     assert config.utility_relative_gap_limit == 0.05
     assert config.utility_parallel_workers == 3
-    assert config.max_utility_no_improvement_rounds == 10
+    assert config.max_utility_no_improvement_rounds == 3
 
 
 def test_utility_gap_does_not_claim_exact_optimality() -> None:
@@ -75,6 +75,18 @@ def test_relationship_is_counted_once_and_repeated_tags_are_penalized() -> None:
         for name, value in result.objective_components.items()
     )
     assert component_total == result.objective_value
+
+
+def test_utility_selects_two_high_review_popular_places_when_feasible() -> None:
+    landmarks = [candidate("landmark_a"), candidate("landmark_b")]
+    for index, item in enumerate(landmarks):
+        item.update({"rating": 4.7, "reviewCount": 20_000 - index})
+        item["sourceKind"] = "generic"
+
+    result, _, _ = solve_payload(base_payload(places=landmarks))
+
+    assert {"landmark_a", "landmark_b"} <= set(result.selected_ids)
+    assert result.objective_components["popularPlaceShortfallCost"] == 0
 
 
 def test_vietnamese_knowledge_graph_tags_drive_diversity_penalty() -> None:

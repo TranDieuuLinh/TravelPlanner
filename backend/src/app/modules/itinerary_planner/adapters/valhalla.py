@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from math import ceil
 from typing import Any
 
 import httpx
@@ -17,6 +18,9 @@ from app.modules.itinerary_planner.routing_models import (
     TravelMatrix,
 )
 
+DEFAULT_MAX_MATRIX_PAIRS = 2_500
+DEFAULT_MATRIX_CONCURRENCY = 6
+
 
 class ValhallaAdapter:
     def __init__(
@@ -26,11 +30,19 @@ class ValhallaAdapter:
         client: httpx.AsyncClient | None = None,
         timeout_seconds: float | None = None,
         provider_version: str = "unknown",
+        max_matrix_pairs: int = DEFAULT_MAX_MATRIX_PAIRS,
+        matrix_concurrency: int = DEFAULT_MATRIX_CONCURRENCY,
     ) -> None:
+        if max_matrix_pairs < 1:
+            raise ValueError("max_matrix_pairs must be positive")
+        if matrix_concurrency < 1:
+            raise ValueError("matrix_concurrency must be positive")
         self.base_url = base_url.rstrip("/")
         self.client = client
         self.timeout_seconds = timeout_seconds
         self.provider_version = provider_version
+        self.max_matrix_pairs = max_matrix_pairs
+        self.matrix_concurrency = matrix_concurrency
 
     async def matrix(
         self,
@@ -60,19 +72,60 @@ class ValhallaAdapter:
     ) -> TravelMatrix:
         owns_client = self.client is None
         client = self.client or httpx.AsyncClient(timeout=self.timeout_seconds)
-        try:
-            response = await client.post(
-                f"{self.base_url}/sources_to_targets",
-                json={
-                    "sources": [self._coordinate(item) for item in locations],
-                    "targets": [self._coordinate(item) for item in locations],
-                    "costing": self._costing(profile),
-                    "units": "kilometers",
-                },
-                timeout=self.timeout_seconds,
-            )
+        semaphore = asyncio.Semaphore(self.matrix_concurrency)
+
+        async def fetch(
+            source_start: int,
+            sources: tuple[MatrixLocation, ...],
+            target_start: int,
+            targets: tuple[MatrixLocation, ...],
+        ) -> tuple[int, int, tuple[tuple[MatrixCell, ...], ...]]:
+            async with semaphore:
+                response = await client.post(
+                    f"{self.base_url}/sources_to_targets",
+                    json={
+                        "sources": [self._coordinate(item) for item in sources],
+                        "targets": [self._coordinate(item) for item in targets],
+                        "costing": self._costing(profile),
+                        "units": "kilometers",
+                    },
+                    timeout=self.timeout_seconds,
+                )
             response.raise_for_status()
-            return self._parse_matrix(response.json(), locations, profile)
+            return (
+                source_start,
+                target_start,
+                self._parse_matrix_cells(response.json(), len(sources), len(targets)),
+            )
+
+        try:
+            batches = self._matrix_batches(locations)
+            results = await asyncio.gather(
+                *(
+                    fetch(source_start, sources, target_start, targets)
+                    for source_start, sources, target_start, targets in batches
+                )
+            )
+            rows: list[list[MatrixCell | None]] = [
+                [None] * len(locations) for _ in locations
+            ]
+            for source_start, target_start, cells in results:
+                for source_offset, row in enumerate(cells):
+                    for target_offset, cell in enumerate(row):
+                        rows[source_start + source_offset][
+                            target_start + target_offset
+                        ] = cell
+            if any(cell is None for row in rows for cell in row):
+                raise ValueError("matrix batches did not cover every source-target pair")
+            return TravelMatrix(
+                node_ids=tuple(item.node_id for item in locations),
+                cells=tuple(
+                    tuple(cell for cell in row if cell is not None) for row in rows
+                ),
+                profile=profile,
+                provider="valhalla",
+                provider_version=self.provider_version,
+            )
         except httpx.TimeoutException as exc:
             raise RoutingPhaseError(
                 RoutingErrorCode.matrix_timeout,
@@ -91,6 +144,35 @@ class ValhallaAdapter:
         finally:
             if owns_client:
                 await client.aclose()
+
+    def _matrix_batches(
+        self,
+        locations: tuple[MatrixLocation, ...],
+    ) -> tuple[
+        tuple[
+            int,
+            tuple[MatrixLocation, ...],
+            int,
+            tuple[MatrixLocation, ...],
+        ],
+        ...,
+    ]:
+        size = len(locations)
+        if size == 0:
+            return ()
+        source_chunk, target_chunk = _matrix_batch_shape(
+            size, self.max_matrix_pairs
+        )
+        return tuple(
+            (
+                source_start,
+                locations[source_start : source_start + source_chunk],
+                target_start,
+                locations[target_start : target_start + target_chunk],
+            )
+            for source_start in range(0, size, source_chunk)
+            for target_start in range(0, size, target_chunk)
+        )
 
     async def route(
         self,
@@ -165,18 +247,18 @@ class ValhallaAdapter:
             if owns_client:
                 await client.aclose()
 
-    def _parse_matrix(
-        self,
+    @staticmethod
+    def _parse_matrix_cells(
         payload: dict[str, Any],
-        locations: tuple[MatrixLocation, ...],
-        profile: str,
-    ) -> TravelMatrix:
+        source_count: int,
+        target_count: int,
+    ) -> tuple[tuple[MatrixCell, ...], ...]:
         rows = payload["sources_to_targets"]
-        if len(rows) != len(locations):
+        if len(rows) != source_count:
             raise ValueError("matrix row count mismatch")
         parsed_rows: list[tuple[MatrixCell, ...]] = []
         for row in rows:
-            if len(row) != len(locations):
+            if len(row) != target_count:
                 raise ValueError("matrix column count mismatch")
             parsed: list[MatrixCell] = []
             for cell in row:
@@ -193,13 +275,7 @@ class ValhallaAdapter:
                     )
                 )
             parsed_rows.append(tuple(parsed))
-        return TravelMatrix(
-            node_ids=tuple(item.node_id for item in locations),
-            cells=tuple(parsed_rows),
-            profile=profile,
-            provider="valhalla",
-            provider_version=self.provider_version,
-        )
+        return tuple(parsed_rows)
 
     @staticmethod
     def _coordinate(location: MatrixLocation) -> dict[str, float]:
@@ -210,3 +286,17 @@ class ValhallaAdapter:
         if profile not in {"auto", "bicycle", "pedestrian"}:
             raise ValueError(f"Unsupported Valhalla profile: {profile}")
         return profile
+
+
+def _matrix_batch_shape(size: int, max_pairs: int) -> tuple[int, int]:
+    """Choose chunks that minimize request count without exceeding max_pairs."""
+    best: tuple[int, int, int, int] | None = None
+    for target_chunk in range(1, min(size, max_pairs) + 1):
+        source_chunk = min(size, max_pairs // target_chunk)
+        request_count = ceil(size / source_chunk) * ceil(size / target_chunk)
+        covered_pairs = source_chunk * target_chunk
+        candidate = (request_count, -covered_pairs, -target_chunk, source_chunk)
+        if best is None or candidate < best:
+            best = candidate
+    assert best is not None
+    return best[3], -best[2]

@@ -148,6 +148,11 @@ CORE_POOL_QUERY_SPECS = {
         "travel place",
         "travel place",
     ),
+    "pool:popular_landmark_candidates": (
+        GapType.experience_coverage,
+        "famous landmark must see top attraction",
+        "travel place",
+    ),
     "pool:accommodation_candidates": (
         GapType.budget,
         "hotel",

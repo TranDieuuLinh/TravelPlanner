@@ -25,6 +25,9 @@ services:
         "/app/src",
       ]
     restart: unless-stopped
+    depends_on:
+      valhalla:
+        condition: service_healthy
     healthcheck:
       test:
         [

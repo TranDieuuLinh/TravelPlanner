@@ -36,6 +36,7 @@ from app.modules.place_checker.ports import (
     PromotionCatalog,
     PromotionOutbox,
     SpecialFoodRestaurantSource,
+    StyleCandidateSource,
 )
 from app.modules.place_checker.planning_output import (
     PlaceCheckerPlannerOutputBuilder,
@@ -86,6 +87,17 @@ from app.modules.place_checker.food_selection_contract import (
     FoodSelectionBatch,
     FoodStyleCoverage,
     SelectedFoodRestaurant,
+)
+from app.modules.place_checker.style_candidate_contract import (
+    ResolvedStyleIntent,
+    StyleCandidate,
+    StyleCandidateCoverage,
+    StyleCandidateSelection,
+    StyleCandidateSelectionBatch,
+    StyleCandidateSourceBatch,
+)
+from app.modules.place_checker.style_candidate_selection import (
+    StyleCandidateSelectionService,
 )
 from app.shared.tools.bayesian_rating import bayesian_rating
 
@@ -142,6 +154,14 @@ __all__ = [
     "ResolvedInputItem",
     "SelectedFoodRestaurant",
     "SpecialFoodRestaurantSource",
+    "StyleCandidate",
+    "StyleCandidateCoverage",
+    "StyleCandidateSelection",
+    "StyleCandidateSelectionBatch",
+    "StyleCandidateSelectionService",
+    "StyleCandidateSource",
+    "StyleCandidateSourceBatch",
+    "ResolvedStyleIntent",
     "RetrievalBatch",
     "RetrievedCandidate",
     "TargetedRetrievalService",

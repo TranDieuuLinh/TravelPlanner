@@ -2,6 +2,9 @@ from app.modules.place_checker.accommodation_planning_output import (
     select_accommodations,
 )
 from app.modules.place_checker.enums import SourceTier
+from app.modules.place_checker.entertainment_pool_selection import (
+    select_entertainment_pool,
+)
 from app.modules.place_checker.food_planning_output import (
     SelectedFoodPlanningProjector,
     limit_food_pool,
@@ -22,7 +25,10 @@ from app.modules.place_checker.planner_budget import (
     build_planner_budget,
 )
 from app.modules.place_checker.planner_eligibility import is_planner_eligible
-from app.modules.place_checker.planner_category import planner_category
+from app.modules.place_checker.planner_category import (
+    planner_category,
+    planner_category_for_candidate,
+)
 from app.modules.place_checker.planner_exclusions import build_excluded_candidate
 from app.modules.place_checker.planner_semantics import split_trip_preferences
 from app.modules.place_checker.planning_place_projection import PlannerPlaceProjector
@@ -56,7 +62,10 @@ class PlaceCheckerPlannerOutputBuilder:
         timezone: str,
     ) -> PlaceCheckerPlannerOutput:
         places, food, entertainment, excluded_candidates = self._candidate_pools(result)
-        accommodations = select_accommodations(result)
+        accommodations = select_accommodations(
+            result,
+            anchor_coordinates=[item.coordinates for item in places],
+        )
         preference_tags, avoid_tags, styles = split_trip_preferences(
             result.trip_context.preferences,
             result.trip_context.avoids,
@@ -142,7 +151,12 @@ class PlaceCheckerPlannerOutputBuilder:
         entertainment: list[PlannerOutputEntertainment] = []
         excluded_candidates: list[PlannerExcludedCandidate] = []
         for checked in result.checked_places:
-            category = planner_category(checked.category)
+            category = planner_category_for_candidate(
+                checked.category,
+                name=checked.canonical_name,
+                tags=checked.tags,
+                pool_category=checked.pool_category,
+            )
             if category == "accommodation":
                 continue
             if not is_planner_eligible(checked):
@@ -201,7 +215,11 @@ class PlaceCheckerPlannerOutputBuilder:
                     entertainment, item.selected.place_id
                 )
                 continue
-            category = planner_category(item.selected.category)
+            category = planner_category_for_candidate(
+                item.selected.category,
+                name=item.selected.name,
+                tags=item.selected.tags,
+            )
             if category == "restaurant":
                 meals = meals_for_hours(item.selected.opening_hours)
                 if not meals:
@@ -343,9 +361,10 @@ class PlaceCheckerPlannerOutputBuilder:
         places = self._limit_optional_pool(
             places, activity_pool_target_for_days(result.trip_context.days)
         )
-        entertainment = self._limit_optional_pool(
+        entertainment = select_entertainment_pool(
             entertainment,
-            entertainment_pool_target_for_days(result.trip_context.days),
+            days=result.trip_context.days,
+            limit=entertainment_pool_target_for_days(result.trip_context.days),
         )
         return places, food, entertainment, excluded_candidates
 

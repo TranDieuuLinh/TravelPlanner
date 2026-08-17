@@ -96,6 +96,16 @@ test("preserves valid notes that do not need a compatibility translation", () =>
   assert.equal(formatPlanNote("Thử món địa phương"), "Thử món địa phương");
 });
 
+test("hides internal Bayesian rating details from source notes", () => {
+  assert.equal(
+    formatSourceNoteForDisplay(
+      "Gần Ngọt Studio; phục vụ món đặc trưng Bò tơ. Bayesian rating 4.20/5."
+    ),
+    "Gần Ngọt Studio; phục vụ món đặc trưng Bò tơ."
+  );
+  assert.equal(formatSourceNoteForDisplay("Bayesian rating 4.20/5."), null);
+});
+
 test("presents source and personal notes without merging their ownership", () => {
   assert.deepEqual(
     planItemNotePresentation({

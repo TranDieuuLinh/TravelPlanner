@@ -39,6 +39,10 @@ from app.modules.place_checker.retrieval_contract import RetrievalBatch
 from app.modules.place_checker.scoring_contract import (
     CandidateRankingBatch,
 )
+from app.modules.place_checker.style_candidate_contract import (
+    StyleCandidateCoverage,
+    StyleCandidateSelection,
+)
 from app.shared.contracts.place import Coordinates
 from app.shared.contracts.source_note import SourceNote
 
@@ -59,6 +63,7 @@ class ToolCallSummary(ContractModel):
     external_search: int = Field(default=0, ge=0)
     metadata_repository: int = Field(default=0, ge=0)
     food_selection: int = Field(default=0, ge=0)
+    style_selection: int = Field(default=0, ge=0)
 
 
 class PlaceCheckerExecutionMetadata(ContractModel):
@@ -90,6 +95,14 @@ class PlaceCheckerResult(ContractModel):
     )
     food_meal_coverage: FoodMealCoverage = Field(default_factory=FoodMealCoverage)
     food_style_coverage: list[FoodStyleCoverage] = Field(default_factory=list)
+    style_candidate_selections: list[StyleCandidateSelection] = Field(
+        default_factory=list
+    )
+    style_candidate_coverage: list[StyleCandidateCoverage] = Field(
+        default_factory=list
+    )
+    unresolved_style_inputs: list[str] = Field(default_factory=list)
+    unresolved_item_style_inputs: list[str] = Field(default_factory=list)
     budget_analysis: BudgetAnalysis
     capacity_analysis: CapacityAnalysis
     coverage_analysis: CoverageAnalysis

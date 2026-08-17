@@ -21,9 +21,10 @@ prepared candidates
 -> tạo placeholder breakfast/lunch/dinner quanh activity skeleton
 -> chọn food theo corridor activity trước/sau meal
 -> 2-opt + swap cải thiện thứ tự activity
--> CP-SAT repair hai pass trên từng ngày
+-> chọn top-1 accommodation anchor từ compact pool đã xếp hạng
+-> CP-SAT repair hai pass trên từng ngày với endpoint gắn vào anchor
 -> nếu ngày chưa đạt ba activity, mở reserve khả thi và solve refill
--> ghép ngày, chọn accommodation, kiểm tra budget/rest/transfers
+-> ghép ngày, kiểm tra lại budget/rest/transfers của anchor
 ```
 
 Geographic partition không chạy CP-SAT. `preferred_days` cấp shortlist nhanh;
@@ -45,6 +46,10 @@ mới; candidate nhóm cũ vẫn được lấy lại khi pool không còn đủ
 Điểm quality của shortlist dùng cùng Bayesian review quality với CP-SAT, gồm
 rating, review count và prior của candidate pool; popularity bổ sung
 `log(reviewCount)` để nhận diện landmark phổ biến mà không cho raw count lấn át.
+TravelPlace có Bayesian rating từ 4,2 và ít nhất 500 review nhận thêm 6.000
+điểm shortlist để không bị một `Special_Experience` ít review lấn át. CP-SAT
+đặt target mềm một popular TravelPlace/ngày; mỗi suất thiếu bị phạt 6.000 utility
+để landmark không bị dồn vào một ngày chỉ vì route ngắn hơn.
 Skeleton mặc định đặt breakfast trước activity buổi sáng, lunch giữa hai cụm và
 dinner sau activity cuối ngày. Không chủ động hint thêm activity sau dinner để
 giữ biên nghỉ đêm/transfer accommodation khả thi; CP-SAT vẫn có quyền sửa nếu
@@ -201,12 +206,15 @@ coverage đến ba `places`, và cho phép tối đa ba candidate từ pool opti
 
 ### Accommodation
 
-Với chuyến nhiều ngày, solver chọn đúng một candidate trong pool tối đa ba
-accommodation. Chi phí phòng dùng `days - 1` đêm. Ngày `1..days-1` kết thúc ở
-accommodation và ngày `2..days` bắt đầu từ đó; các transfer này tham gia travel
-time và transport cost. Transfer trên 50 km nhận relocation penalty mạnh để
-ưu tiên accommodation gần cụm lịch hơn, nhưng không làm toàn bài toán vô nghiệm
-khi mọi lựa chọn đều xa.
+Với chuyến nhiều ngày, hybrid cố định candidate đầu tiên trong pool tối đa ba
+accommodation; runtime không gọi lại global CP-SAT để đổi khách sạn sau khi ghép
+ngày. PlaceChecker đã xếp candidate này gần tâm cụm TravelPlace nhất trong tập
+phù hợp mốc ngân sách. Chi phí phòng dùng `days - 1` đêm. Ngày `1..days-1` phải
+có endpoint route về anchor và ngày `2..days` phải có endpoint route rời anchor.
+Daily CP-SAT giữ giờ về trước 03:00 và đưa travel hai chiều vào lower bound của
+giờ bắt đầu hôm sau để còn tối thiểu 7 giờ nghỉ. Assembly tạo transfer/cost thật
+và kiểm tra lại cùng invariant. Nếu anchor vẫn không hợp lệ, error nêu rõ
+`placeId`, ngày và nhóm constraint thất bại thay vì thử global solve.
 
 ### Source mix sáng/tối
 
@@ -256,16 +264,16 @@ Ví dụ kết thúc 03:00 (`1620`) thì ngày sau bắt đầu sớm nhất 10:
 Breakfast window được phép trễ đến 12:00 trên recovery day; target 08:00 vẫn
 giữ ngày bình thường bắt đầu sớm.
 
-Trong hybrid assembly, `08:00` là giờ bắt đầu stop đầu chứ không phải giờ sớm
-nhất được rời accommodation. Transfer có thể bắt đầu trước 08:00; validation
-nghỉ đêm vẫn trừ cả thời gian quay về accommodation ngày trước và thời gian đi
-tới stop đầu ngày sau trước khi kiểm tra minimum 7 giờ.
+Trong hybrid có accommodation anchor, `08:00` là giờ sớm nhất rời nơi lưu trú;
+stop đầu bắt đầu sau đó ít nhất bằng safe travel time. Validation nghỉ đêm vẫn
+trừ cả thời gian quay về accommodation ngày trước và thời gian đi tới stop đầu
+ngày sau trước khi kiểm tra minimum 7 giờ.
 
 ## Lexicographic solving theo ngày
 
 Dựng model/hard constraints cho từng ngày, solve hai lượt. Vì priority được khóa
 trong từng daily repair, metadata không tuyên bố optimality global cho cả chuyến;
-`objectivePolicyVersion=hybrid-activity-corridor-v2` và
+`objectivePolicyVersion=hybrid-activity-corridor-v6-balanced-popular-place` và
 `optimalityProven=false`.
 Mỗi lượt mặc định giữ một CP-SAT search worker. Benchmark local cho thấy hai và
 bốn workers đều làm fixture graph nhỏ vượt 90 giây, trong khi single-worker
@@ -277,6 +285,12 @@ solver instance song song, mỗi instance giữ một CP-SAT worker và dùng
 tốt hơn, bộ đếm stagnation được reset. Sau 10 round liên tiếp không cải thiện,
 solver trả incumbent tốt nhất. Nếu một attempt chứng minh exact optimum thì
 dừng ngay. `SolverConfig` vẫn nhận timeout riêng cho từng attempt.
+Objective dùng baseline hai activity buổi sáng/ngày và phạt mềm số Entertainment
+bắt đầu trước 12:00 vượt target 10% của baseline đó. TravelPlace vì vậy được ưu
+tiên cho buổi sáng; mỗi suất vượt bị phạt 6.000 utility. Tuy vậy,
+Entertainment bắt buộc hoặc chỉ khả thi buổi sáng vẫn được xếp với cost thay vì
+làm model `INFEASIBLE`; preflight và hard minimum Place không đổi.
+
 Pass priority yêu cầu exact optimum để khóa số `user_input` và URL. Pass utility
 dùng `relative_gap_limit=0.05`, nên có thể dừng khi utility nằm trong 5% bound;
 metadata giữ `optimalityProven=false` khi dùng tolerance này, kể cả OR-Tools
@@ -412,7 +426,7 @@ priority_timeout_seconds = None
 utility_timeout_seconds = None
 utility_relative_gap_limit = 0.05
 utility_parallel_workers = 3
-max_utility_no_improvement_rounds = 10
+max_utility_no_improvement_rounds = 3
 random_seed
 log_search_progress
 max_inter_stop_wait_minutes = 150  # None chỉ dùng cho relaxed fallback
@@ -422,10 +436,11 @@ Dùng solution pass trước làm hint cho pass sau; hint không thay constraint
 Khi không có wall-clock deadline, priority pass vẫn chứng minh count ưu tiên,
 còn utility pass nhận heuristic/baseline hint và dừng ở nghiệm khả thi đầu tiên
 để không phải giữ worker chỉ nhằm chứng minh utility tối ưu.
-Composition runtime đọc `ITINERARY_LOG_SEARCH_PROGRESS`, mặc định `true`, và
-truyền thành `SolverConfig(log_search_progress=True)` để OR-Tools phát progress
-log. Runtime mặc định không đặt wall-clock deadline theo yêu cầu vận hành hiện
-tại; unit test hoặc deployment khác vẫn có thể inject giới hạn qua `SolverConfig`.
+Composition runtime đọc `ITINERARY_LOG_SEARCH_PROGRESS`, mặc định `false`; chỉ
+bật khi cần chẩn đoán chi tiết để tránh tạo lượng log OR-Tools lớn. Utility pass
+dừng sau 3 vòng liên tiếp không cải thiện. Runtime vẫn không đặt wall-clock
+deadline cho CP-SAT; unit test hoặc deployment khác có thể inject giới hạn qua
+`SolverConfig`.
 
 Status gồm `OPTIMAL`, `FEASIBLE`, `INFEASIBLE`, `UNKNOWN`. Nếu priority pass chỉ
 `FEASIBLE`, output không được tuyên bố count tối đa hay `optimalityProven=true`.

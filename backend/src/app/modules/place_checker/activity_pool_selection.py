@@ -14,6 +14,8 @@ COMPOSITION_BASE = 14
 SPECIAL_SLOTS = 6
 POPULAR_SLOTS = 4
 MAX_DIVERSITY_TAG_OCCURRENCES = 3
+MIN_POPULAR_REVIEW_COUNT = 500
+MIN_POPULARITY_SCORE = 0.70
 NON_DIVERSITY_TAG_PREFIXES = (
     "item:",
     "pool_category:",
@@ -58,14 +60,20 @@ def select_activity_coverage(
             item
             for item in ranked
             if item.candidate.candidate_key not in selected_keys
-            and _has_review_signal(item)
+            and _is_popular(
+                item,
+                popularity[item.candidate.candidate_key],
+            )
         ),
         key=lambda item: (
             -popularity[item.candidate.candidate_key],
             item.candidate.candidate_key,
         ),
     )
-    selected_popular = sum(_has_review_signal(item) for item in selected)
+    selected_popular = sum(
+        _is_popular(item, popularity[item.candidate.candidate_key])
+        for item in selected
+    )
     _take(
         selected,
         selected_keys,
@@ -206,9 +214,14 @@ def _is_special(item: ScoredCandidate) -> bool:
     return source_kind in {"special_experience", "both"}
 
 
-def _has_review_signal(item: ScoredCandidate) -> bool:
+def _is_popular(item: ScoredCandidate, popularity_score: float) -> bool:
     metadata = item.candidate.metadata
-    return bool(metadata and metadata.rating is not None and metadata.review_count)
+    return bool(
+        metadata
+        and metadata.rating is not None
+        and (metadata.review_count or 0) >= MIN_POPULAR_REVIEW_COUNT
+        and popularity_score >= MIN_POPULARITY_SCORE
+    )
 
 
 def _popularity_scores(ranked: list[ScoredCandidate]) -> dict[str, float]:

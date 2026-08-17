@@ -9,6 +9,10 @@ export type PlannerBudgetBreakdown = {
   currency: string;
 };
 
+type PlannerBudgetOptions = {
+  travelerCount?: number | null;
+};
+
 export function formatPlannerMoney(
   amount: number,
   currency: string,
@@ -26,6 +30,7 @@ export function formatPlannerMoney(
 
 export function plannerBudgetBreakdown(
   plan: TravelPlan,
+  options: PlannerBudgetOptions = {},
 ): PlannerBudgetBreakdown {
   const currency =
     plan.budget?.currency ?? plan.accommodation?.currency ?? "VND";
@@ -63,12 +68,19 @@ export function plannerBudgetBreakdown(
   const food = daysWithBreakdown.length
     ? fromDailyBreakdown.food
     : legacyItemCosts.food;
-  const accommodation = plan.accommodation
-    ? Math.max(
-        0,
-        plan.accommodation.pricePerNight * plan.accommodation.nights,
-      )
-    : fromDailyBreakdown.accommodation;
+  const travelerCount = Math.max(1, options.travelerCount ?? 1);
+  const inferredRoomCount = Math.ceil(travelerCount / 2);
+  const accommodation = daysWithBreakdown.length
+    ? fromDailyBreakdown.accommodation
+    : plan.accommodation
+      ? Math.max(
+          0,
+          plan.accommodation.pricePerNight
+            * plan.accommodation.nights
+            * inferredRoomCount
+            / travelerCount,
+        )
+      : 0;
   const transportation = daysWithBreakdown.length
     ? fromDailyBreakdown.transportation
     : Math.max(
@@ -81,9 +93,8 @@ export function plannerBudgetBreakdown(
     food,
     accommodation,
     transportation,
-    // The planner output contract defines each daily cost component as a
-    // per-person amount. Keep one total so the UI cannot present unrelated
-    // partial sums as "per person" and "group" totals.
+    // Daily breakdown values are already per-person. For legacy plans, room
+    // prices are converted using the actual party size and a two-person room.
     perPersonTotal: travelPlaces + food + accommodation + transportation,
     currency,
   };

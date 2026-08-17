@@ -17,6 +17,9 @@ from app.modules.itinerary_planner.optimizer.config import (
     ObjectiveWeights,
     SolverConfig,
 )
+from app.modules.itinerary_planner.optimizer.accommodation_anchor import (
+    DailyAccommodationAnchor,
+)
 from app.modules.itinerary_planner.optimizer.hints import InitialSolutionHint
 from app.modules.itinerary_planner.optimizer.result import OptimizationResult
 from app.modules.itinerary_planner.optimizer.tag_diversity import meaningful_tags
@@ -44,7 +47,25 @@ def optimize_hybrid_itinerary(
     used_ids: set[str] = set()
     trip_tag_counts: Counter[str] = Counter()
     results: list[OptimizationResult] = []
+    accommodation_id = (
+        problem.accommodations[0].place_id
+        if problem.accommodations and problem.accommodation_nights
+        else None
+    )
+    previous_last_end: int | None = None
+    previous_return_minutes = 0
     for day in range(1, problem.trip.days + 1):
+        daily_anchor = (
+            DailyAccommodationAnchor(
+                accommodation_id=accommodation_id,
+                trip_day=day,
+                trip_days=problem.trip.days,
+                previous_last_end=previous_last_end,
+                previous_return_minutes=previous_return_minutes,
+            )
+            if accommodation_id is not None
+            else None
+        )
         shortlist = build_day_shortlist(
             problem,
             routing,
@@ -65,6 +86,7 @@ def optimize_hybrid_itinerary(
                 ),
                 config=selected_config,
                 weights=selected_weights,
+                daily_anchor=daily_anchor,
             )
         except OptimizationError:
             expanded = full_day_candidate_ids(
@@ -83,6 +105,7 @@ def optimize_hybrid_itinerary(
                     hint=None,
                     config=selected_config,
                     weights=selected_weights,
+                    daily_anchor=daily_anchor,
                 )
             except OptimizationError as expanded_error:
                 if (
@@ -103,6 +126,7 @@ def optimize_hybrid_itinerary(
                         hint=None,
                         config=relaxed_config,
                         weights=selected_weights,
+                        daily_anchor=daily_anchor,
                     )
                 except OptimizationError as unique_food_error:
                     if unique_food_error.status != "INFEASIBLE":
@@ -120,6 +144,7 @@ def optimize_hybrid_itinerary(
                         hint=None,
                         config=relaxed_config,
                         weights=selected_weights,
+                        daily_anchor=daily_anchor,
                     )
         selected_activity_count = _selected_activity_count(result, problem)
         if selected_activity_count < ACTIVITY_FILL_TARGET_PER_DAY:
@@ -142,6 +167,7 @@ def optimize_hybrid_itinerary(
                         hint=None,
                         config=selected_config,
                         weights=selected_weights,
+                        daily_anchor=daily_anchor,
                     )
                 except OptimizationError:
                     refill = None
@@ -153,6 +179,15 @@ def optimize_hybrid_itinerary(
                     result = refill
         remapped = remap_day_result(result, day)
         results.append(remapped)
+        if accommodation_id is not None and day < problem.trip.days:
+            last_stop = max(
+                remapped.scheduled_stops,
+                key=lambda stop: (stop.end_minute, stop.place_id),
+            )
+            previous_last_end = last_stop.end_minute
+            previous_return_minutes = routing.travel_by_candidate_pair[
+                (last_stop.place_id, accommodation_id)
+            ].safe_minutes
         _update_trip_tag_counts(trip_tag_counts, remapped, problem, food_ids)
         used_ids.update(remapped.selected_ids)
     return assemble_hybrid_result(problem, routing, results)
@@ -238,13 +273,59 @@ def _solve_day(
     hint: InitialSolutionHint | None,
     config: SolverConfig,
     weights: ObjectiveWeights,
+    daily_anchor: DailyAccommodationAnchor | None,
 ) -> OptimizationResult:
     day_problem = project_problem_day(problem, day=day, candidate_ids=candidate_ids)
     day_routing = project_routing_day(routing, day=day, candidate_ids=candidate_ids)
-    return optimize_itinerary(
-        day_problem,
-        day_routing,
-        config=config,
-        weights=weights,
-        initial_hint=hint,
+    try:
+        return optimize_itinerary(
+            day_problem,
+            day_routing,
+            config=config,
+            weights=weights,
+            initial_hint=hint,
+            daily_accommodation_anchor=daily_anchor,
+        )
+    except OptimizationError as exc:
+        if daily_anchor is None:
+            raise
+        raise OptimizationError(
+            exc.status,
+            "hybrid_accommodation_anchor",
+            _anchor_failure_detail(
+                routing,
+                candidate_ids,
+                daily_anchor,
+                underlying_pass=exc.pass_name,
+            ),
+        ) from exc
+
+
+def _anchor_failure_detail(
+    routing: RoutingProblem,
+    candidate_ids: frozenset[str],
+    anchor: DailyAccommodationAnchor,
+    *,
+    underlying_pass: str,
+) -> str:
+    missing = []
+    if anchor.requires_start_transfer and not any(
+        (anchor.accommodation_id, candidate_id)
+        in routing.travel_by_candidate_pair
+        for candidate_id in candidate_ids
+    ):
+        missing.append("no candidate in the day pool has a route from the anchor")
+    if anchor.requires_end_transfer and not any(
+        (candidate_id, anchor.accommodation_id)
+        in routing.travel_by_candidate_pair
+        for candidate_id in candidate_ids
+    ):
+        missing.append("no candidate in the day pool has a route back to the anchor")
+    reason = "; ".join(missing) or (
+        "the anchored daily solve could not satisfy the combined opening, meal, "
+        f"transfer, and overnight-rest constraints (underlying pass: {underlying_pass})"
+    )
+    return (
+        f"Top accommodation {anchor.accommodation_id} could not anchor day "
+        f"{anchor.trip_day}: {reason}."
     )

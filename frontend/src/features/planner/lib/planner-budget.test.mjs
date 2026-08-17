@@ -59,10 +59,45 @@ test("falls back to item, hotel, and daily transport prices for older plans", ()
       source: "estimated_daily_cost",
       dailyEstimate: { accommodation: 0, food: 0, localTransport: 100_000, activities: 0, total: 100_000 },
     },
-  });
+  }, { travelerCount: 2 });
 
   assert.deepEqual(
     [result.travelPlaces, result.food, result.accommodation, result.transportation, result.perPersonTotal],
-    [50_000, 0, 1_200_000, 100_000, 1_350_000],
+    [50_000, 0, 600_000, 100_000, 750_000],
   );
+});
+
+test("uses the already per-person daily room cost instead of the raw room price", () => {
+  const result = plannerBudgetBreakdown({
+    id: "current-plan",
+    title: "Hà Nội",
+    destination: "Hà Nội",
+    kind: "main",
+    days: [{
+      day: 1,
+      items: [],
+      transportLegs: [],
+      costBreakdown: {
+        accommodation: 300_000,
+        food: 0,
+        localTransport: 0,
+        activities: 0,
+        misc: 0,
+        total: 300_000,
+        currency: "VND",
+      },
+    }],
+    accommodation: {
+      placeId: "hotel",
+      name: "Khách sạn",
+      latitude: 0,
+      longitude: 0,
+      pricePerNight: 600_000,
+      currency: "VND",
+      nights: 1,
+    },
+  }, { travelerCount: 2 });
+
+  assert.equal(result.accommodation, 300_000);
+  assert.equal(result.perPersonTotal, 300_000);
 });

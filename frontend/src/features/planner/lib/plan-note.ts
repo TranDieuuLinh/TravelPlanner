@@ -68,7 +68,13 @@ export function formatPlanNote(value: unknown): string | null {
  * model output remains visible until a translation is available.
  */
 export function formatSourceNoteForDisplay(value: unknown): string | null {
-  return formatPlanNote(value);
+  const note = formatPlanNote(value);
+  if (!note) return null;
+
+  const withoutInternalRating = note
+    .replace(/\s*Bayesian rating\s+\d+(?:\.\d+)?\s*\/\s*5\.?/giu, "")
+    .trim();
+  return withoutInternalRating || null;
 }
 
 const NOTE_SOURCE_LABELS: Record<string, string> = {

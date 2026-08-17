@@ -5,7 +5,7 @@ from app.modules.explorer.contract import ExplorerInput
 from app.modules.explorer.models import SourceExtractionResult
 
 
-EXPLORER_DRAFT_CACHE_VERSION = "3"
+EXPLORER_DRAFT_CACHE_VERSION = "4"
 SOURCE_EXTRACTION_CACHE_VERSION = "1"
 
 

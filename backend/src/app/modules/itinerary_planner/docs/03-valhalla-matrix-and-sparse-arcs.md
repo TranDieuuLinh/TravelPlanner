@@ -2,7 +2,8 @@
 
 Trạng thái: đã triển khai routing ports/models, Valhalla HTTP adapter, route
 detail adapter, straight-line fallback, in-memory bounded cache, coordinate
-deduplication, directed global matrix, safe travel values, time-feasibility
+deduplication, directed global matrix ghép từ các batch giới hạn 2.500 cặp,
+safe travel values, time-feasibility
 pruning, sparse/forced/bridge arcs và virtual START/END. Graph đã có node
 `build_travel_matrix` qua dependency injection. Nếu Valhalla không sẵn sàng,
 Planner dùng fallback đường chim bay có warning rõ ràng.
@@ -15,7 +16,7 @@ lần và tạo graph arc gọn cho CP-SAT. Phase này không chọn itinerary.
 ```text
 prepared candidates
 -> deduplicate physical nodes
--> one global Valhalla matrix
+-> one logical global Valhalla matrix from bounded provider batches
 -> safety buffer
 -> feasibility pruning
 -> sparse arc graph N x K
@@ -85,11 +86,18 @@ không merge solver activity.
 
 ## Global matrix
 
-Gọi một request cho:
+Tạo một ma trận logic cho:
 
 ```text
 unique coordinates của valid places + valid food
 ```
+
+Adapter chia ma trận thành các khối `sources x targets` sao cho mỗi request có
+tối đa 2.500 cặp, chọn kích thước khối để giảm số request và giới hạn tối đa
+sáu request đồng thời. Các block được ghép lại đúng thứ tự node trước khi trả
+`TravelMatrix`; cache và solver vẫn chỉ thấy một global matrix. Nếu bất kỳ block
+nào timeout, lỗi HTTP hoặc sai kích thước, toàn bộ primary matrix fail theo cùng
+structured error và provider boundary mới quyết định fallback.
 
 Profile ban đầu là driving/auto. Matrix có hướng, không giả định:
 
@@ -179,17 +187,20 @@ vẫn infeasible -> expand riêng isolated/priority nodes
 Cần phân biệt infeasible do sparse graph với infeasible do budget/opening. Chỉ
 retry K khi diagnostics cho thấy thiếu connectivity.
 
-## Virtual start/end
+## Virtual start/end và accommodation anchor
 
-Accommodation hiện dùng cho cost và output, chưa được dùng làm routing anchor.
-Mỗi ngày vẫn dùng virtual start/end nội bộ:
+Hybrid chọn trước candidate accommodation đứng đầu compact pool. Mỗi ngày vẫn
+dùng virtual start/end nội bộ, nhưng endpoint arc được ràng buộc với travel từ
+hoặc về top accommodation khi chuyến có nhiều ngày:
 
 ```text
 VIRTUAL_START[d] -> first stop -> ... -> last stop -> VIRTUAL_END[d]
 ```
 
-Hai virtual leg có travel time/cost 0 và không xuất hiện trong itinerary. Bước
-sau có thể dùng tọa độ accommodation làm matrix node thật.
+Hai virtual leg không xuất hiện trong itinerary. Daily CP-SAT cấm endpoint
+không có route tới anchor, giữ giờ về trước 03:00 và đẩy giờ bắt đầu hôm sau để
+trừ cả hai transfer mà vẫn còn tối thiểu 7 giờ nghỉ. Transfer thật được assembly
+tạo từ global matrix và xuất trong itinerary.
 
 ## Transport cost
 
@@ -262,7 +273,8 @@ tests/test_valhalla_adapter.py
 
 ## Acceptance criteria
 
-- Matrix chỉ gọi một lần cho một planning request cache miss.
+- Matrix chỉ dựng một lần cho một planning request cache miss; adapter có thể
+  gọi nhiều provider batch, mỗi batch không vượt 2.500 source-target pairs.
 - A->B và B->A được giữ riêng.
 - Candidate trùng physical location không làm phình matrix.
 - Sparse graph trung bình gần `N x K`, không `N x N`.

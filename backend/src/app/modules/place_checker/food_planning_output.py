@@ -87,11 +87,6 @@ class SelectedFoodPlanningProjector:
             children=metadata.children_suitable,
             infants=metadata.infants_suitable,
         )
-        bayesian_note = (
-            f" Bayesian rating {selection.bayesian_rating:.2f}/5."
-            if selection.bayesian_rating is not None
-            else ""
-        )
         return PlannerOutputFood(
             place_id=selection.restaurant_id,
             name=selection.restaurant_name,
@@ -105,7 +100,7 @@ class SelectedFoodPlanningProjector:
             notes=SourceNote(
                 text=(
                     f"Gần {selection.anchor_name}; phục vụ món đặc trưng "
-                    f"{selection.food_item_name}.{bayesian_note}"
+                    f"{selection.food_item_name}."
                 ),
                 source_type="knowledge_graph",
             ),

@@ -17,6 +17,9 @@ from app.modules.place_checker.adapters.postgres_food_query import (
     SPECIAL_FOOD_RESTAURANT_SQL,
 )
 from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARCH_SQL
+from app.modules.place_checker.adapters.postgres_style_catalog import (
+    PostgresStyleCandidateMixin,
+)
 from app.modules.place_checker.food_selection_contract import FoodRestaurantCandidate
 from app.modules.place_checker.planning_time_windows import meals_for_hours
 from app.modules.place_checker.resolution_contract import PlaceMetadata
@@ -30,7 +33,11 @@ def _asyncpg_url(database_url: str) -> str:
     )
 
 
-class PostgresPlaceCatalog(PostgresCatalogBatchMixin, PostgresCatalogMappingMixin):
+class PostgresPlaceCatalog(
+    PostgresStyleCandidateMixin,
+    PostgresCatalogBatchMixin,
+    PostgresCatalogMappingMixin,
+):
     """Read-only PlaceChecker adapter over the normalized Knowledge Graph."""
 
     provider_name = "knowledge_graph"

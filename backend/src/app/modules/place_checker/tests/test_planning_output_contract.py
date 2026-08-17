@@ -163,6 +163,7 @@ def test_compact_output_adds_selected_special_food_near_anchor() -> None:
     assert not any(tag.startswith("food-item:") for tag in selected.tags)
     assert selected.notes is not None
     assert "Bún chả" in selected.notes.text
+    assert "Bayesian rating" not in selected.notes.text
 
 
 def test_compact_output_projects_drink_dessert_as_entertainment_not_meal() -> None:
@@ -204,6 +205,30 @@ def test_compact_output_projects_drink_dessert_as_entertainment_not_meal() -> No
     assert "drink:cafe" in {place.place_id for place in output.entertainment}
     assert "drink:cafe" not in {place.place_id for place in output.places}
     assert "drink:cafe" not in {food.place_id for food in output.food}
+
+
+def test_compact_output_reclassifies_mislabeled_music_box_as_entertainment() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-music-box"))
+    first = result.checked_places[0]
+    result.checked_places[0] = first.model_copy(
+        update={
+            "canonical_name": "ON TOP MUSIC BOX",
+            "category": "travel_place",
+        }
+    )
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+
+    assert first.place_id not in {place.place_id for place in output.places}
+    reclassified = next(
+        place for place in output.entertainment or [] if place.place_id == first.place_id
+    )
+    assert reclassified.entity_type == "entertainment"
+    assert reclassified.priority == "user_input"
 
 
 def test_resolved_item_promotes_duplicate_pool_candidate_to_user_input() -> None:
@@ -357,12 +382,19 @@ def test_compact_output_selects_three_priced_accommodations_around_budget_percen
     sample = result.checked_places[0]
     accommodations = []
     for index, price in enumerate((100_000, 200_000, 300_000, 400_000, 500_000)):
+        latitude_offset = {0: 0.0, 1: 1.0, 2: 0.1}.get(index, 2.0 + index)
         accommodations.append(
             sample.model_copy(
                 update={
                     "place_id": f"hotel:{index}",
                     "canonical_name": f"Hotel {index}",
                     "category": "accommodation",
+                    "coordinates": sample.coordinates.model_copy(
+                        update={
+                            "latitude": sample.coordinates.latitude
+                            + latitude_offset
+                        }
+                    ),
                     "cost": sample.cost.model_copy(
                         update={
                             "currency": "VND",
@@ -394,12 +426,12 @@ def test_compact_output_selects_three_priced_accommodations_around_budget_percen
     )
 
     assert [item.place_id for item in output.accommodations] == [
-        "hotel:1",
         "hotel:0",
         "hotel:2",
+        "hotel:1",
     ]
-    assert output.accommodations[0].price_per_night.cost == 200_000
-    assert output.accommodations[0].coordinates == accommodations[1].coordinates
+    assert output.accommodations[0].price_per_night.cost == 100_000
+    assert output.accommodations[0].coordinates == accommodations[0].coordinates
     assert all(
         item.place_id not in {place.place_id for place in output.places}
         for item in output.accommodations

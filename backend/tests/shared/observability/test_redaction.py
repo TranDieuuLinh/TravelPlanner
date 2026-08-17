@@ -1,4 +1,6 @@
-import pytest
+from dataclasses import dataclass
+from types import MappingProxyType
+
 from pydantic import BaseModel
 
 from app.shared.observability.redaction import (
@@ -88,3 +90,17 @@ def test_safe_preview_produces_clean_json_or_string() -> None:
     assert '"prompt": "Trip to Danang"' in preview
     assert '"key": "[REDACTED]"' in preview
     assert "secret" not in preview
+
+
+def test_sanitize_payload_handles_mappingproxy_inside_dataclass() -> None:
+    @dataclass(frozen=True)
+    class PreparedState:
+        candidates: object
+
+    state = PreparedState(
+        candidates=MappingProxyType({"place": {"name": "Hồ Hoàn Kiếm"}})
+    )
+
+    assert sanitize_payload(state) == {
+        "candidates": {"place": {"name": "Hồ Hoàn Kiếm"}}
+    }

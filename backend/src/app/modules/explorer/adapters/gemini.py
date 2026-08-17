@@ -47,8 +47,10 @@ Normalize explicit trip styles in short_preferences to slow_travel, relaxed, rom
 adventure, local_life, luxury, night_owl, or cultural_immersion when applicable.
 request to a named venue with related_place_name. Source-derived requests belong in
 url_notes.
-Never infer trip days or people from source evidence. A price for one ticket, meal, or
-item is not a whole-trip budget. For a raw-prompt whole-trip amount, set budget.basis to
+Never infer trip days or people from source evidence. When the raw prompt does not state
+a party size, omit people or use the default of 2 adults; do not use 1 as a generic
+fallback. A price for one ticket, meal, or item is not a whole-trip budget. For a
+raw-prompt whole-trip amount, set budget.basis to
 per_person only when the user explicitly says per person; otherwise use group_total.
 Preserve source provenance, address_hint, and
 source_time_hint. Do not invent facts."""

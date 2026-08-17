@@ -3,10 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from app.modules.place_checker.contract import TripEvaluationContext
-from app.modules.place_checker.enums import (
-    CostTier,
-    VerificationStatus,
-)
+from app.modules.place_checker.enums import CostTier, VerificationStatus
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
 from app.modules.place_checker.pool_balancing import CandidatePoolBalancer
 from app.modules.place_checker.pool_policy import (
@@ -16,7 +13,7 @@ from app.modules.place_checker.pool_policy import (
     food_pool_target_for_days,
     pool_query_limit_for_days,
 )
-from app.modules.place_checker.planner_category import planner_category
+from app.modules.place_checker.planner_category import planner_category_for_candidate
 from app.modules.place_checker.price_policy import planner_cost
 from app.modules.place_checker.reranking import CandidateDiversityReranker
 from app.modules.place_checker.reputation_scoring import (
@@ -134,7 +131,12 @@ class CandidateScoringService:
         reputation_profiles: dict[str, CategoryReputationProfile],
     ) -> ScoredCandidate:
         labels = self._labels(candidate)
-        category = planner_category(candidate.category)
+        category = planner_category_for_candidate(
+            candidate.category,
+            name=candidate.canonical_name,
+            tags=candidate.tags,
+            pool_category=candidate.pool_category,
+        )
         experience = normalize_text(candidate.experience_type)
         distance = self._nearest_distance(candidate.coordinates, anchors)
         rating_quality, review_quality = reputation_components(
@@ -388,7 +390,12 @@ class CandidateScoringService:
                 continue
             metadata = evaluation.place.metadata
             if metadata.category:
-                categories.add(planner_category(metadata.category))
+                categories.add(
+                    planner_category_for_candidate(
+                        metadata.category,
+                        name=evaluation.place.canonical_name, tags=metadata.tags,
+                    )
+                )
             experiences.update(normalize_text(tag) for tag in metadata.tags if tag)
             if metadata.coordinates:
                 anchors.append(metadata.coordinates)

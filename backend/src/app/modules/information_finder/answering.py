@@ -102,7 +102,8 @@ def _render_block(block, citation_number: dict[str, int]) -> str:
     if isinstance(block, VerseBlock):
         title = f"## {block.title}\n\n" if block.title else ""
         author = f"*{block.author}*\n\n" if block.author else ""
-        return f"{title}{author}{'\n'.join(block.lines)} {marker(block.source_ids)}"
+        lines = "\n".join(block.lines)
+        return f"{title}{author}{lines} {marker(block.source_ids)}"
     if isinstance(block, QuoteBlock):
         attribution = f" — {block.attribution}" if block.attribution else ""
         return f"> {block.text}{attribution} {marker(block.source_ids)}"

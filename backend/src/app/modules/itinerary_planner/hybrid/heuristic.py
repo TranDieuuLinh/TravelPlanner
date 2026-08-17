@@ -12,6 +12,12 @@ from app.modules.itinerary_planner.contract import (
     PlannerCandidate,
     PlannerFoodCandidate,
 )
+from app.modules.itinerary_planner.hybrid.popular_place_reservation import (
+    available_candidate_ids,
+)
+from app.modules.itinerary_planner.optimizer.popular_place_coverage import (
+    popular_place_ids,
+)
 from app.modules.itinerary_planner.optimizer.tag_diversity import meaningful_tags
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.quality import (
@@ -26,6 +32,7 @@ DEFAULT_QUALITY_MAX = 300
 SPECIAL_EXPERIENCE_SCORE = 4_000
 PREFERENCE_MATCH_SCORE = 2_000
 POPULARITY_SCORE_MAX = 1_500
+POPULAR_PLACE_SCORE = 6_000
 RELATIONSHIP_SCORE = 250
 TRIP_TAG_REPEAT_SCORE = 10_000
 PRIORITY_VALUES = {CandidatePriority.user_input, CandidatePriority.url}
@@ -48,12 +55,14 @@ def build_day_shortlist(
 ) -> DayShortlist:
     quality_by_id = bayesian_quality_by_id(problem.candidate_by_id.values())
     popularity = popularity_by_id(problem.candidate_by_id.values())
+    popular_places = popular_place_ids(problem)
     food_ids = {item.place_id for item in problem.valid_food}
-    available = {
-        candidate_id
-        for candidate_id, preferred in problem.preferred_days.items()
-        if day in preferred and candidate_id not in used_ids
-    }
+    available = available_candidate_ids(
+        problem,
+        day=day,
+        used_ids=used_ids,
+        popular_ids=popular_places,
+    )
     activities = [
         problem.candidate_by_id[candidate_id]
         for candidate_id in sorted(available - food_ids)
@@ -68,6 +77,7 @@ def build_day_shortlist(
         routing,
         quality_by_id,
         popularity,
+        popular_places,
         quality_max,
         trip_tag_counts or {},
     )
@@ -96,6 +106,7 @@ def build_day_shortlist(
                     item,
                     quality_by_id,
                     popularity,
+                    popular_places,
                     quality_max,
                 ),
                 item.place_id,
@@ -157,6 +168,7 @@ def _select_activities(
     routing: RoutingProblem,
     quality_by_id: dict[str, float],
     popularity: dict[str, float],
+    popular_places: frozenset[str],
     quality_max: int,
     trip_tag_counts: Mapping[str, int],
 ) -> tuple[PlannerCandidate, ...]:
@@ -173,6 +185,7 @@ def _select_activities(
                     item,
                     quality_by_id,
                     popularity,
+                    popular_places,
                     quality_max,
                 )
                 - 25 * _cluster_travel_minutes(item.place_id, selected, routing)
@@ -231,6 +244,7 @@ def _candidate_score(
     candidate: PlannerCandidate,
     quality_by_id: dict[str, float],
     popularity: dict[str, float],
+    popular_places: frozenset[str],
     quality_max: int,
 ) -> int:
     priority = {
@@ -256,6 +270,9 @@ def _candidate_score(
     )
     quality = round(quality_by_id[candidate.place_id] * quality_max)
     popular = round(popularity[candidate.place_id] * POPULARITY_SCORE_MAX)
+    popular_place = (
+        POPULAR_PLACE_SCORE if candidate.place_id in popular_places else 0
+    )
     relationship = len(candidate.relationships) * RELATIONSHIP_SCORE
     return (
         priority
@@ -263,6 +280,7 @@ def _candidate_score(
         + preference
         + style
         + popular
+        + popular_place
         + quality
         + relationship
     )

@@ -1,6 +1,6 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-17.
+Cập nhật lần cuối: 2026-08-18.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
@@ -155,7 +155,7 @@ Tên place chỉ chứa tên riêng của địa điểm/cơ sở. Khi raw promp
 thể liên kết bằng `relatedPlaceName`; evidence từ source tương tự nằm trong
 `urlNotes`. Explorer không resolve place.
 
-Policy mặc định: `days=3` và chỉ raw prompt được ghi đè; `people=1 adult` và
+Policy mặc định: `days=3` và chỉ raw prompt được ghi đè; `people=2 adults` và
 chỉ raw prompt được ghi đè; budget ưu tiên raw prompt, whole-trip image,
 whole-trip URL, rồi `low`. Giá vé/món riêng không phải whole-trip budget.
 Draft generator có adapter deterministic và structured Gemini; prompt provider
@@ -219,9 +219,17 @@ Rich `PlaceCheckerResult` giữ evaluation, provenance và diagnostic. Sau đó
 `PlaceCheckerPlannerOutputBuilder` tạo compact
 `trip + places + food + entertainment + foodCoverage + accommodations + excludedCandidates`; root
 validate payload này bằng `ItineraryPlannerInput` và giữ tại `planner_input`.
-Retrieval/ranking dùng target `14 TravelPlace/ngày`, `12 Restaurant/ngày` và
-`4 DrinkDessert/Entertainment/ngày`. Sáu Style food/drink có target mềm `2 × days`; PlaceChecker
-chọn Item trước, reverse `Offer_Item` sang Restaurant/DrinkDessert và cân bằng
+Retrieval/ranking dùng target `22 TravelPlace/ngày`, `16 Restaurant/ngày` và
+`6 DrinkDessert/Entertainment/ngày`. Core TravelPlace retrieval có query riêng
+cho famous/must-see landmark. Entertainment tự gợi ý phải đạt Bayesian rating
+điều chỉnh tối thiểu 4,2/5; direct-user/URL được giữ. Compact selector
+chỉ dùng `8 TravelPlace/ngày` làm hard handoff minimum; phần thiếu so với target
+22/ngày là reserve shortfall, không tự chặn Planner. Selector giảm riêng
+Entertainment có thể xếp 08:00-12:00; candidate chỉ khả thi buổi
+chiều/tối không chịu morning cap nhưng vẫn nằm trong quota toàn ngày. Ba Style breakfast/lunch/dinner active
+mặc định; Style food/drink khác chỉ active khi request resolve tới Style đó.
+Mỗi Style active có target mềm `2 × days`; PlaceChecker chọn Item trước, reverse
+`Offer_Item` sang Restaurant/DrinkDessert và cân bằng
 Item/quán theo anchor region. Food hard minimum vẫn là `days * 3` venue duy nhất.
 Compact boundary chỉ đưa Restaurant vào `food`; DrinkDessert/Entertainment được
 chuyển sang pool nullable `entertainment` và không chiếm meal slot hay quota Place.
@@ -231,13 +239,18 @@ PlaceChecker dựng slot cho từng
 dùng tập Restaurant rời nhau làm soft reserve, tối đa 60 candidate. Thiếu hard
 matching làm PlaceChecker `blocked`;
 thiếu relationship gần chỉ tạo warning và general food vẫn được phép. Một pool
-Accommodation riêng giữ tối đa 5 khách sạn có giá dương: low gần P25, medium
-gần P50 và high gần P80 của candidate đã xác minh trong thành phố; compact
-output phát tối đa ba phương án quanh mốc ngân sách để Planner chọn theo giá và
-vị trí.
+Accommodation riêng chỉ nhận khách sạn đã xác minh có giá dương. Low/medium/high
+chọn tối đa ba phương án quanh P25/P50/P80, sau đó xếp lại theo khoảng cách tới
+tâm compact TravelPlace pool. Candidate đầu tiên là top accommodation anchor
+của hybrid Planner; hai phương án còn lại không kích hoạt global re-solve.
 Rich PlaceChecker result trả `foodStyleCoverage[]` gồm Style ID/tên, target,
 số quán đã chọn, số Item phân biệt và trạng thái complete. Compact Planner
 contract vẫn nhận food venue cùng `foodCoverage` meal feasibility.
+Rich result còn trả `styleCandidateSelections[]` với place/entity type,
+Style/Item ID và tên, `relationshipSource`, cùng
+`styleCandidateCoverage[]` và các input Style/Item không resolve được. Selector
+tổng quát chỉ kích hoạt Style resolve từ `shortPreferences` hoặc `inputItems`,
+dedup toàn pool theo place ID và không ghi bộ đếm diversity xuống database.
 Compact priority chỉ gồm `user_input`, `url`, `special_experience`,
 `special_near`; food có `supportedMeals` và `venueType=restaurant`. Contract
 vẫn nhận `drink_dessert` cho compatibility input cũ.
@@ -252,7 +265,12 @@ thematic query cho culture, nature, shopping, nightlife, workshop, performance,
 outdoor, family và local activity, giữ một candidate mỗi theme/style khả dụng
 trước khi bù theo 6/14 Special Experience đã duyệt và 4/14 popular;
 popular kết hợp Bayesian quality với log review count, bucket thiếu được ranking
-diversity bù và không làm PlaceChecker phân ngày thay Planner.
+diversity bù và không làm PlaceChecker phân ngày thay Planner. Popular bucket
+chỉ tính candidate có ít nhất 500 review và popularity score từ 0,70. Semantic
+category guard chuyển music box, karaoke, golf, billiard/bi-a, bowling, studio,
+game center, massage/trị liệu, spa và retail store/souvenir bị gắn `TravelPlace`
+sai sang `Entertainment` trước khi chia pool.
+Candidate có `pool_category=shopping` cũng không được tính là landmark.
 Compact output giữ TravelPlace thiếu giá và mặc định `price.cost=0 VND`; food,
 entertainment và accommodation vẫn phải có giá dùng được. User input bị loại vì
 lý do khác được giữ trong `excludedCandidates` để Planner trả `unscheduled` cùng
@@ -291,7 +309,8 @@ FinalItineraryPlanner dùng quality 0..1 cho objective `placeQualityValue`.
 
 ### FinalItineraryPlanner
 
-Planner preprocess payload compact, lấy một global Valhalla driving matrix,
+Planner preprocess payload compact, lấy một global Valhalla driving matrix được
+ghép đúng thứ tự từ các provider batch tối đa 2.500 source-target pairs,
 giữ mười neighbor gần nhất theo safe travel time cho mỗi candidate rồi union
 forced relationship, meal-access, priority và bridge arcs. CP-SAT mặc định dùng
 một search worker trong từng pass do benchmark hiện tại chưa chứng minh
@@ -299,8 +318,11 @@ multi-worker giảm latency. Default không đặt solver timeout; runtime cần
 phải inject giới hạn riêng qua `SolverConfig`. Planner tạo geographic day-domain,
 greedy shortlist và 2-opt/swap, rồi chạy OR-Tools CP-SAT hai pass cho từng
 ngày. Greedy và CP-SAT dùng chung Bayesian review quality dựa trên rating,
-review count và prior của pool. Kết quả ghép ngày được kiểm tra lại budget, overnight rest và accommodation
-transfer. Sau solver, module chỉ lấy
+review count và prior của pool. Hybrid cố định top accommodation trước khi solve
+từng ngày; endpoint arc phải nối được anchor, về trước 03:00 và giữ tối thiểu 7
+giờ nghỉ sau khi trừ hai transfer. Kết quả ghép ngày kiểm tra lại budget/rest/
+transfer nhưng không gọi global CP-SAT để đổi khách sạn. Failure nêu top
+`placeId`, ngày và nhóm constraint liên quan. Sau solver, module chỉ lấy
 route detail cho selected arcs cùng accommodation transfers. Repair khóa ngày
 không ảnh hưởng chỉ chạy sau khi timeline reflow không thể giữ nguyên
 selection/order trong opening, meal, overnight và budget hard constraints.
@@ -309,8 +331,12 @@ Locked solve nhận baseline schedule làm solution hint; nếu `INFEASIBLE` ho�
 thể được thay hoặc loại. Route detail được cache theo matrix-node pair trong
 request. Nếu replan chọn arc mới dài hơn matrix, correction/repair tiếp tục khi
 có correction mới đến lúc timeline ổn định; không có wall-clock timeout mặc
-định cho chuỗi này.
-Mỗi ngày bắt buộc có activity xen giữa breakfast/lunch và lunch/dinner bằng
+định cho chuỗi này. Route detail gây overlap luôn kích hoạt repair, kể cả lệch
+1-2 phút; tolerance không nới lỏng hard timeline validity.
+Entertainment bắt đầu trước 12:00 có target mềm 10% trên baseline hai activity
+buổi sáng/ngày; phần vượt target bị trừ utility thay vì hard-fail để candidate
+bắt buộc và
+preflight vẫn khả thi. Mỗi ngày bắt buộc có activity xen giữa breakfast/lunch và lunch/dinner bằng
 hard constraint cấm food-to-food arc. Planner bắt buộc ít nhất hai Place và
 thưởng đến ba Place/ngày; Entertainment optional, tối đa ba/ngày,
 được dịch meal trong policy window để chèn activity; nếu shortlist chưa đạt ba
@@ -318,6 +344,10 @@ activity thì mở reserve khả thi và solve refill. Waiting giữa hai stop l
 `safeTravel` đã gồm routing buffer; khi pool/opening
 window không dựng được chuỗi liên tục, solver trả `INFEASIBLE` thay vì xuất
 ngày chỉ có ba bữa ăn.
+Trong số TravelPlace, candidate có ít nhất 500 review và Bayesian rating điều
+chỉnh từ 4,2 được xem là popular. Shortlist cộng 6.000 điểm và objective đặt
+target mềm một popular TravelPlace/ngày, phạt 6.000 cho mỗi suất thiếu khả thi
+để không dồn toàn bộ landmark vào một ngày chỉ nhằm giảm route ngắn hạn.
 Nightlife và night-market bị clamp start từ 18:00; `Weekend Night Market` chỉ
 khả thi vào Thứ Sáu-Chủ Nhật theo `trip.startDate`. Candidate place được đánh
 dấu `drink_dessert` bị giới hạn tối đa hai điểm mỗi ngày.
@@ -349,8 +379,8 @@ chọn lại không chịu penalty này.
 Hybrid planner đồng thời giữ bộ đếm nhóm trải nghiệm đã chọn qua toàn chuyến:
 ngày sau ưu tiên nhóm mới trong shortlist và chỉ quay lại nhóm cũ khi cần fill.
 
-`ItineraryPlannerOutput` gồm accommodation đã chọn, số đêm, ngày/stops/ordered route
-legs, cost và budget trên
+`ItineraryPlannerOutput` gồm `people`, accommodation đã chọn, số đêm,
+ngày/stops/ordered route legs, cost và budget trên
 một người, cùng `costBreakdown` mỗi ngày tách accommodation, food,
 localTransport, activities và misc. Mỗi ordered route leg có `costPerPerson`
 trên một người từ cùng fare estimator dùng cho `localTransport`.
@@ -360,6 +390,8 @@ morning 70/30 và evening 60/40. Quota source là soft penalty có fallback, cò
 opening hours vẫn là hard constraint. `InvokeResponse.itinerary` vẫn là
 contract legacy phục vụ PlanEditor; output mới được trả riêng qua
 `plannerOutput` để biểu diễn overnight, geometry và solver metadata.
+`people` được sao chép từ Planner input để Trip Chat lưu cùng snapshot; frontend
+vì vậy vẫn hiển thị đúng quy mô nhóm sau khi tải lại chat.
 Ngoài graph hybrid CP-SAT mặc định, module có factory Beam Search chạy song song
 để thử nghiệm rollout. Beam áp hard rule không nối restaurant-to-restaurant,
 kiểm tra distance Q3, rating tối thiểu 3.0, review count từ Q2/P50,

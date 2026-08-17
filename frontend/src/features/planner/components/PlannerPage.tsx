@@ -4857,6 +4857,16 @@ function Planner() {
                       displayedExploreResult?.explorer.tripIntent.notes ?? []
                     }
                     plan={displayedPlan}
+                    travelerCount={
+                      displayedExploreResult
+                        ? displayedExploreResult.explorer.tripIntent.travelParty
+                            .adults
+                          + displayedExploreResult.explorer.tripIntent.travelParty
+                            .children
+                          + displayedExploreResult.explorer.tripIntent.travelParty
+                            .infants
+                        : null
+                    }
                   />
                 ) : null}
                 {displayedPlan ? (
@@ -5430,6 +5440,9 @@ function Planner() {
                                       displayedPlanDay.day
                                     )!.routeKey === selectedMapRouteKey
                                   }
+                                  travelerCount={
+                                    displayedPlan.travelerCount ?? 2
+                                  }
                                 />
                               ) : null}
                               {reorderingDay === displayedPlanDay.day ? (
@@ -5691,15 +5704,6 @@ function Planner() {
                                                   {sourceNote.label}
                                                 </strong>
                                                 <p>{sourceNote.text}</p>
-                                                {sourceNote.sourceUrl ? (
-                                                  <a
-                                                    href={sourceNote.sourceUrl}
-                                                    rel="noreferrer"
-                                                    target="_blank"
-                                                  >
-                                                    Mở nguồn
-                                                  </a>
-                                                ) : null}
                                               </section>
                                             )
                                           )}
@@ -6254,6 +6258,9 @@ function Planner() {
                                                   option={
                                                     selectedTransportLeg ??
                                                     transportLeg
+                                                  }
+                                                  travelerCount={
+                                                    displayedPlan.travelerCount ?? 2
                                                   }
                                                 />
                                               </small>

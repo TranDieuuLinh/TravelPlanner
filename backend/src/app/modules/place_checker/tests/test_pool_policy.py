@@ -24,10 +24,10 @@ from app.modules.place_checker.retrieval import TargetedRetrievalService
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 
 
-def test_activity_pool_target_is_twenty_places_per_day() -> None:
-    assert activity_pool_target_for_days(1) == 20
-    assert activity_pool_target_for_days(4) == 80
-    assert activity_pool_target_for_days(7) == 140
+def test_activity_pool_target_is_twenty_two_places_per_day() -> None:
+    assert activity_pool_target_for_days(1) == 22
+    assert activity_pool_target_for_days(4) == 88
+    assert activity_pool_target_for_days(7) == 154
     assert activity_pool_target_for_days(30) == 420
 
 
@@ -42,22 +42,22 @@ def test_entertainment_reserve_target_is_six_per_day() -> None:
 
 
 def test_combined_pool_has_independent_travel_and_restaurant_targets() -> None:
-    assert combined_pool_target_for_days(1) == 47
-    assert combined_pool_target_for_days(3) == 119
-    assert combined_pool_target_for_days(5) == 191
-    assert pool_query_limit_for_days(1) == 40
+    assert combined_pool_target_for_days(1) == 49
+    assert combined_pool_target_for_days(3) == 137
+    assert combined_pool_target_for_days(5) == 225
+    assert pool_query_limit_for_days(1) == 44
     assert pool_query_limit_for_days(3) == 60
 
 
 def test_planner_pool_shortfall_is_a_hard_per_type_measurement() -> None:
-    assert planner_pool_shortfall(days=1, travel_place_count=13, food_count=8) == (
-        20,
+    assert planner_pool_shortfall(days=1, travel_place_count=7, food_count=8) == (
+        8,
         3,
         1,
         0,
     )
-    assert planner_pool_shortfall(days=1, travel_place_count=14, food_count=10) == (
-        20,
+    assert planner_pool_shortfall(days=1, travel_place_count=8, food_count=10) == (
+        8,
         3,
         0,
         0,
@@ -65,14 +65,14 @@ def test_planner_pool_shortfall_is_a_hard_per_type_measurement() -> None:
 
 
 def test_three_day_food_hard_minimum_tracks_nine_meal_slots() -> None:
-    assert planner_pool_shortfall(days=3, travel_place_count=42, food_count=9) == (
-        42,
+    assert planner_pool_shortfall(days=3, travel_place_count=24, food_count=9) == (
+        24,
         9,
         0,
         0,
     )
-    assert planner_pool_shortfall(days=3, travel_place_count=42, food_count=8) == (
-        42,
+    assert planner_pool_shortfall(days=3, travel_place_count=24, food_count=8) == (
+        24,
         9,
         0,
         1,
@@ -82,17 +82,17 @@ def test_three_day_food_hard_minimum_tracks_nine_meal_slots() -> None:
 def test_food_hard_minimum_also_requires_each_meal_type() -> None:
     assert planner_pool_shortfall(
         days=3,
-        travel_place_count=42,
+        travel_place_count=24,
         food_count=9,
         food_meal_counts={"breakfast": 0, "lunch": 9, "dinner": 9},
-    ) == (42, 9, 0, 3)
+    ) == (24, 9, 0, 3)
 
 
 def test_pool_target_is_shared_across_discovery_gaps() -> None:
     assert per_gap_pool_target(4, 4) == 20
     assert per_gap_pool_target(4, 2) == 20
     assert per_gap_pool_target(4, 1) == 20
-    assert per_gap_pool_target(7, 8) == 18
+    assert per_gap_pool_target(7, 8) == 20
 
 
 def test_generic_travel_query_uses_bounded_places_per_trip_day() -> None:
@@ -111,7 +111,7 @@ def test_generic_travel_query_uses_bounded_places_per_trip_day() -> None:
         gap, analysis_context(days=3), None, anchor_place_ids=[], limit=6
     )
 
-    assert one_day.limit == 20
+    assert one_day.limit == 22
     assert three_days.limit == 60
 
 
@@ -136,10 +136,15 @@ def test_core_pool_retrieval_leaves_restaurants_to_food_pool_service() -> None:
     queries = {gap.gap_id: gap.query for gap in result.gaps}
     assert set(queries) == {
         "pool:travel_place_candidates",
+        "pool:popular_landmark_candidates",
         "pool:accommodation_candidates",
         "pool:travel_place_reserve",
     }
     assert queries["pool:travel_place_candidates"].category_hint == "travel place"
+    assert (
+        queries["pool:popular_landmark_candidates"].query_text
+        == "famous landmark must see top attraction"
+    )
     assert queries["pool:accommodation_candidates"].category_hint == "accommodation"
     assert all(query.limit == 60 for query in queries.values())
 
@@ -176,11 +181,11 @@ def test_adaptive_pool_skips_reserve_queries_when_existing_pool_is_sufficient() 
     )
     coverage = CoverageAnalysis(
         level=CoverageLevel.sufficient,
-        planner_eligible_place_count=55,
+        planner_eligible_place_count=85,
         mandatory_place_count=0,
         category_distribution={
-            "landmark": 42,
-            "entertainment": 12,
+            "landmark": 66,
+            "entertainment": 18,
             "accommodation": 1,
         },
         resolved_item_count=0,
@@ -231,7 +236,11 @@ def test_adaptive_pool_only_adds_queries_needed_for_shortfall() -> None:
 
     assert [query.gap_id for query in source.queries] == [
         "pool:travel_place_candidates",
+        "pool:popular_landmark_candidates",
         "pool:culture_alternatives",
+        "pool:nature_alternatives",
+        "pool:shopping_alternatives",
+        "pool:nightlife_alternatives",
         "pool:entertainment_alternatives",
     ]
 

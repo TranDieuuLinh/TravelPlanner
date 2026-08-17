@@ -158,6 +158,7 @@ export type TravelPlan = {
   id: string;
   title: string;
   destination: string;
+  travelerCount?: number | null;
   regionStories?: PlanNoteSource[];
   kind: "main" | "backup";
   days: PlanDay[];

@@ -280,6 +280,7 @@ def finalize_itinerary(
     return ItineraryPlannerOutput(
         destination=problem.trip.destination,
         timezone=problem.trip.timezone,
+        people=problem.trip.people,
         accommodation=selected_accommodation,
         accommodation_nights=problem.accommodation_nights
         if selected_accommodation

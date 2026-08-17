@@ -109,6 +109,27 @@ def test_requires_two_places_and_limits_entertainment_to_three_per_day() -> None
     assert len(selected & entertainment_ids) == 3
 
 
+def test_flexible_entertainment_is_scheduled_outside_the_morning() -> None:
+    arcade = entertainment(
+        "arcade",
+        priority="user_input",
+        duration_minutes=60,
+    )
+    arcade["openingHours"] = {
+        "1": [{"startMinute": 480, "endMinute": 1380}]
+    }
+    raw = base_payload()
+    raw["entertainment"] = [arcade]
+
+    result, _, _ = solve_payload(raw)
+
+    arcade_stop = next(
+        stop for stop in result.scheduled_stops if stop.place_id == "arcade"
+    )
+    assert arcade_stop.start_minute >= 12 * 60
+    assert result.objective_components["morningEntertainmentExcessCost"] == 0
+
+
 def test_drink_dessert_is_limited_and_cannot_fill_adjacent_meals() -> None:
     breakfast_drink = food(
         "breakfast_drink",

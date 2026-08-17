@@ -3,9 +3,10 @@ from __future__ import annotations
 import math
 
 
-ACTIVITY_CANDIDATES_PER_DAY = 20
+ACTIVITY_CANDIDATES_PER_DAY = 22
 FOOD_CANDIDATES_PER_DAY = 16
 ENTERTAINMENT_CANDIDATES_PER_DAY = 6
+PLANNER_HANDOFF_ACTIVITY_CANDIDATES_PER_DAY = 8
 MAX_ACTIVITY_POOL_TARGET = 420
 MAX_FOOD_POOL_TARGET = 300
 MAX_ENTERTAINMENT_POOL_TARGET = 120
@@ -16,7 +17,7 @@ MEALS_PER_DAY = 3
 
 def activity_pool_target_for_days(days: int) -> int:
     """Return the TravelPlace reserve required for the trip duration."""
-    return min(MAX_ACTIVITY_POOL_TARGET, max(20, days * ACTIVITY_CANDIDATES_PER_DAY))
+    return min(MAX_ACTIVITY_POOL_TARGET, max(22, days * ACTIVITY_CANDIDATES_PER_DAY))
 
 
 def food_pool_target_for_days(days: int) -> int:
@@ -39,8 +40,11 @@ def planner_pool_shortfall(
     food_count: int,
     food_meal_counts: dict[str, int] | None = None,
 ) -> tuple[int, int, int, int]:
-    """Return activity-reserve and hard meal-coverage shortfalls."""
-    travel_target = activity_pool_target_for_days(days)
+    """Return minimum Planner handoff and hard meal-coverage shortfalls."""
+    travel_target = max(
+        PLANNER_HANDOFF_ACTIVITY_CANDIDATES_PER_DAY,
+        days * PLANNER_HANDOFF_ACTIVITY_CANDIDATES_PER_DAY,
+    )
     food_target = max(MEALS_PER_DAY, days * MEALS_PER_DAY)
     meal_shortfall = max(
         (max(0, days - count) for count in (food_meal_counts or {}).values()),

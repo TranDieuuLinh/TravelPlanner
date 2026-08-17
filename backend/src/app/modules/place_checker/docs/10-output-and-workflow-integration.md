@@ -86,6 +86,10 @@ constraint xác minh. Trách nhiệm hiện tại của FinalItineraryPlanner kh
   đúng cấu trúc JSON mẫu nhưng vẫn giữ identity, evaluation, verification,
   ranking và provenance. Runtime giữ một evaluation nội bộ bị loại khỏi JSON để
   tạo planning projection mà không làm lộ field thừa.
+- Output giữ `styleCandidateSelections[]` với provenance Style, Item và
+  relationship source; `styleCandidateCoverage[]` trả target, actual,
+  distinct Item và shortfall reason theo từng active Style. Input Style/Item
+  không resolve được được trả riêng, không tạo placeholder candidate.
 - `ExplorerInputProjector` chuyển contract Explorer legacy hiện tại sang input
   canonical. Explorer mới có thể truyền thẳng `PlaceCheckerInput`.
 - `PlaceCheckerPlanningProjector` chỉ đưa `planner_ready/conditional` đã verify,
@@ -216,10 +220,12 @@ Output chỉ phát `price.cost` và `price.currency` đúng contract JSON của 
 ngân sách. PlaceChecker không tự biến dữ liệu thiếu thành giá miễn phí.
 
 Accommodation dùng boundary riêng, không đi vào `places` như activity. Chỉ bản
-ghi đã xác minh và có `typical_cost > 0` được chọn. Ranking giữ tối đa năm lựa
-chọn; budget low/medium/high xác định mốc P25/P50/P80 rồi compact output truyền
-tối đa ba candidate quanh mốc đó, kèm `coordinates` và `pricePerNight`, để
-Planner quyết định theo cả ngân sách lẫn route.
+ghi đã xác minh và có `typical_cost > 0` được chọn. Budget low/medium/high xác
+định mốc P25/P50/P80; selector lấy tối đa ba candidate quanh mốc đó rồi xếp lại
+theo khoảng cách tới tâm tọa độ của compact TravelPlace pool. Candidate đầu tiên
+vì vậy là top accommodation anchor mà hybrid Planner dùng, còn hai candidate sau
+được giữ làm dữ liệu giải thích/dự phòng ở boundary. Output kèm `coordinates` và
+`pricePerNight`.
 
 ## Budget truyền sang Planner
 

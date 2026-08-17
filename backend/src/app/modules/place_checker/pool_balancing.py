@@ -1,6 +1,6 @@
 from app.modules.place_checker.activity_pool_selection import select_activity_coverage
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
-from app.modules.place_checker.planner_category import planner_category
+from app.modules.place_checker.planner_category import planner_category_for_candidate
 from app.modules.place_checker.pool_policy import ACCOMMODATION_POOL_TARGET
 from app.modules.place_checker.scoring_contract import ScoredCandidate
 
@@ -30,7 +30,14 @@ class CandidatePoolBalancer:
                 if evaluation.place.metadata
                 else None
             )
-            existing[cls._entity_type(category)] += 1
+            metadata = evaluation.place.metadata
+            existing[
+                cls._entity_type(
+                    category,
+                    name=evaluation.place.canonical_name,
+                    tags=metadata.tags if metadata else (),
+                )
+            ] += 1
 
         selected_keys: set[str] = set()
         for entity_type in (
@@ -42,7 +49,13 @@ class CandidatePoolBalancer:
             candidates = [
                 item
                 for item in ranked
-                if cls._entity_type(item.candidate.category) == entity_type
+                if cls._entity_type(
+                    item.candidate.category,
+                    name=item.candidate.canonical_name,
+                    tags=item.candidate.tags,
+                    pool_category=item.candidate.pool_category,
+                )
+                == entity_type
             ]
             target = {
                 "travel_place": activity_target,
@@ -105,8 +118,19 @@ class CandidatePoolBalancer:
         ]
 
     @staticmethod
-    def _entity_type(category: str | None) -> str:
-        normalized = planner_category(category)
+    def _entity_type(
+        category: str | None,
+        *,
+        name: str | None = None,
+        tags: list[str] | tuple[str, ...] = (),
+        pool_category: str | None = None,
+    ) -> str:
+        normalized = planner_category_for_candidate(
+            category,
+            name=name,
+            tags=tags,
+            pool_category=pool_category,
+        )
         if normalized == "restaurant":
             return "restaurant"
         if normalized in {"drink_dessert", "entertainment"}:

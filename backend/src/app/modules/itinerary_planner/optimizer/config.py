@@ -10,7 +10,7 @@ class SolverConfig:
     utility_timeout_seconds: float | None = None
     utility_relative_gap_limit: float = 0.05
     utility_parallel_workers: int = 3
-    max_utility_no_improvement_rounds: int = 10
+    max_utility_no_improvement_rounds: int = 3
     random_seed: int = 42
     log_search_progress: bool = False
     max_inter_stop_wait_minutes: int | None = MAX_INTER_STOP_WAIT_MINUTES
@@ -18,7 +18,7 @@ class SolverConfig:
 
 @dataclass(frozen=True, slots=True)
 class ObjectiveWeights:
-    policy_version: str = "itinerary-utility-v6-gap-fill"
+    policy_version: str = "itinerary-utility-v10-balanced-popular-place"
     activity_coverage: int = 350
     special_experience: int = 1_200
     preference_max: int = 600
@@ -43,6 +43,8 @@ class ObjectiveWeights:
     day_imbalance_minute: int = 1
     unknown_opening: int = 5
     source_mix_deviation: int = 2_000
+    morning_entertainment_excess: int = 6_000
+    popular_place_shortfall: int = 6_000
     budget_overage_10k: int = 5
 
 
