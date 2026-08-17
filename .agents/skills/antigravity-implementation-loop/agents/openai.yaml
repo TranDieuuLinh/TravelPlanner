@@ -1,0 +1,4 @@
+interface:
+  display_name: "Antigravity Loop"
+  short_description: "Delegate to agy, verify diffs, and iterate."
+  default_prompt: "Use agy to implement this task, then independently inspect, test, and audit until all acceptance criteria pass."

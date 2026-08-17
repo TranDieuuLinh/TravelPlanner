@@ -15,10 +15,16 @@ class GeminiIntentClassifier:
         user_payload = {
             "message": payload.message,
             "conversationContext": [
-                item[-500:] for item in payload.conversation_context
+                item[-500:] for item in payload.conversation_context[-6:]
             ],
             "hasItinerary": payload.has_itinerary,
             "hasEditOperation": payload.has_edit_operation,
+            "destination": payload.destination,
+            "durationDays": payload.duration_days,
+            "mentionedPlaces": payload.mentioned_places[-50:],
+            "selectedPlaces": payload.selected_places[-50:],
+            "clarificationRequired": payload.clarification_required,
+            "conversationSummary": (payload.conversation_summary or "")[-2000:],
         }
         response = await self._client.generate(
             json.dumps(user_payload, ensure_ascii=False, separators=(",", ":")),

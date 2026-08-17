@@ -19,6 +19,7 @@ class RuleBasedReferenceResolver:
         message: str,
         current_memory: WorkingMemoryState,
         active_facts: Sequence[MemoryFact] | None = None,
+        recent_messages: Sequence[str] | None = None,
     ) -> tuple[Sequence[MemoryReference], bool]:
         references: list[MemoryReference] = []
         clarification_required = False
@@ -34,9 +35,15 @@ class RuleBasedReferenceResolver:
             if f.key == "place_candidate" and f.status == "active"
         ]
 
-        # 1. Deictic references ("các điểm bên trên", "những địa điểm trên")
-        if any(kw in no_accent_msg for kw in ["cac diem ben tren", "nhung dia diem tren", "may cho o tren", "cac diem tren"]):
-            phrase = "các điểm bên trên"
+        # 1. Plural/deictic references refer to the complete proposed set.
+        # They must not be treated as ambiguous singular anaphora.
+        plural_deictic = [
+            "cac diem ben tren", "nhung dia diem tren", "may cho o tren",
+            "cac diem tren", "nhung cho do", "nhung dia diem do",
+            "cac cho do", "nhung noi do",
+        ]
+        if any(kw in no_accent_msg for kw in plural_deictic):
+            phrase = "những chỗ đó" if "nhung cho do" in no_accent_msg else "các điểm bên trên"
             if place_facts:
                 resolved_places = [str(f.value) for f in place_facts]
                 target_ids = [f.fact_id for f in place_facts]

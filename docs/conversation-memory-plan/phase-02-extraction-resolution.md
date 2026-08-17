@@ -1,6 +1,6 @@
 # Phase 02 — Extract facts, merge policy và resolve reference
 
-Cập nhật lần cuối: 2026-08-14
+Cập nhật lần cuối: 2026-08-17
 
 ## Trạng thái Phase 02: HOÀN THÀNH (Internal Module)
 
@@ -15,7 +15,7 @@ Cập nhật lần cuối: 2026-08-14
 message + current memory + recent messages
         ↓ RuleBasedFactExtractor (structured facts + provenance)
         ↓ MergePolicyEvaluator (confirmed facts protection + history superseding)
-        ↓ RuleBasedReferenceResolver (anaphora, deictics, plan refs)
+        ↓ HybridLlmReferenceResolver (semantic) → RuleBasedReferenceResolver fallback
         ↓ ConversationMemoryService.process_message / append_facts
 ```
 
@@ -24,7 +24,8 @@ message + current memory + recent messages
 ### 1. Ports & Interfaces (`ports.py`, `public.py`)
 - `FactExtractor`: Port interface định nghĩa `extract_facts`.
 - `ReferenceResolver`: Port interface định nghĩa `resolve_references`.
-- `RuleBasedFactExtractor` & `RuleBasedReferenceResolver`: Adapter mặc định hỗ trợ tiếng Việt có dấu, không dấu, viết tắt ("HN", "DN", "SG", "HCM") và các quy tắc suy luận an toàn.
+- `RuleBasedFactExtractor`: trích xuất fact deterministic, hỗ trợ tiếng Việt có dấu, không dấu và các viết tắt phổ biến.
+- `HybridLlmReferenceResolver`: mặc định dùng Gemini để hiểu tham chiếu từ transcript gần đây, summary và active facts; kiểm tra mọi target fact ID. Tên địa điểm động chưa có fact chỉ được nhận khi xuất hiện nguyên văn trong transcript/memory. Provider lỗi, confidence thấp hoặc output không hợp lệ sẽ fallback sang `RuleBasedReferenceResolver`.
 
 ### 2. Fact Extraction (`extractor.py`)
 - Trích xuất tự động: `destination`, `duration`, `travelers`, `budget_tier`, `place_candidate`, `start_date`, `note`.

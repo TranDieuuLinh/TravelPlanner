@@ -19,6 +19,18 @@ _ALLOWED_MSGPACK_TYPES = [
     ("app.modules.place_checker.output_contract", "PlaceCheckerResult"),
     ("app.modules.itinerary_planner.contract", "ItineraryPlannerInput"),
     ("app.modules.itinerary_planner.contract", "ItineraryPlannerOutput"),
+] + [
+    ("app.modules.place_checker.enums", name)
+    for name in (
+        "PlaceLifecycleState", "VerificationStatus", "SourceTier",
+        "IssueSeverity", "PlaceCheckerStatus", "EvidenceOrigin",
+        "AdmResolutionStatus", "BudgetMode", "TravelPace",
+        "IdentityResolutionStatus", "SimilarityMethod", "OperationalStatus",
+        "CostTier", "ItemResolutionStatus", "EvaluationDimension",
+        "BudgetAssessmentStatus", "CapacityLoadStatus", "CoverageLevel",
+        "GeographicSpread", "GapType", "GapStatus", "RetrievalSourceKind",
+        "PromotionEventStatus", "UnresolvedEntityType",
+    )
 ]
 
 

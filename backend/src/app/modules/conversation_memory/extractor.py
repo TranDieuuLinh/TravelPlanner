@@ -1,6 +1,7 @@
 """Rule-based fact extractor implementation for Conversation Memory module."""
 
 import re
+import hashlib
 import unicodedata
 from typing import Sequence
 
@@ -93,6 +94,16 @@ class RuleBasedFactExtractor:
         clean_msg = message.strip()
         no_accent_msg = remove_accents(clean_msg)
         excerpt = clean_msg[:200]
+        fact_identity = message_id or (
+            f"chat:{current_memory.chat_id}:turn:{turn}:{clean_msg}"
+        )
+        fact_digest = hashlib.sha256(fact_identity.encode("utf-8")).hexdigest()[:16]
+
+        def fact_id(kind: str, index: int) -> str:
+            # Fact IDs must be unique across retries and across chats. The old
+            # turn/index-only IDs collided when a message was retried after a
+            # transient database failure.
+            return f"f_{kind}_{fact_digest}_{index}"
 
         # Transcript text may contain quoted prompt-injection instructions. It
         # is not a travel preference or a user confirmation, so do not project
@@ -115,7 +126,7 @@ class RuleBasedFactExtractor:
         if source_url_val:
             facts.append(
                 MemoryFact(
-                    fact_id=f"f_url_{turn}_{len(facts)}",
+                    fact_id=fact_id("url", len(facts)),
                     fact_type="note",
                     key="note",
                     value=source_url_val,
@@ -160,7 +171,7 @@ class RuleBasedFactExtractor:
             status = "active"
             facts.append(
                 MemoryFact(
-                    fact_id=f"f_dest_{turn}_{len(facts)}",
+                    fact_id=fact_id("dest", len(facts)),
                     fact_type="destination",
                     key="destination",
                     value=matched_dest,
@@ -195,7 +206,7 @@ class RuleBasedFactExtractor:
         if dur_val and 1 <= dur_val <= 90:
             facts.append(
                 MemoryFact(
-                    fact_id=f"f_dur_{turn}_{len(facts)}",
+                    fact_id=fact_id("dur", len(facts)),
                     fact_type="duration",
                     key="duration",
                     value=dur_val,
@@ -227,7 +238,7 @@ class RuleBasedFactExtractor:
         if trv_val and 1 <= trv_val <= 50:
             facts.append(
                 MemoryFact(
-                    fact_id=f"f_trv_{turn}_{len(facts)}",
+                    fact_id=fact_id("trv", len(facts)),
                     fact_type="travelers",
                     key="travelers",
                     value=trv_val,
@@ -259,7 +270,7 @@ class RuleBasedFactExtractor:
         if budget_tier:
             facts.append(
                 MemoryFact(
-                    fact_id=f"f_bud_{turn}_{len(facts)}",
+                    fact_id=fact_id("bud", len(facts)),
                     fact_type="budget_tier",
                     key="budget_tier",
                     value=budget_tier,
@@ -283,7 +294,7 @@ class RuleBasedFactExtractor:
             if norm_p in no_accent_msg:
                 facts.append(
                     MemoryFact(
-                        fact_id=f"f_place_{turn}_{len(facts)}",
+                        fact_id=fact_id("place", len(facts)),
                         fact_type="place_candidate",
                         key="place_candidate",
                         value=canonical_p,

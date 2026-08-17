@@ -205,6 +205,25 @@ class TestPhase02ExtractionAndResolution(unittest.TestCase):
             self.assertEqual(f.provenance.extracted_by, "rule_based_v1")
             self.assertTrue(0.0 <= f.provenance.confidence <= 1.0)
 
+    def test_fact_ids_are_stable_for_retry_but_unique_between_chats(self):
+        first = WorkingMemoryState(chat_id="chat-a", user_id=self.user_id)
+        second = WorkingMemoryState(chat_id="chat-b", user_id=self.user_id)
+        message = "Tôi muốn đi Hà Nội 2 ngày"
+
+        first_run = asyncio.run(self.extractor.extract_facts(message, first, turn=1))
+        retry = asyncio.run(self.extractor.extract_facts(message, first, turn=1))
+        other_chat = asyncio.run(self.extractor.extract_facts(message, second, turn=1))
+
+        self.assertEqual(
+            [fact.fact_id for fact in first_run],
+            [fact.fact_id for fact in retry],
+        )
+        self.assertTrue(
+            set(fact.fact_id for fact in first_run).isdisjoint(
+                fact.fact_id for fact in other_chat
+            )
+        )
+
     def test_process_message_full_pipeline(self):
         async def run_pipeline():
             mem, extracted, refs, clarify = await self.service.prepare_message_context(

@@ -46,8 +46,8 @@ class PostgresPlaceCatalog(PostgresCatalogMappingMixin):
 
                     self._pool = await asyncpg.create_pool(
                         self.database_url,
-                        min_size=1,
-                        max_size=4,
+                        min_size=0,
+                        max_size=1,
                         command_timeout=self.command_timeout,
                     )
         return self._pool

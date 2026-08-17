@@ -32,6 +32,10 @@ import asyncpg
 from typing import Any
 from app.modules.conversation_memory.adapters.postgres import PostgresMemoryRepository
 from app.modules.conversation_memory.adapters.in_memory import InMemoryMemoryRepository
+from app.modules.conversation_memory.adapters.llm_reference_resolver import (
+    HybridLlmReferenceResolver,
+)
+from app.shared.llm import GeminiLlmClient
 
 class LazyPostgresMemoryRepository:
     def __init__(self, database_url: str):
@@ -46,15 +50,15 @@ class LazyPostgresMemoryRepository:
                 if self._repo is None:
                     self.pool = await asyncpg.create_pool(
                         self.database_url,
-                        min_size=1,
-                        max_size=10,
+                        min_size=0,
+                        max_size=1,
                         # Cloud Postgres providers may close idle TLS
                         # connections before the client notices. Recycling
                         # them sooner prevents stale connections from being
                         # handed to memory requests.
                         max_inactive_connection_lifetime=45,
-                        timeout=15,
-                        command_timeout=30,
+                        timeout=5,
+                        command_timeout=15,
                     )
                     self._repo = PostgresMemoryRepository(self.pool)
         return self._repo
@@ -99,10 +103,28 @@ def build_conversation_memory_service(
             repository = InMemoryMemoryRepository()
             logging.warning("Using InMemoryMemoryRepository for conversation memory. Data will be lost on restart.")
 
+    resolver = RuleBasedReferenceResolver()
+    if (
+        settings
+        and getattr(settings, "conversation_memory_reference_provider", "rules") == "gemini"
+        and getattr(settings, "gemini_api_key", None)
+    ):
+        resolver = HybridLlmReferenceResolver(
+            GeminiLlmClient(
+                settings.gemini_api_key,
+                model=settings.gemini_model,
+                timeout_seconds=settings.gemini_timeout_seconds,
+                key_cooldown_seconds=settings.gemini_key_cooldown_seconds,
+            ),
+            fallback=resolver,
+            confidence_threshold=settings.conversation_memory_reference_confidence,
+            max_output_tokens=settings.conversation_memory_reference_max_output_tokens,
+        )
+
     return ConversationMemoryService(
         repository=repository,
         extractor=RuleBasedFactExtractor(),
-        resolver=RuleBasedReferenceResolver(),
+        resolver=resolver,
     )
 
 
@@ -114,6 +136,7 @@ __all__ = [
     "FactStatus",
     "FactType",
     "InMemoryMemoryRepository",
+    "HybridLlmReferenceResolver",
     "MemoryFact",
     "MemoryNotFound",
     "MemoryPersistenceError",

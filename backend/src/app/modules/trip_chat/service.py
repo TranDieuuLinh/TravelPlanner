@@ -4,8 +4,6 @@ import logging
 from time import perf_counter
 from typing import Any
 
-import asyncpg
-
 from app.modules.conversation_memory.public import (
     ConversationMemoryService,
     FactProvenance,
@@ -20,6 +18,10 @@ from app.modules.trip_chat.contract import (
     TripChatBootstrap,
 )
 from app.modules.trip_chat.ports import TripChatRepository
+from app.modules.trip_chat.db_retry import (
+    is_transient_database_error,
+    retry_transient_database,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +151,9 @@ class TripChatService:
         content: str,
         graph_config: dict[str, Any] | None = None,
     ) -> TripChat | None:
-        chat = await self.repository.get_chat(user_id, chat_id)
+        chat = await retry_transient_database(
+            lambda: self.repository.get_chat(user_id, chat_id)
+        )
         if not chat:
             return None
 
@@ -198,8 +202,22 @@ class TripChatService:
                                 or user_preferences.budget_tier,
                             }
                         )
-                    if loaded_memory.version == 0 and not loaded_memory.destination:
+                    if not loaded_memory.destination or not loaded_memory.mentioned_places:
                         bootstrap_facts = self._get_bootstrap_facts(chat)
+                        for history_index, history_message in enumerate(chat.messages):
+                            if history_message.role != "user":
+                                continue
+                            recovered = await self.memory_service.extract_facts(
+                                history_message.content,
+                                initial_memory,
+                                turn=history_index // 2 + 1,
+                                message_id=f"history:{history_message.id}",
+                            )
+                            bootstrap_facts.extend(recovered)
+                            if recovered:
+                                initial_memory = self.memory_service.merge_extracted_facts(
+                                    initial_memory, recovered
+                                )
                         if bootstrap_facts:
                             initial_memory = self.memory_service.merge_extracted_facts(
                                 loaded_memory, bootstrap_facts
@@ -216,7 +234,9 @@ class TripChatService:
                         user_id=user_id,
                         message=content,
                         turn=turn,
+                        message_id=f"user:{chat_id}:{chat.revision + 1}",
                         initial_memory=initial_memory,
+                        recent_messages=recent_messages,
                     )
                     rolling_summary = self.memory_service.build_summary(
                         working_memory,
@@ -232,7 +252,7 @@ class TripChatService:
                     memory_reference_count = len(references)
                     conversation_summary = working_memory.summary
                 except Exception as exc:
-                    if isinstance(exc, (asyncpg.PostgresConnectionError, ConnectionError)):
+                    if is_transient_database_error(exc):
                         logger.warning(
                             "conversation_memory_transient_db_error chat_id=%s attempt=%d/%d error=%s",
                             chat_id,
@@ -271,9 +291,6 @@ class TripChatService:
 
             if self.memory_service is not None and working_memory is not None:
                 try:
-                    # Preserve place candidates suggested by Information Finder
-                    # so a later message such as "những chỗ đó" can resolve
-                    # against the assistant's immediately preceding answer.
                     information_output = result.get("information_output")
                     assistant_facts = []
                     if information_output and information_output.answer:
@@ -322,7 +339,7 @@ class TripChatService:
                     memory_warning = "Memory service error; version conflict after retries."
                     break
                 except Exception as exc:
-                    if isinstance(exc, (asyncpg.PostgresConnectionError, ConnectionError)):
+                    if is_transient_database_error(exc):
                         logger.warning(
                             "conversation_memory_persistence_transient_db_error chat_id=%s attempt=%d/%d error=%s",
                             chat_id,
@@ -376,13 +393,15 @@ class TripChatService:
             },
         )
 
-        return await self.repository.append_exchange(
-            user_id,
-            chat_id,
-            content,
-            assistant,
-            _dump(result.get("itinerary")),
-            _dump(result.get("planner_output"), by_alias=True),
+        return await retry_transient_database(
+            lambda: self.repository.append_exchange(
+                user_id,
+                chat_id,
+                content,
+                assistant,
+                _dump(result.get("itinerary")),
+                _dump(result.get("planner_output"), by_alias=True),
+            )
         )
 
     def _get_bootstrap_facts(self, chat: TripChat) -> list[MemoryFact]:

@@ -38,6 +38,12 @@ chọn information_finder.
 - finish: xã giao, câu hỏi cơ bản về trợ lý/cách dùng, yêu cầu cần làm rõ, yêu cầu
   ngoài phạm vi hoặc request không cần chạy travel subgraph.
 
+Luôn dùng destination, durationDays, mentionedPlaces, selectedPlaces và
+conversationSummary làm ngữ cảnh bền vững. Với yêu cầu như "lên lịch những chỗ
+đó", "đi hết", "danh sách vừa nói", nếu mentionedPlaces/selectedPlaces đã có dữ
+liệu thì chọn explorer; không hỏi lại điểm đến hoặc danh sách đã biết. Chỉ hỏi làm
+rõ khi clarificationRequired=true hoặc memory thực sự không có ứng viên.
+
 Với message nối tiếp ngắn hoặc lược bỏ ý định, hãy đọc các lượt `User:` và
 `Assistant:` gần nhất để xác định tác vụ đang tiếp diễn:
 - Nếu hội thoại đang khám phá, hỏi đáp, xin gợi ý hoặc so sánh thông tin điểm đến,

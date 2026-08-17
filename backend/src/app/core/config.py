@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     backend_cors_origins: str = "http://localhost:3000,http://localhost:3001"
     database_url: str | None = None
     conversation_memory_enabled: bool = True
+    conversation_memory_reference_provider: Literal["rules", "gemini"] = "gemini"
+    conversation_memory_reference_confidence: float = Field(default=0.72, ge=0, le=1)
+    conversation_memory_reference_max_output_tokens: int = Field(default=320, ge=128, le=1024)
+    conversation_graph_checkpointer_enabled: bool = False
     auth_dev_seed_users: str = (
         "creator@example.com|Creator Demo|Password123!|creator,"
         "admin@travelplanner.local|TravelPlanner Admin|Password123!|admin"

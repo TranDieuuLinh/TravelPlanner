@@ -179,8 +179,8 @@ class PostgresUrlSourceCache:
             self._pool = await asyncpg.create_pool(
                 self.database_url,
                 command_timeout=self.command_timeout,
-                min_size=1,
-                max_size=10,
+                min_size=0,
+                max_size=1,
             )
         return self._pool
 

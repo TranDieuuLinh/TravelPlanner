@@ -202,7 +202,7 @@ Rows cascade with their owning `agent_trip_chats` record.
 
 ### `agent_conversation_memory`
 
-Cập nhật lần cuối: 2026-08-14. Bảng do module `conversation_memory` sở hữu; migration là `backend/migrations/009_conversation_memory.sql`. Lưu working memory state theo `chat_id` và `user_id` với optimistic concurrency control (`version`).
+Cập nhật lần cuối: 2026-08-17. Bảng do module `conversation_memory` sở hữu; migration là `backend/migrations/009_conversation_memory.sql`. Lưu working memory state theo `chat_id` và `user_id` với optimistic concurrency control (`version`).
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
@@ -227,7 +227,7 @@ Cập nhật lần cuối: 2026-08-14. Bảng do module `conversation_memory` s�
 
 ### `agent_conversation_memory_facts`
 
-Cập nhật lần cuối: 2026-08-14. Bảng do module `conversation_memory` sở hữu; migration là `backend/migrations/009_conversation_memory.sql`. Lưu thông tin chi tiết từng memory fact với provenance và trạng thái audit (`active`, `superseded`, `expired`, `rejected`).
+Cập nhật lần cuối: 2026-08-17. Bảng do module `conversation_memory` sở hữu; migration là `backend/migrations/009_conversation_memory.sql`. Lưu thông tin chi tiết từng memory fact với provenance và trạng thái audit (`active`, `superseded`, `expired`, `rejected`). `fact_id` ổn định theo message để retry idempotent; repository chỉ upsert khi fact hiện có thuộc đúng cùng `chat_id` và `user_id`.
 
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|

@@ -102,11 +102,13 @@ class ConversationMemoryService:
         self,
         message: str,
         current_memory: WorkingMemoryState,
+        recent_messages: Sequence[str] | None = None,
     ) -> tuple[Sequence[MemoryReference], bool]:
         """Resolve linguistic references in a user message against working memory."""
         return await self.resolver.resolve_references(
             message=message,
             current_memory=current_memory,
+            recent_messages=recent_messages,
         )
 
     def merge_extracted_facts(
@@ -164,21 +166,32 @@ class ConversationMemoryService:
         turn: int = 1,
         message_id: str | None = None,
         initial_memory: WorkingMemoryState | None = None,
+        recent_messages: Sequence[str] | None = None,
     ) -> tuple[WorkingMemoryState, Sequence[MemoryFact], Sequence[MemoryReference], bool]:
         """Extract facts, resolve references, and evaluate merge policies without persisting."""
         current = initial_memory if initial_memory is not None else await self.load_context(chat_id, user_id)
         extracted_facts = await self.extract_facts(message, current, turn=turn, message_id=message_id)
-        references, clarification_required = await self.resolve_references(message, current)
+        references, clarification_required = await self.resolve_references(
+            message, current, recent_messages=recent_messages
+        )
 
         valid_facts = self.merge_policy.evaluate_facts(current, extracted_facts)
         merged_state = self.merge_policy.merge_facts_into_memory_state(current, valid_facts)
 
         if references or clarification_required:
-            ref_list = list(merged_state.active_references) + list(references)
-            goal = "clarify_reference" if clarification_required else merged_state.pending_goal
+            ref_list = [*merged_state.active_references, *references][-20:]
+            goal = (
+                "clarify_reference"
+                if clarification_required
+                else (None if references else merged_state.pending_goal)
+            )
             merged_state = merged_state.model_copy(
                 update={"active_references": ref_list, "pending_goal": goal}
             )
+        elif merged_state.pending_goal == "clarify_reference":
+            # A new ordinary user turn supersedes a stale clarification state;
+            # otherwise every later request is incorrectly blocked as ambiguous.
+            merged_state = merged_state.model_copy(update={"pending_goal": None})
 
         return merged_state, valid_facts, references, clarification_required
 

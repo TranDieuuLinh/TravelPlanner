@@ -31,7 +31,7 @@ def _db_url(database_url: str) -> str:
 class PostgresTripChatRepository:
     """Repository for the agent_trip_chats tables from migration 003."""
 
-    def __init__(self, database_url: str, *, command_timeout: float = 30.0) -> None:
+    def __init__(self, database_url: str, *, command_timeout: float = 8.0) -> None:
         self.database_url = _db_url(database_url)
         self.command_timeout = command_timeout
         self._pool = None
@@ -43,8 +43,8 @@ class PostgresTripChatRepository:
             self._pool = await asyncpg.create_pool(
                 self.database_url,
                 command_timeout=self.command_timeout,
-                min_size=1,
-                max_size=10,
+                min_size=0,
+                max_size=1,
                 max_inactive_connection_lifetime=45,
             )
         return self._pool

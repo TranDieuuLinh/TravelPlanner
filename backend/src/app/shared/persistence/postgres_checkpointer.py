@@ -8,6 +8,7 @@ provider while making the durable path explicit and observable.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, AsyncIterator, Sequence
 
 from langgraph.checkpoint.base import (
@@ -37,11 +38,33 @@ class LazyAsyncPostgresCheckpointer(BaseCheckpointSaver):
                         raise RuntimeError(
                             "Postgres checkpointer requires langgraph-checkpoint-postgres"
                         ) from exc
-                    self._manager = AsyncPostgresSaver.from_conn_string(
-                        self.database_url, serde=self.serde
-                    )
-                    self._delegate = await self._manager.__aenter__()
-                    await self._delegate.setup()
+                    for attempt in range(3):
+                        manager = AsyncPostgresSaver.from_conn_string(
+                            self.database_url, serde=self.serde
+                        )
+                        try:
+                            delegate = await manager.__aenter__()
+                            await delegate.setup()
+                        except Exception as exc:
+                            # Cloud PostgreSQL can close a TLS connection while
+                            # it is being established. Never retain that broken
+                            # delegate for every later request.
+                            try:
+                                await manager.__aexit__(None, None, None)
+                            except Exception:
+                                pass
+                            if attempt == 2:
+                                raise
+                            logging.warning(
+                                "postgres_checkpointer_init_retry attempt=%d error=%s",
+                                attempt + 1,
+                                type(exc).__name__,
+                            )
+                            await asyncio.sleep(0.25 * (2**attempt))
+                        else:
+                            self._manager = manager
+                            self._delegate = delegate
+                            break
         return self._delegate
 
     async def aget_tuple(self, config):
@@ -71,6 +94,8 @@ class LazyAsyncPostgresCheckpointer(BaseCheckpointSaver):
 
     async def aclose(self) -> None:
         if self._manager is not None:
-            await self._manager.__aexit__(None, None, None)
-            self._manager = None
-            self._delegate = None
+            try:
+                await self._manager.__aexit__(None, None, None)
+            finally:
+                self._manager = None
+                self._delegate = None

@@ -11,6 +11,7 @@ from app.modules.conversation_memory.public import build_conversation_memory_ser
 from app.modules.knowledge_graph.public import build_knowledge_graph_service
 from app.modules.observability.public import build_observability_service
 from app.modules.trip_chat.public import build_trip_chat_repository
+from app.bootstrap import get_graph
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -39,6 +40,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             close = getattr(repository, "close", None)
             if close is not None:
                 closers.append(close())
+            # get_graph is lazy/cached. Close its durable checkpoint connection
+            # on reload/shutdown so development reloads cannot hang or leak a
+            # cloud PostgreSQL session.
+            if get_graph.cache_info().currsize:
+                checkpointer = getattr(get_graph(), "checkpointer", None)
+                checkpoint_close = getattr(checkpointer, "aclose", None)
+                if checkpoint_close is not None:
+                    closers.append(checkpoint_close())
             if closers:
                 await asyncio.gather(*closers)
 

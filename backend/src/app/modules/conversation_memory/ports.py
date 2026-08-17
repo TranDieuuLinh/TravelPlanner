@@ -50,6 +50,7 @@ class ReferenceResolver(Protocol):
         message: str,
         current_memory: WorkingMemoryState,
         active_facts: Sequence[MemoryFact] | None = None,
+        recent_messages: Sequence[str] | None = None,
     ) -> tuple[Sequence[MemoryReference], bool]:
         """Resolves references in message against memory.
 

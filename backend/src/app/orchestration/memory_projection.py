@@ -62,12 +62,14 @@ def merge_memory_places(places, memory) -> list[ExplorerPlace]:
     selected = memory_field(memory, "selected_places", []) or []
     mentioned = memory_field(memory, "mentioned_places", []) or []
     references = memory_field(memory, "active_references", []) or []
-    resolved = [
-        memory_field(reference, "resolved_entity")
-        for reference in references
-        if memory_field(reference, "resolved_entity")
-        and "," not in str(memory_field(reference, "resolved_entity"))
-    ]
+    resolved: list[str] = []
+    for reference in references:
+        entity = memory_field(reference, "resolved_entity")
+        if not entity:
+            continue
+        resolved.extend(
+            item.strip() for item in str(entity).split(",") if item.strip()
+        )
     for name in [*selected, *mentioned, *resolved]:
         if not isinstance(name, str) or not name.strip():
             continue
@@ -112,5 +114,4 @@ def information_query(state) -> str:
     if entities:
         context.append(f"địa điểm đang được nhắc tới: {', '.join(entities[:5])}")
     return message if not context else f"{message} (Ngữ cảnh chuyến đi: {'; '.join(context)})"
-
 

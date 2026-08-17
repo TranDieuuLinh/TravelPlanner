@@ -288,7 +288,20 @@ class PostgresMemoryRepository(PostgresUserPreferenceMixin, MemoryRepository):
                     fact_id, chat_id, user_id, fact_type, key, value, normalized_value, value_type,
                     scope, status, confirmed_by_user, confidence, source_turn,
                     source_excerpt, source_message_id, source_url, extracted_by
-                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17);
+                ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                ON CONFLICT (fact_id) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    value = EXCLUDED.value,
+                    normalized_value = EXCLUDED.normalized_value,
+                    confirmed_by_user = EXCLUDED.confirmed_by_user,
+                    confidence = EXCLUDED.confidence,
+                    source_excerpt = EXCLUDED.source_excerpt,
+                    source_message_id = EXCLUDED.source_message_id,
+                    source_url = EXCLUDED.source_url,
+                    extracted_by = EXCLUDED.extracted_by,
+                    updated_at = now()
+                WHERE agent_conversation_memory_facts.chat_id = EXCLUDED.chat_id
+                  AND agent_conversation_memory_facts.user_id = EXCLUDED.user_id;
                 """,
                 fact.fact_id,
                 chat_id,

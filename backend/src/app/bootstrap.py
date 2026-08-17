@@ -317,6 +317,7 @@ def get_graph():
             max_concurrency=settings.google_maps_scraper_max_concurrency,
         )
     return create_root_graph(
+        checkpointer=(None if settings.conversation_graph_checkpointer_enabled else False),
         information_finder_service=get_information_finder_service(),
         supervisor_service=create_supervisor_service(settings, shared_llm_client),
         explorer_service=compose_explorer_service(

@@ -66,4 +66,8 @@ def create_root_graph(
     return builder.compile(checkpointer=compile_checkpointer)
 
 
-graph = create_root_graph()
+# LangGraph Studio imports this symbol and manages its own run persistence.
+# The FastAPI runtime uses bootstrap.get_graph(), which injects the configured
+# durable PostgreSQL checkpointer. Avoid constructing a misleading RAM saver at
+# module import time.
+graph = create_root_graph(checkpointer=False)
