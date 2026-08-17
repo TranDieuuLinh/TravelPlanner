@@ -42,7 +42,6 @@ import {
   removeTripChatAccommodation,
   removeTripChatUnscheduledPlace,
   reorderTripChatItem,
-  retryTripChatTransportLeg,
   searchPlaces,
   selectTripChatTransportOption,
   updateTripChatIntent,
@@ -1854,7 +1853,10 @@ function Planner() {
         },
       });
       setChatRevision(updatedChat.revision);
-      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+      if (updatedChat.currentPlan) {
+        setPlan(updatedChat.currentPlan);
+        void refreshPlanDayRoutes(updatedChat.currentPlan, addingDay);
+      }
       showPlannerToast("Đã thêm địa điểm");
       setAddingDay(null);
       setAddName("");
@@ -1865,6 +1867,68 @@ function Planner() {
       setError(err?.message || "Không thể thêm địa điểm.");
     } finally {
       setMutatingItem(false);
+    }
+  }
+
+  async function refreshPlanDayRoutes(
+    nextPlan: TravelPlan,
+    dayNumber: number,
+  ): Promise<boolean> {
+    const day = nextPlan.days.find((candidate) => candidate.day === dayNumber);
+    if (!day || day.items.length < 2) return false;
+    const accommodation = nextPlan.accommodation;
+    const first = day.items[0];
+    if (
+      !accommodation &&
+      (!Number.isFinite(first.latitude) || !Number.isFinite(first.longitude))
+    ) {
+      return false;
+    }
+    const origin = accommodation
+      ? {
+          latitude: accommodation.latitude,
+          longitude: accommodation.longitude,
+          name: accommodation.name,
+        }
+      : {
+          latitude: first.latitude ?? 0,
+          longitude: first.longitude ?? 0,
+          name: first.name,
+        };
+    const destinations = (accommodation ? day.items : day.items.slice(1))
+      .filter(
+        (item) =>
+          Number.isFinite(item.latitude) && Number.isFinite(item.longitude),
+      )
+      .map((item) => ({
+        itemId: item.itemId ?? null,
+        name: item.name,
+        address: item.address ?? null,
+        latitude: item.latitude as number,
+        longitude: item.longitude as number,
+      }));
+    if (destinations.length === 0) return false;
+    try {
+      const legs = await calculateDayDirections({
+        origin,
+        destinations,
+        departureTime: new Date().toISOString(),
+      });
+      setPlan((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          days: current.days.map((candidate) =>
+            candidate.day === dayNumber
+              ? { ...candidate, transportLegs: legs }
+              : candidate,
+          ),
+        };
+      });
+      return true;
+    } catch {
+      // Keep the planner output when routing is temporarily unavailable.
+      return false;
     }
   }
 
@@ -1990,12 +2054,16 @@ function Planner() {
             itemIds: requestedItemIds,
           });
           applyTripChat(updatedChat);
+          if (updatedChat.currentPlan) {
+            void refreshPlanDayRoutes(updatedChat.currentPlan, day);
+          }
           showPlannerToast(`Đã cập nhật thứ tự Ngày ${day}`);
           return;
         } catch (caught) {
           if (
             !(caught instanceof APIError) ||
-            caught.code !== "VERSION_CONFLICT" ||
+            (caught.code !== "VERSION_CONFLICT" &&
+              caught.code !== "TRIP_CHAT_REVISION_CONFLICT") ||
             attempt === 2
           ) {
             throw caught;
@@ -3192,14 +3260,9 @@ function Planner() {
       return next;
     });
     try {
-      const updatedChat = await retryTripChatTransportLeg({
-        chatId,
-        expectedRevision: chatRevision,
-        day,
-        legIndex,
-      });
-      setChatRevision(updatedChat.revision);
-      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+      if (!plan) throw new Error("Chưa có lịch trình để tính lại tuyến.");
+      const routed = await refreshPlanDayRoutes(plan, day);
+      if (!routed) throw new Error("Không thể tính lại tuyến đường lúc này.");
       setSelectedPlanLegOptionKeys((current) => {
         const next = { ...current };
         delete next[retryKey];
@@ -4353,6 +4416,15 @@ function Planner() {
     sendPlannerEntry();
   }
 
+  function openTripHistory() {
+    setHistoryCollapsed(false);
+    void listTripChats()
+      .then(setTripChats)
+      .catch(() => {
+        setError("Không thể tải lịch sử trò chuyện. Vui lòng thử lại.");
+      });
+  }
+
   function renderEntryTopbar() {
     return (
       <div className="plannerEntryTopbar">
@@ -4368,11 +4440,11 @@ function Planner() {
           <div className="itineraryHeadingCopy">
             <strong>Kế hoạch chi tiết</strong>
           </div>
-          {user ? (
-            <HistoryMenuButton
-              className="plannerHistoryMenu--intake"
-              onClick={() => setHistoryCollapsed(false)}
-            />
+                  {user ? (
+                    <HistoryMenuButton
+                      className="plannerHistoryMenu--intake"
+                      onClick={openTripHistory}
+                    />
           ) : null}
         </header>
       </div>
@@ -4771,7 +4843,7 @@ function Planner() {
                   {user ? (
                     <HistoryMenuButton
                       className="plannerHistoryMenu--itinerary"
-                      onClick={() => setHistoryCollapsed(false)}
+                      onClick={openTripHistory}
                     />
                   ) : null}
                 </header>

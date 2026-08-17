@@ -57,3 +57,25 @@ async def add_item(
     if status == "day_not_found":
         raise HTTPException(404, {"code": "TRIP_CHAT_PLAN_DAY_NOT_FOUND", "message": "Không tìm thấy ngày trong lịch trình."})
     return chat
+
+
+@router.put("/{chat_id}/plan/days/{day}/items/reorder", response_model=TripChat)
+async def reorder_items(
+    chat_id: str,
+    day: int,
+    expected_revision: int = Form(alias="expectedRevision", ge=0),
+    item_ids: list[str] = Form(alias="itemIds", min_length=1),
+    user: AuthUser = Depends(require_current_user),
+    service: TripChatService = Depends(_service),
+):
+    status, chat = await service.reorder_plan_items(
+        user.id, chat_id, expected_revision=expected_revision,
+        day=day, item_ids=item_ids,
+    )
+    if status == "chat_not_found":
+        raise HTTPException(404, {"code": "TRIP_CHAT_NOT_FOUND", "message": "Không tìm thấy trip chat."})
+    if status == "revision_conflict":
+        raise HTTPException(409, {"code": "TRIP_CHAT_REVISION_CONFLICT", "message": "Lịch trình đã thay đổi; vui lòng tải lại trước khi lưu."})
+    if status == "day_not_found":
+        raise HTTPException(404, {"code": "TRIP_CHAT_PLAN_DAY_NOT_FOUND", "message": "Không tìm thấy ngày trong lịch trình."})
+    return chat

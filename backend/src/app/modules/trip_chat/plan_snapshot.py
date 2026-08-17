@@ -56,6 +56,46 @@ def add_plan_item(
     return "updated"
 
 
+def reorder_plan_items(
+    output: dict[str, Any] | None,
+    *,
+    day: int,
+    item_ids: list[str],
+) -> str:
+    """Reorder a day while retaining every existing stop.
+
+    The client sends the complete visible order.  Unknown or omitted ids are
+    intentionally preserved at the end so a stale/partial drag payload can
+    never delete the last stop from the itinerary.
+    """
+    if not isinstance(output, dict):
+        return "day_not_found"
+    raw_day = next(
+        (candidate for candidate in output.get("days", [])
+         if isinstance(candidate, dict) and candidate.get("day") == day),
+        None,
+    )
+    if raw_day is None or not isinstance(raw_day.get("stops"), list):
+        return "day_not_found"
+    stops = [stop for stop in raw_day["stops"] if isinstance(stop, dict)]
+    by_id: dict[str, dict[str, Any]] = {}
+    for index, stop in enumerate(stops):
+        stop_id = stop.get("itemId") or f"planner-{day}-{index + 1}-{stop.get('placeId', '')}"
+        by_id.setdefault(str(stop_id), stop)
+    reordered: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for item_id in item_ids:
+        stop = by_id.get(str(item_id))
+        if stop is not None and id(stop) not in seen:
+            reordered.append(stop)
+            seen.add(id(stop))
+    reordered.extend(stop for stop in stops if id(stop) not in seen)
+    raw_day["stops"] = reordered
+    for index, stop in enumerate(reordered):
+        stop["position"] = index
+    return "updated"
+
+
 def _remove_accommodation_cost(output: dict[str, Any]) -> None:
     removed_total = 0.0
     for raw_day in output.get("days", []):

@@ -22,6 +22,7 @@ Retrieval/system provisional vẫn không planner-eligible.
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
 | `GET /v1/plans/places/search?query=&destination=&topK=` | Session cookie, query text and optional destination | Danh sách địa điểm chuẩn hóa để thêm thủ công vào lịch trình |
 | `POST /v1/trip-chats/{chatId}/plan/items` | Multipart item fields và `expectedRevision` | `TripChat` sau khi thêm địa điểm vào ngày đã chọn |
+| `PUT /v1/trip-chats/{chatId}/plan/days/{day}/items/reorder` | Multipart `itemIds` (lặp lại) và `expectedRevision` | `TripChat` với thứ tự địa điểm đã cập nhật; các item không có trong payload vẫn được giữ lại |
 | `PATCH /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/personal-notes` | `expectedRevision`, `personalNotes` | `TripChat` với planner snapshot đã cập nhật |
 | `PATCH /v1/trip-chats/{chatId}/plan/accommodation` | `expectedRevision` và các trường nơi lưu trú cần sửa, gồm `personalNotes` | `TripChat` với accommodation và route reference đã cập nhật |
 | `DELETE /v1/trip-chats/{chatId}/plan/accommodation` | `expectedRevision` | `TripChat` đã bỏ accommodation, transfer leg và phần chi phí lưu trú |

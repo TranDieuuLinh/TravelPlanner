@@ -16,6 +16,7 @@ from app.modules.trip_chat.plan_snapshot import (
     delete_accommodation,
     select_transport_option,
     add_plan_item,
+    reorder_plan_items,
     update_accommodation,
     update_stop_personal_notes,
 )
@@ -220,6 +221,26 @@ class InMemoryTripChatRepository:
             "revision": chat.revision + 1,
             "current_planner_output": output,
             "has_itinerary": True,
+            "updated_at": datetime.now(timezone.utc),
+        })
+        return "updated"
+
+    async def reorder_plan_items(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_ids: list[str],
+    ) -> PlanItemMutationStatus:
+        chat = await self.get_chat(user_id, chat_id)
+        if chat is None:
+            return "chat_not_found"
+        if chat.revision != expected_revision:
+            return "revision_conflict"
+        output = deepcopy(chat.current_planner_output)
+        status = reorder_plan_items(output, day=day, item_ids=item_ids)
+        if status != "updated":
+            return status
+        self._chats[(user_id, chat_id)] = chat.model_copy(update={
+            "revision": chat.revision + 1,
+            "current_planner_output": output,
             "updated_at": datetime.now(timezone.utc),
         })
         return "updated"
