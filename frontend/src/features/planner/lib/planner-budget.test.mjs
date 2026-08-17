@@ -30,8 +30,7 @@ test("combines daily costs into the four user-facing budget groups", () => {
   assert.equal(result.food, 180_000);
   assert.equal(result.accommodation, 400_000);
   assert.equal(result.transportation, 90_000);
-  assert.equal(result.perPersonTotal, 310_000);
-  assert.equal(result.groupTotal, 490_000);
+  assert.equal(result.perPersonTotal, 800_000);
 });
 
 test("falls back to item, hotel, and daily transport prices for older plans", () => {
@@ -63,7 +62,7 @@ test("falls back to item, hotel, and daily transport prices for older plans", ()
   });
 
   assert.deepEqual(
-    [result.travelPlaces, result.food, result.accommodation, result.transportation, result.perPersonTotal, result.groupTotal],
-    [50_000, 0, 1_200_000, 100_000, 50_000, 1_300_000],
+    [result.travelPlaces, result.food, result.accommodation, result.transportation, result.perPersonTotal],
+    [50_000, 0, 1_200_000, 100_000, 1_350_000],
   );
 });

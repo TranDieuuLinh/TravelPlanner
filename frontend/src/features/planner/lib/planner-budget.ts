@@ -6,7 +6,6 @@ export type PlannerBudgetBreakdown = {
   accommodation: number;
   transportation: number;
   perPersonTotal: number;
-  groupTotal: number;
   currency: string;
 };
 
@@ -82,8 +81,10 @@ export function plannerBudgetBreakdown(
     food,
     accommodation,
     transportation,
-    perPersonTotal: travelPlaces + food,
-    groupTotal: accommodation + transportation,
+    // The planner output contract defines each daily cost component as a
+    // per-person amount. Keep one total so the UI cannot present unrelated
+    // partial sums as "per person" and "group" totals.
+    perPersonTotal: travelPlaces + food + accommodation + transportation,
     currency,
   };
 }
