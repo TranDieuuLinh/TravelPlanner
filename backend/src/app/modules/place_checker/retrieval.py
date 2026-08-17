@@ -210,6 +210,7 @@ class TargetedRetrievalService:
         metadata_repository: PlaceMetadataRepository | None = None,
         promotion_outbox: PromotionOutbox | None = None,
         verified_target_per_gap: int = 5,
+        external_call_budget: int = 5,
         expand_pool: bool = False,
         ensure_core_pools: bool = False,
     ) -> None:
@@ -219,6 +220,7 @@ class TargetedRetrievalService:
         self.metadata_enricher = RetrievalMetadataEnricher(metadata_repository)
         self.promotion_outbox = promotion_outbox
         self.verified_target_per_gap = verified_target_per_gap
+        self.external_call_budget = max(0, external_call_budget)
         self.expand_pool = expand_pool
         self.ensure_core_pools = ensure_core_pools
 
@@ -281,6 +283,7 @@ class TargetedRetrievalService:
             if gap.status == GapStatus.open
         )
         per_gap_limit = per_gap_pool_target(context.days, discovery_gap_count)
+        external_calls_remaining = self.external_call_budget
         for gap in retrieval_gaps:
             if gap.status != GapStatus.open:
                 continue
@@ -304,7 +307,15 @@ class TargetedRetrievalService:
                     )
                 )
                 continue
-            result = await self._retrieve_gap(query)
+            result = await self._retrieve_gap(
+                query,
+                allow_external=external_calls_remaining > 0,
+            )
+            if any(
+                attempt.source_kind == RetrievalSourceKind.external
+                for attempt in result.attempts
+            ):
+                external_calls_remaining -= 1
             queued, queue_warnings = await self._queue_promotions(result.candidates)
             event_ids.extend(queued)
             warnings.extend(queue_warnings)
@@ -318,6 +329,8 @@ class TargetedRetrievalService:
     async def _retrieve_gap(
         self,
         query: TargetedRetrievalQuery,
+        *,
+        allow_external: bool = True,
     ) -> GapRetrievalResult:
         evidence: list[RetrievalEvidence] = []
         attempts: list[RetrievalAttempt] = []
@@ -328,7 +341,10 @@ class TargetedRetrievalService:
             candidates = self._verify(evidence, query)
             if self._verified_count(candidates) >= verified_target:
                 break
-        if self._verified_count(self._verify(evidence, query)) < verified_target:
+        # Keep the ranked top-K returned by the catalog even when it does not
+        # fill the preferred target. Browser search is a last resort only when
+        # the database has no usable evidence for this gap.
+        if allow_external and not evidence:
             for source in self.external_sources:
                 evidence.extend(
                     await self._call_source(source, query, attempts, warnings)

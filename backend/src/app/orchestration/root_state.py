@@ -40,6 +40,7 @@ class RootState(TypedDict, total=False):
     planner_input: ItineraryPlannerInput
     planner_output: ItineraryPlannerOutput
     planner_preflight_failure: PlannerPreflightFailure
+    planner_error_code: str
     intent: TripIntent
     itinerary: Itinerary
 

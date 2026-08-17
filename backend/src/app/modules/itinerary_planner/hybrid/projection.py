@@ -67,6 +67,9 @@ def project_problem_day(
         valid_food=food,
         candidate_by_id=MappingProxyType(candidates),
         feasible_days=MappingProxyType(feasible_days),
+        preferred_days=MappingProxyType(
+            {candidate_id: frozenset({1}) for candidate_id in candidates}
+        ),
         feasible_windows=MappingProxyType(feasible_windows),
         preferred_windows=MappingProxyType(
             {

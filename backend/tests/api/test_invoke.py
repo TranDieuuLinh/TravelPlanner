@@ -153,6 +153,46 @@ def test_invoke_returns_planner_output_in_camel_case():
     assert "planner_output" not in payload
 
 
+def test_invoke_maps_retryable_planner_failure_to_service_unavailable(tmp_path):
+    class FailedPlannerGraph:
+        async def ainvoke(self, graph_input, config):
+            return {
+                "decision": SupervisorDecision(
+                    route="explorer", reason="test", confidence=1.0
+                ),
+                "response": (
+                    "Itinerary planning stopped: "
+                    "Route repair failed: CP-SAT priority pass returned UNKNOWN."
+                ),
+                "planner_error_code": "route_repair_unknown",
+                "warnings": ["Route repair failed."],
+            }
+
+    app = create_app()
+    app.state.observability_service = ObservabilityService(
+        LocalObservabilityStore(storage_path=tmp_path / "traces.json")
+    )
+    app.dependency_overrides[get_graph] = lambda: FailedPlannerGraph()
+
+    response = TestClient(app).post(
+        "/v1/agent/invoke",
+        json={"threadId": "thread-planner-failed", "message": "Đi Hà Nội"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == {
+        "code": "ROUTE_REPAIR_UNKNOWN",
+        "message": (
+            "Itinerary planning stopped: "
+            "Route repair failed: CP-SAT priority pass returned UNKNOWN."
+        ),
+        "retryable": True,
+    }
+    traces = app.state.observability_service.store.page("traces", 1, 25)["items"]
+    assert traces[0]["success"] is False
+    assert traces[0]["errorCode"] == "ROUTE_REPAIR_UNKNOWN"
+
+
 def test_invoke_maps_disabled_supervisor_fallback_to_safe_service_error():
     class UnavailableGraph:
         async def ainvoke(self, graph_input, config):

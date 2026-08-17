@@ -3,24 +3,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import asin, cos, radians, sin, sqrt
 
-from ortools.sat.python import cp_model
-
 from app.modules.itinerary_planner.contract import (
     CandidatePriority,
     PlannerCandidate,
 )
+from app.modules.itinerary_planner.quality import bayesian_quality_by_id
 
 ACTIVITY_RESERVE_PER_DAY = 14
 MIN_ACTIVITY_SEPARATORS_PER_DAY = 2
 MAX_OPTIONAL_DAYS = 2
-DENSE_CENTER_RADIUS_KM = 20.0
-MEDOID_REFINEMENT_ROUNDS = 3
+KNN_NEIGHBORS = 10
+CENTER_DENSITY_WEIGHT = 0.7
+CENTER_QUALITY_WEIGHT = 0.3
 PRIORITY_VALUES = {CandidatePriority.user_input, CandidatePriority.url}
 
 
 @dataclass(frozen=True, slots=True)
 class ActivityDayProjection:
-    feasible_days: dict[str, frozenset[int]]
+    preferred_days: dict[str, frozenset[int]]
     center_by_day: dict[int, PlannerCandidate]
 
 
@@ -30,56 +30,41 @@ def project_activity_days(
     places: list[PlannerCandidate],
     feasible_days: dict[str, frozenset[int]],
 ) -> ActivityDayProjection:
-    """Build geographically compact day domains with a daily reserve floor."""
+    """Build fast geographic preferences while retaining all feasible reserve days."""
     target = max(
         MIN_ACTIVITY_SEPARATORS_PER_DAY,
         min(ACTIVITY_RESERVE_PER_DAY, len(places) // days),
     )
-    centers = _select_dense_centers(places, days, target)
+    centers = _select_dense_centers(places, days)
     center_by_day = {day: center for day, center in enumerate(centers, 1)}
-    projected = dict(feasible_days)
-
-    for _ in range(MEDOID_REFINEMENT_ROUNDS):
-        assigned = _solve_balanced_assignment(
-            days=days,
-            places=places,
-            feasible_days=feasible_days,
-            center_by_day=center_by_day,
-            target=target,
-        )
-        if assigned is None:
-            return ActivityDayProjection(dict(feasible_days), center_by_day)
-        projected.update(assigned)
-        refined = _refine_medoids(places, projected, center_by_day)
-        if all(
-            refined[day].place_id == center_by_day[day].place_id
-            for day in center_by_day
-        ):
-            break
-        center_by_day = refined
-
-    return ActivityDayProjection(projected, center_by_day)
+    preferred = _assign_nearest_days(
+        places,
+        feasible_days,
+        center_by_day,
+        target,
+    )
+    _rebalance_once(places, feasible_days, preferred, center_by_day, target)
+    return ActivityDayProjection(preferred, center_by_day)
 
 
 def _select_dense_centers(
     places: list[PlannerCandidate],
     count: int,
-    target: int,
 ) -> list[PlannerCandidate]:
     ordered = sorted(places, key=lambda item: item.place_id)
+    quality = bayesian_quality_by_id(ordered)
+    density = _normalized_knn_density(ordered)
+    density_floor = sorted(density.values())[len(density) // 4]
     dense = [
         candidate
         for candidate in ordered
-        if sum(
-            _distance_km(candidate, other) <= DENSE_CENTER_RADIUS_KM
-            for other in ordered
-        )
-        >= max(1, target)
+        if density[candidate.place_id] >= density_floor
     ]
     candidates = dense if len(dense) >= count else ordered
     first = min(
         candidates,
         key=lambda item: (
+            -_center_score(item, density, quality),
             sum(_distance_km(item, other) for other in ordered),
             item.place_id,
         ),
@@ -87,10 +72,11 @@ def _select_dense_centers(
     centers = [first]
     remaining = [item for item in candidates if item.place_id != first.place_id]
     while remaining and len(centers) < count:
-        selected = max(
+        selected = min(
             remaining,
             key=lambda item: (
-                min(_distance_km(item, center) for center in centers),
+                -min(_distance_km(item, center) for center in centers),
+                -_center_score(item, density, quality),
                 item.place_id,
             ),
         )
@@ -99,91 +85,120 @@ def _select_dense_centers(
     return centers
 
 
-def _solve_balanced_assignment(
-    *,
-    days: int,
+def _center_score(
+    candidate: PlannerCandidate,
+    density: dict[str, float],
+    quality: dict[str, float],
+) -> int:
+    return round(
+        (
+            CENTER_DENSITY_WEIGHT * density[candidate.place_id]
+            + CENTER_QUALITY_WEIGHT * quality[candidate.place_id]
+        )
+        * 1_000_000
+    )
+
+
+def _normalized_knn_density(
+    places: list[PlannerCandidate],
+) -> dict[str, float]:
+    if len(places) <= 1:
+        return {candidate.place_id: 1.0 for candidate in places}
+    neighbor_count = min(KNN_NEIGHBORS, len(places) - 1)
+    raw = {}
+    for candidate in places:
+        nearest = sorted(
+            _distance_km(candidate, other)
+            for other in places
+            if other.place_id != candidate.place_id
+        )[:neighbor_count]
+        mean_distance = sum(nearest) / neighbor_count
+        raw[candidate.place_id] = 1 / max(mean_distance, 0.001)
+    minimum = min(raw.values())
+    maximum = max(raw.values())
+    if maximum == minimum:
+        return {candidate_id: 1.0 for candidate_id in raw}
+    return {
+        candidate_id: (value - minimum) / (maximum - minimum)
+        for candidate_id, value in raw.items()
+    }
+
+
+def _assign_nearest_days(
     places: list[PlannerCandidate],
     feasible_days: dict[str, frozenset[int]],
     center_by_day: dict[int, PlannerCandidate],
     target: int,
-) -> dict[str, frozenset[int]] | None:
-    model = cp_model.CpModel()
-    optional = [item for item in places if item.priority not in PRIORITY_VALUES]
-    variables: dict[tuple[str, int], cp_model.IntVar] = {}
-    for candidate in optional:
-        allowed = sorted(feasible_days[candidate.place_id])
-        choices = []
-        for day in allowed:
-            variable = model.NewBoolVar(f"activity_day:{candidate.place_id}:{day}")
-            variables[(candidate.place_id, day)] = variable
-            choices.append(variable)
-        model.Add(sum(choices) >= 1)
-        model.Add(sum(choices) <= min(MAX_OPTIONAL_DAYS, len(choices)))
-
-    for day in range(1, days + 1):
-        priority_count = sum(
-            day in feasible_days[item.place_id]
-            for item in places
-            if item.priority in PRIORITY_VALUES
-        )
-        model.Add(
-            priority_count
-            + sum(
-                variable
-                for (candidate_id, candidate_day), variable in variables.items()
-                if candidate_day == day
-            )
-            >= target
-        )
-
-    model.Minimize(
-        sum(
-            (1 + round(_distance_km(candidate, center_by_day[day]) * 1_000))
-            * variables[(candidate.place_id, day)]
-            for candidate in optional
-            for day in feasible_days[candidate.place_id]
-        )
-    )
-    solver = cp_model.CpSolver()
-    solver.parameters.num_search_workers = 1
-    solver.parameters.random_seed = 42
-    status = solver.Solve(model)
-    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        return None
-
-    projected = {
-        candidate.place_id: (
-            feasible_days[candidate.place_id]
-            if candidate.priority in PRIORITY_VALUES
-            else frozenset(
-                day
-                for day in feasible_days[candidate.place_id]
-                if solver.Value(variables[(candidate.place_id, day)])
-            )
-        )
+) -> dict[str, frozenset[int]]:
+    preferred = {
+        candidate.place_id: feasible_days[candidate.place_id]
         for candidate in places
+        if candidate.priority in PRIORITY_VALUES
     }
-    return projected
+    counts = {
+        day: sum(day in selected for selected in preferred.values())
+        for day in center_by_day
+    }
+    optional = sorted(
+        (item for item in places if item.priority not in PRIORITY_VALUES),
+        key=lambda item: (len(feasible_days[item.place_id]), item.place_id),
+    )
+    for candidate in optional:
+        allowed = feasible_days[candidate.place_id]
+        under_target = [
+            day
+            for day in allowed
+            if day in center_by_day and counts[day] < target
+        ]
+        choices = under_target or [day for day in allowed if day in center_by_day]
+        nearest = min(
+            choices,
+            key=lambda day: (
+                _distance_km(candidate, center_by_day[day]),
+                day,
+            ),
+        )
+        preferred[candidate.place_id] = frozenset({nearest})
+        counts[nearest] += 1
+    return preferred
 
 
-def _refine_medoids(
+def _rebalance_once(
     places: list[PlannerCandidate],
-    projected: dict[str, frozenset[int]],
-    current: dict[int, PlannerCandidate],
-) -> dict[int, PlannerCandidate]:
-    result = dict(current)
-    for day in current:
-        members = [item for item in places if day in projected[item.place_id]]
-        if not members:
-            continue
-        result[day] = min(
-            members,
+    feasible_days: dict[str, frozenset[int]],
+    preferred_days: dict[str, frozenset[int]],
+    center_by_day: dict[int, PlannerCandidate],
+    target: int,
+) -> None:
+    counts = {
+        day: sum(day in preferred_days[item.place_id] for item in places)
+        for day in center_by_day
+    }
+    for day in sorted(center_by_day, key=lambda value: (counts[value], value)):
+        needed = max(0, target - counts[day])
+        options = sorted(
+            (
+                candidate
+                for candidate in places
+                if candidate.priority not in PRIORITY_VALUES
+                and day in feasible_days[candidate.place_id]
+                and day not in preferred_days[candidate.place_id]
+                and len(preferred_days[candidate.place_id]) < MAX_OPTIONAL_DAYS
+            ),
             key=lambda item: (
-                sum(_distance_km(item, other) for other in members),
+                _distance_km(item, center_by_day[day])
+                - min(
+                    _distance_km(item, center_by_day[assigned])
+                    for assigned in preferred_days[item.place_id]
+                ),
                 item.place_id,
             ),
         )
-    return result
+        for candidate in options[:needed]:
+            preferred_days[candidate.place_id] = frozenset(
+                {*preferred_days[candidate.place_id], day}
+            )
+            counts[day] += 1
 
 
 def _distance_km(left: PlannerCandidate, right: PlannerCandidate) -> float:

@@ -20,7 +20,7 @@ from app.shared.tools.transport_cost import XanhSmTransportCostEstimator
 def build_valhalla_itinerary_planner_graph(
     base_url: str,
     *,
-    timeout_seconds: float = 15,
+    timeout_seconds: float | None = None,
     provider_version: str = "local",
     log_search_progress: bool = False,
 ):

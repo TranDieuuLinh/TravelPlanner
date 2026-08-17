@@ -48,7 +48,7 @@ def validate_projected_pool(problem: PreparedPlanningProblem) -> None:
         activity_ids = {
             item.place_id
             for item in problem.valid_places
-            if day in problem.feasible_days[item.place_id]
+            if day in problem.preferred_days[item.place_id]
         }
         if len(activity_ids) < reserve_target:
             violations.append(
@@ -71,7 +71,15 @@ def validate_projected_pool(problem: PreparedPlanningProblem) -> None:
                 )
             )
 
-        matched = _distinct_meal_match_count(problem, day, food_ids)
+        matched = _distinct_meal_match_count(
+            problem,
+            day,
+            {
+                food_id
+                for food_id in food_ids
+                if day in problem.preferred_days[food_id]
+            },
+        )
         if matched < MEALS_PER_DAY:
             violations.append(
                 _count_violation(

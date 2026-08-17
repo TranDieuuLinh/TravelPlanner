@@ -6,8 +6,8 @@ from app.modules.itinerary_planner.policies import MAX_INTER_STOP_WAIT_MINUTES
 @dataclass(frozen=True, slots=True)
 class SolverConfig:
     num_search_workers: int = 1
-    priority_timeout_seconds: float | None = 2
-    utility_timeout_seconds: float | None = 5
+    priority_timeout_seconds: float | None = None
+    utility_timeout_seconds: float | None = None
     utility_relative_gap_limit: float = 0.05
     random_seed: int = 42
     log_search_progress: bool = False

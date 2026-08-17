@@ -28,11 +28,12 @@ def create_checkpointer(database_url: str | None = None):
     if database_url:
         try:
             from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  # noqa: F401
-        except ImportError:
-            logging.warning(
-                "Postgres checkpointer dependency is unavailable; using InMemorySaver."
-            )
-            return InMemorySaver(serde=serializer)
+        except ImportError as exc:
+            raise RuntimeError(
+                "DATABASE_URL is configured but the PostgreSQL checkpointer runtime "
+                "is unavailable. Install langgraph-checkpoint-postgres and a usable "
+                "psycopg binary implementation."
+            ) from exc
         from app.shared.persistence.postgres_checkpointer import (
             LazyAsyncPostgresCheckpointer,
         )

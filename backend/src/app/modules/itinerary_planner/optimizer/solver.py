@@ -92,13 +92,14 @@ def optimize_itinerary(
         selected_config,
         priority_objective,
         relative_gap_limit=0,
+        stop_after_first_solution=False,
     )
     passes.append(priority_pass)
     best_user_count = sum(priority_solver.Value(variable) for variable in user_vars)
     best_url_count = sum(priority_solver.Value(variable) for variable in url_vars)
     model.Add(user_count == best_user_count)
     model.Add(url_count == best_url_count)
-    _add_hints(model, variables, priority_solver)
+    _add_hints(model, problem, variables, priority_solver)
 
     model.Maximize(objective.utility)
     final_solver, utility_pass = _solve(
@@ -108,6 +109,7 @@ def optimize_itinerary(
         selected_config,
         objective.utility,
         relative_gap_limit=selected_config.utility_relative_gap_limit,
+        stop_after_first_solution=(selected_config.utility_timeout_seconds is None),
     )
     passes.append(utility_pass)
     return extract_result(
@@ -128,6 +130,7 @@ def _solve(
     reported_objective: cp_model.LinearExpr,
     *,
     relative_gap_limit: float,
+    stop_after_first_solution: bool,
 ) -> tuple[cp_model.CpSolver, SolverPassResult]:
     solver = cp_model.CpSolver()
     if timeout_seconds is not None:
@@ -137,6 +140,7 @@ def _solve(
     solver.parameters.num_search_workers = config.num_search_workers
     solver.parameters.random_seed = config.random_seed
     solver.parameters.log_search_progress = config.log_search_progress
+    solver.parameters.stop_after_first_solution = stop_after_first_solution
     started = monotonic()
     status_code = solver.Solve(model)
     elapsed_ms = round((monotonic() - started) * 1000)
@@ -154,9 +158,25 @@ def _solve(
 
 def _add_hints(
     model: cp_model.CpModel,
+    problem: PreparedPlanningProblem,
     variables: PlannerVariables,
     solver: cp_model.CpSolver,
 ) -> None:
     model.ClearHints()
+    accommodation_indexes = {
+        variable.Index() for variable in variables.accommodation_selected.values()
+    }
     for variable in variables.all_decision_vars:
+        if variable.Index() in accommodation_indexes:
+            continue
         model.AddHint(variable, solver.Value(variable))
+    if variables.accommodation_selected:
+        cheapest = min(
+            variables.accommodation_selected,
+            key=lambda accommodation_id: (
+                problem.accommodation_cost_per_person_by_id[accommodation_id],
+                accommodation_id,
+            ),
+        )
+        for accommodation_id, variable in variables.accommodation_selected.items():
+            model.AddHint(variable, int(accommodation_id == cheapest))

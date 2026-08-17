@@ -14,20 +14,22 @@ from app.modules.itinerary_planner.optimizer import (
     SolverConfig,
     optimize_itinerary,
 )
+from app.modules.itinerary_planner.optimizer.hints import hint_from_result
 from app.modules.itinerary_planner.optimizer.locks import RepairLocks
+from app.modules.itinerary_planner.optimizer.result import OptimizationResult
 from app.modules.itinerary_planner.optimizer.solver import OptimizationError
 from app.modules.itinerary_planner.ports import (
     MatrixCache,
     RouteDetailProvider,
     RoutingMatrixProvider,
 )
-from app.modules.itinerary_planner.preprocessing import (
-    PlanningPreflightError,
-    prepare_planning_problem,
-)
 from app.modules.itinerary_planner.preflight import (
     ProjectedPoolPreflightError,
     validate_routing_connectivity,
+)
+from app.modules.itinerary_planner.preprocessing import (
+    PlanningPreflightError,
+    prepare_planning_problem,
 )
 from app.modules.itinerary_planner.route_enrichment import (
     RouteEnrichmentResult,
@@ -36,10 +38,10 @@ from app.modules.itinerary_planner.route_enrichment import (
     invalid_timeline_days,
 )
 from app.modules.itinerary_planner.routing import build_routing_problem
-from app.shared.tools.transport_cost import TransportCostEstimator
-from app.shared.observability import traced_call
 from app.modules.itinerary_planner.routing_models import RoutingPhaseError
 from app.modules.itinerary_planner.state import ItineraryPlannerState
+from app.shared.observability import traced_call
+from app.shared.tools.transport_cost import TransportCostEstimator
 
 
 async def prepare_problem_node(state: ItineraryPlannerState) -> dict:
@@ -191,35 +193,43 @@ def create_enrich_selected_routes_node(
                     "error_code": "route_repair_cost_not_configured",
                 }
             repair_started = monotonic()
-            routing = apply_route_corrections(
-                routing, details, estimator, problem.trip.people
-            )
-            try:
-                optimization = await asyncio.to_thread(
-                    partial(
-                        optimize_itinerary,
-                        problem,
-                        routing,
-                        config=config,
-                        weights=weights,
-                        repair_locks=RepairLocks(
-                            state["optimization_result"], details.repair_days
-                        ),
-                    )
+            while details.repair_days:
+                repair_days = details.repair_days
+                routing = apply_route_corrections(
+                    routing, details, estimator, problem.trip.people
                 )
-            except OptimizationError as exc:
-                return {
-                    "error": f"Route repair failed: {exc}",
-                    "error_code": f"route_repair_{exc.status.casefold()}",
-                }
-            repaired = await enrich_selected_routes(
-                problem,
-                routing,
-                optimization,
-                provider,
-                days=details.repair_days,
-            )
-            details = _merge_enrichment(details, repaired)
+                try:
+                    optimization, repair_scope, repair_warning = (
+                        await _repair_optimization(
+                            problem,
+                            routing,
+                            optimization,
+                            repair_days,
+                            config,
+                            weights,
+                        )
+                    )
+                except OptimizationError as exc:
+                    return {
+                        "error": f"Route repair failed: {exc}",
+                        "error_code": f"route_repair_{exc.status.casefold()}",
+                    }
+                repaired = await enrich_selected_routes(
+                    problem,
+                    routing,
+                    optimization,
+                    provider,
+                    days=repair_scope,
+                )
+                details = _merge_enrichment(details, repaired)
+                if repair_warning:
+                    details = RouteEnrichmentResult(
+                        details.legs,
+                        details.repair_days,
+                        details.actual_minutes_by_pair,
+                        details.actual_distance_by_pair,
+                        (*details.warnings, repair_warning),
+                    )
             repair_ms = _elapsed_ms(repair_started)
         invalid_days = invalid_timeline_days(optimization, details)
         if invalid_days:
@@ -241,6 +251,47 @@ def create_enrich_selected_routes_node(
         }
 
     return enrich
+
+
+async def _repair_optimization(
+    problem,
+    routing,
+    baseline,
+    affected_days: frozenset[int],
+    config: SolverConfig,
+    weights: ObjectiveWeights,
+) -> tuple[OptimizationResult, frozenset[int], str | None]:
+    try:
+        repaired = await asyncio.to_thread(
+            partial(
+                optimize_itinerary,
+                problem,
+                routing,
+                config=config,
+                weights=weights,
+                repair_locks=RepairLocks(baseline, affected_days),
+                initial_hint=hint_from_result(baseline),
+            )
+        )
+        return repaired, affected_days, None
+    except OptimizationError as exc:
+        if exc.status not in {"INFEASIBLE", "UNKNOWN"}:
+            raise
+    repaired = await asyncio.to_thread(
+        partial(
+            optimize_hybrid_itinerary,
+            problem,
+            routing,
+            config=config,
+            weights=weights,
+        )
+    )
+    return (
+        repaired,
+        frozenset(range(1, problem.trip.days + 1)),
+        "Route repair relaxed unaffected-day locks after the locked solve could not "
+        "produce a feasible result, then replanned compact per-day candidate pools.",
+    )
 
 
 async def finalize_output_node(state: ItineraryPlannerState) -> dict:
@@ -274,7 +325,7 @@ def _merge_enrichment(
             [leg for leg in original.legs if leg.day not in repaired_days]
             + list(repaired.legs)
         ),
-        repair_days=frozenset(),
+        repair_days=repaired.repair_days,
         actual_minutes_by_pair={
             **original.actual_minutes_by_pair,
             **repaired.actual_minutes_by_pair,

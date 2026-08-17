@@ -40,6 +40,12 @@ Retrieval/system provisional vẫn không planner-eligible.
 | `GET /admin/knowledge-graph/relationships` | Admin session + filters | Paginated relationships |
 | `GET/PATCH/DELETE /admin/knowledge-graph/entities/{id}` | Admin session | Entity detail or mutation |
 
+`POST /v1/agent/invoke` chỉ trả `200` cho output hoặc clarification hợp lệ.
+Planner validation/preflight failure trả `422`; provider, matrix hoặc solver
+`UNKNOWN` có thể retry trả `503` với `detail.code`, `detail.message` và
+`detail.retryable`. Observability ghi các response này là failure thay vì
+`success=true` với `plannerOutput=null`.
+
 ## Các module
 
 | Module | Input | Output |
@@ -85,6 +91,12 @@ Hiện local trace ghi span tóm tắt cho shared Gemini, Tavily, Information Fi
 PostgreSQL cache, shared place search, Valhalla và OR-Tools CP-SAT. Input/output chỉ chứa số
 lượng, trạng thái, model/provider và metadata an toàn; API key, raw provider
 payload và toàn bộ prompt không được đưa vào span.
+
+Ngoài snapshot trace, backend phát log `agent_stage_timing` khi mỗi root stage
+kết thúc và `agent_request_timing` khi toàn request kết thúc. Log chỉ gồm
+`request_id`, tên stage/route, status và `duration_ms`; không ghi prompt hoặc
+provider payload. Có thể ghép các dòng theo `request_id` để tìm stage chậm ngay
+trên terminal chạy Uvicorn.
 
 Khi provider là `gemini`, Supervisor dùng structured LLM classification trước
 cho mọi message; deterministic rules chỉ được dùng khi chọn provider `rules`
@@ -144,7 +156,8 @@ cache canonicalize TikTok/Instagram/Facebook bằng cách bỏ toàn bộ query 
 khi tra `source_documents`, tương thích artifact cache legacy v6. URL và ảnh
 trong cùng request được chạy song song. YouTube ưu tiên full subtitle/automatic
 caption mà không tải video; nếu không có caption mới tải audio-only, chia chunk
-có timestamp và transcribe Gemini song song. Transcript dài được extract place
+có timestamp và mặc định chỉ transcribe một chunk Gemini tại một thời điểm.
+Transcript dài được extract place
 theo từng chunk; mỗi chunk dùng một structured request trả đồng thời place, ADM
 và note thay vì ba request provider riêng. Query `t=` hoặc
 `start=` ưu tiên chunk gần timestamp nhưng không giới hạn phạm vi transcription;
@@ -153,7 +166,7 @@ nhiều request khi transcript dài. Mặc định tối đa năm chunk được
 song và toàn bộ synthesis trong một Explorer service bị giới hạn sáu request
 Gemini đang chạy; chunk thành công được giữ khi chỉ chunk khác cần retry.
 TikTok ưu tiên Safari HTML: parse JSON nhúng, kiểm tra CDN allowlist rồi stream
-MP4 có giới hạn; nếu thất bại mới dùng `yt-dlp` legacy. Instagram dùng `yt-dlp`
+MP4 có giới hạn; lỗi source không fallback sang `yt-dlp`. Instagram dùng `yt-dlp`
 theo thứ tự standard, Chrome và Chrome Android. ffprobe chỉ chạy OCR/STT cho
 stream video/audio thực sự tồn tại; website dùng
 HTTP, `curl-cffi` Safari, rồi fallback Playwright Chromium trước khi qua
@@ -264,8 +277,12 @@ greedy shortlist và 2-opt/swap, rồi chạy OR-Tools CP-SAT hai pass cho từn
 ngày. Greedy và CP-SAT dùng chung Bayesian review quality dựa trên rating,
 review count và prior của pool. Kết quả ghép ngày được kiểm tra lại budget, overnight rest và accommodation
 transfer. Sau solver, module chỉ lấy
-route detail cho selected arcs cùng accommodation transfers và có tối đa một affected-day repair nếu detail
-thực tế làm timeline sai.
+route detail cho selected arcs cùng accommodation transfers. Repair khóa ngày
+không ảnh hưởng được thử trước và nhận baseline schedule làm solution hint; nếu
+`INFEASIBLE` hoặc `UNKNOWN`, Planner hybrid-replan compact pool theo ngày một
+lần cho mỗi correction để optional candidate có thể được thay hoặc loại. Nếu
+replan chọn arc mới có route detail dài hơn matrix, correction/repair tiếp tục
+đến khi timeline ổn định; không có wall-clock timeout mặc định cho chuỗi này.
 Mỗi ngày bắt buộc có activity xen giữa breakfast/lunch và lunch/dinner bằng
 hard constraint cấm food-to-food arc. Mỗi ngày có tối đa hai
 `drink_dessert`, và hai meal slot liền nhau không được cùng dùng loại venue
@@ -273,11 +290,14 @@ này. Waiting giữa hai stop liên tiếp bị giới hạn tối đa 150 phút
 `safeTravel` đã gồm routing buffer; khi pool/opening
 window không dựng được chuỗi liên tục, solver trả `INFEASIBLE` thay vì xuất
 ngày chỉ có ba bữa ăn.
-Optional candidate của chuyến từ ba ngày được gán vào một đến tối đa hai ngày
-bằng dense-medoid assignment có activity reserve cân bằng; candidate cô lập
-không được chiếm một day center nếu vùng 20 km quanh nó thiếu reserve. User/URL
-không bị giới hạn và food liên kết đi theo TravelPlace. Pass utility có relative
-gap 5%, trong khi hai pass priority vẫn exact.
+Optional candidate của chuyến từ ba ngày được ưu tiên vào ngày gần nhất bằng
+greedy và có thể thêm ngày gần thứ hai trong một lần rebalance. Tâm được chọn
+theo normalized KNN density với tối đa 10 neighbor cùng Bayesian quality;
+candidate cô lập không được chiếm một day center nếu neighborhood quanh nó quá
+thưa. Ngày khả thi ngoài preferred pool
+vẫn được giữ cho full-day fallback. User/URL không bị giới hạn và food liên kết
+đi theo TravelPlace. Pass utility có relative gap 5%, trong khi hai pass
+priority vẫn exact.
 Sau day-domain projection, Planner ưu tiên khôi phục phép ghép ba bữa với ba
 restaurant khác nhau từ pool gốc. Chỉ khi pool gốc không có unique matching,
 Planner tạo meal-occurrence alias nội bộ để cùng venue có thể phục vụ nhiều bữa,

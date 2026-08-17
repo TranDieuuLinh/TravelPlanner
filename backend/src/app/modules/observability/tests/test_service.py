@@ -1,8 +1,9 @@
 import asyncio
+import logging
 from uuid import uuid4
 
-from langgraph.graph import END, START, StateGraph
 import pytest
+from langgraph.graph import END, START, StateGraph
 from typing_extensions import TypedDict
 
 from app.modules.observability.local_store import LocalObservabilityStore
@@ -28,16 +29,17 @@ def test_local_store_captures_redacted_tool_input_and_output(tmp_path) -> None:
     assert item["status"] == "success"
 
 
-def test_service_completes_trace_and_reports_status(tmp_path) -> None:
+def test_service_completes_trace_and_reports_status(tmp_path, caplog) -> None:
     store = LocalObservabilityStore(storage_path=tmp_path / "traces.json")
     service = ObservabilityService(store)
     service.start_trace(request_id="request-1", metadata={})
-    asyncio.run(service.record_agent_invoke(
-        request_id="request-1", route="explorer", success=False,
-        message_length=10, warning_count=1, source_count=2,
-        has_itinerary=False, error_code="TIMEOUT", duration_ms=123.4,
-        output={"response": "failed"},
-    ))
+    with caplog.at_level(logging.INFO):
+        asyncio.run(service.record_agent_invoke(
+            request_id="request-1", route="explorer", success=False,
+            message_length=10, warning_count=1, source_count=2,
+            has_itinerary=False, error_code="TIMEOUT", duration_ms=123.4,
+            output={"response": "failed"},
+        ))
 
     result = asyncio.run(service.status())
     trace = asyncio.run(service.get_trace("request-1"))
@@ -47,6 +49,10 @@ def test_service_completes_trace_and_reports_status(tmp_path) -> None:
     assert trace["durationMs"] == 123.4
     assert trace["errorCode"] == "TIMEOUT"
     assert '"response": "failed"' in trace["outputPreview"]
+    assert (
+        "agent_request_timing request_id=request-1 route=explorer "
+        "status=error duration_ms=123.40"
+    ) in caplog.messages
 
 
 def test_local_store_reloads_persisted_traces(tmp_path) -> None:
@@ -61,7 +67,9 @@ def test_local_store_reloads_persisted_traces(tmp_path) -> None:
     assert trace["status"] == "success"
 
 
-def test_traced_call_is_nested_and_keeps_only_safe_summaries(tmp_path) -> None:
+def test_traced_call_is_nested_and_keeps_only_safe_summaries(
+    tmp_path, caplog
+) -> None:
     class State(TypedDict):
         count: int
 
@@ -84,9 +92,10 @@ def test_traced_call_is_nested_and_keeps_only_safe_summaries(tmp_path) -> None:
     service = ObservabilityService(store)
     callback = service.start_trace(request_id="request-1", metadata={})
 
-    result = asyncio.run(
-        graph.ainvoke({"count": 1}, config={"callbacks": [callback]})
-    )
+    with caplog.at_level(logging.INFO):
+        result = asyncio.run(
+            graph.ainvoke({"count": 1}, config={"callbacks": [callback]})
+        )
     trace = asyncio.run(service.get_trace("request-1"))
 
     assert result == {"count": 2}
@@ -97,6 +106,14 @@ def test_traced_call_is_nested_and_keeps_only_safe_summaries(tmp_path) -> None:
     assert '"queryChars": 12' in tool["inputPreview"]
     assert '"resultCount": 2' in tool["outputPreview"]
     assert trace["observationCount"] == 3
+    stage_log = next(
+        message for message in caplog.messages
+        if message.startswith("agent_stage_timing")
+    )
+    assert "request_id=request-1" in stage_log
+    assert "stage=place_checker" in stage_log
+    assert "status=success" in stage_log
+    assert "duration_ms=" in stage_log
 
 
 def test_observation_page_can_be_filtered_by_trace(tmp_path) -> None:

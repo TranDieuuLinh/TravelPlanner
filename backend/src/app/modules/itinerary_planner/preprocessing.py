@@ -3,6 +3,12 @@ from __future__ import annotations
 from math import ceil
 from types import MappingProxyType
 
+from app.modules.itinerary_planner.candidate_semantics import (
+    eligibility_failure,
+    normalize_candidate,
+    normalize_tags,
+    normalize_trip,
+)
 from app.modules.itinerary_planner.contract import (
     CandidatePriority,
     ItineraryPlannerInput,
@@ -10,12 +16,6 @@ from app.modules.itinerary_planner.contract import (
     PlannerCandidate,
     PlannerFoodCandidate,
     PlannerTrip,
-)
-from app.modules.itinerary_planner.candidate_semantics import (
-    eligibility_failure,
-    normalize_candidate,
-    normalize_tags,
-    normalize_trip,
 )
 from app.modules.itinerary_planner.day_domains import (
     MAX_OPTIONAL_DAYS,
@@ -27,6 +27,7 @@ from app.modules.itinerary_planner.policies import (
     OVERNIGHT_END_MINUTE,
     STANDARD_DAY_END_MINUTE,
 )
+from app.modules.itinerary_planner.preflight import validate_projected_pool
 from app.modules.itinerary_planner.prepared_problem import (
     Candidate,
     CandidateDay,
@@ -36,7 +37,6 @@ from app.modules.itinerary_planner.prepared_problem import (
     PlanningPreflightError,
     PreparedPlanningProblem,
 )
-from app.modules.itinerary_planner.preflight import validate_projected_pool
 from app.modules.itinerary_planner.time_windows import (
     PlanningWindow,
     feasible_start_window,
@@ -311,6 +311,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         meal_eligibility=meal_eligibility,
     )
     feasible_days = day_domains.feasible_days
+    preferred_days = day_domains.preferred_days
     feasible_windows = day_domains.feasible_windows
     meal_eligibility = day_domains.meal_eligibility
     warnings.extend(day_domains.warnings)
@@ -321,9 +322,10 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         candidates.append(alias)
         candidate_by_id[alias.place_id] = alias
         related_by_place[alias.place_id] = related_by_place[canonical_id]
-        if day := next(iter(feasible_days[alias.place_id]), None):
-            if day in unknown_days_by_id.get(canonical_id, frozenset()):
-                unknown_days_by_id[alias.place_id] = frozenset({day})
+        if (
+            day := next(iter(feasible_days[alias.place_id]), None)
+        ) and day in unknown_days_by_id.get(canonical_id, frozenset()):
+            unknown_days_by_id[alias.place_id] = frozenset({day})
 
     for place_id in unknown_days_by_id:
         warnings.append(
@@ -361,6 +363,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
         valid_food=tuple(valid_food),
         candidate_by_id=MappingProxyType(candidate_by_id),
         feasible_days=MappingProxyType(feasible_days),
+        preferred_days=MappingProxyType(preferred_days),
         feasible_windows=MappingProxyType(feasible_windows),
         preferred_windows=MappingProxyType(preferred_windows),
         meal_eligibility=MappingProxyType(meal_eligibility),

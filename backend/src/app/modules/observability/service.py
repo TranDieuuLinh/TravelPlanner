@@ -1,8 +1,11 @@
+import logging
 from typing import Any
 
 from app.modules.observability.contract import ObservabilityPage, ObservabilityStatus
 from app.modules.observability.local_callback import LocalTraceCallback
 from app.modules.observability.local_store import LocalObservabilityStore
+
+logger = logging.getLogger(__name__)
 
 
 class ObservabilityError(Exception):
@@ -51,4 +54,11 @@ class ObservabilityService:
             message_length=message_length, warning_count=warning_count,
             source_count=source_count, has_itinerary=has_itinerary,
             error_code=error_code, duration_ms=duration_ms, output=output,
+        )
+        logger.info(
+            "agent_request_timing request_id=%s route=%s status=%s duration_ms=%s",
+            request_id,
+            route or "unknown",
+            "success" if success else "error",
+            f"{duration_ms:.2f}" if duration_ms is not None else "unknown",
         )

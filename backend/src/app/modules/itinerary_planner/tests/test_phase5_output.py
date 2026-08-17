@@ -7,10 +7,12 @@ from app.modules.itinerary_planner.adapters.transport_cost import (
 )
 from app.modules.itinerary_planner.contract import ItineraryPlannerInput
 from app.modules.itinerary_planner.graph import build_itinerary_planner_graph
+from app.modules.itinerary_planner.nodes import _merge_enrichment
 from app.modules.itinerary_planner.optimizer import SolverConfig, optimize_itinerary
 from app.modules.itinerary_planner.optimizer.locks import RepairLocks
 from app.modules.itinerary_planner.preprocessing import prepare_planning_problem
 from app.modules.itinerary_planner.route_enrichment import (
+    RouteEnrichmentResult,
     apply_route_corrections,
     enrich_selected_routes,
     invalid_timeline_days,
@@ -30,6 +32,16 @@ FAST_CONFIG = SolverConfig(
     priority_timeout_seconds=2,
     utility_timeout_seconds=4,
 )
+
+
+def test_merge_enrichment_preserves_follow_up_repair_days() -> None:
+    original = RouteEnrichmentResult((), frozenset({1}), {}, {}, ("initial",))
+    repaired = RouteEnrichmentResult((), frozenset({2}), {}, {}, ("follow-up",))
+
+    merged = _merge_enrichment(original, repaired)
+
+    assert merged.repair_days == {2}
+    assert merged.warnings == ("initial", "follow-up")
 
 
 def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:

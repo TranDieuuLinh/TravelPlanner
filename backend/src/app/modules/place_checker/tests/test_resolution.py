@@ -160,7 +160,7 @@ def test_shared_lexical_similarity_handles_typo() -> None:
     assert result.match_options[0].components.lexical_score > 0.9
 
 
-def test_close_matches_from_user_are_kept_as_provisional() -> None:
+def test_close_branches_without_address_hint_select_first_result() -> None:
     first = provider_candidate(
         "kg_1",
         address="Hoan Kiem, Hanoi",
@@ -180,13 +180,14 @@ def test_close_matches_from_user_are_kept_as_provisional() -> None:
         )
     ).candidates[0]
 
-    assert result.status == IdentityResolutionStatus.provisional
+    assert result.status == IdentityResolutionStatus.resolved
     assert result.selected_place is not None
+    assert result.selected_place.place_id == "kg_1"
     assert result.score_margin == 0
-    assert result.resolution_reason == "provisional_branch_or_identity_ambiguous"
+    assert result.resolution_reason == "first_branch_without_address_hint"
 
 
-def test_close_system_matches_still_require_review() -> None:
+def test_close_system_branches_without_address_hint_select_first_result() -> None:
     first = provider_candidate(
         "kg_1",
         coordinates=Coordinates(latitude=21.03, longitude=105.85),
@@ -204,8 +205,9 @@ def test_close_system_matches_still_require_review() -> None:
         )
     ).candidates[0]
 
-    assert result.status == IdentityResolutionStatus.needs_review
-    assert result.selected_place is None
+    assert result.status == IdentityResolutionStatus.resolved
+    assert result.selected_place is not None
+    assert result.selected_place.place_id == "kg_1"
 
 
 def test_lexical_containment_without_strong_evidence_is_not_provisional() -> None:

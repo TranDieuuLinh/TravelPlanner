@@ -50,6 +50,10 @@ giới HTTP. Thư mục `orchestration/` sở hữu root graph và ánh xạ cá
 contract giữa các module. Business rule về du lịch không nên đặt trong
 `orchestration/`.
 
+Module `observability` lưu bounded trace cục bộ và phát timing log an toàn cho
+từng root graph stage cùng tổng request. Các dòng này dùng cùng `request_id` để
+đối chiếu với trace mà không ghi nội dung prompt hoặc raw provider payload.
+
 ## Ranh giới module
 
 Mỗi module dọc có cấu trúc sau:
@@ -89,9 +93,11 @@ sparse arcs trên contract `trip + places + food + accommodations + excludedCand
 hybrid planner gồm geographic day-domain, greedy shortlist, 2-opt/swap và
 CP-SAT hai pass theo từng ngày: pass priority exact giữ thứ tự
 `user_input > URL`, sau đó pass utility tối ưu chất lượng lịch.
-Geographic day-domain dùng dense medoids cùng assignment capacity để giữ
-activity reserve cân bằng theo ngày; outlier không được chiếm riêng một day
-center thiếu mật độ, còn candidate user/URL giữ toàn bộ ngày khả thi.
+Geographic day-domain không dùng solver phụ: heuristic chọn tâm theo normalized
+KNN density (`K<=10`) và Bayesian quality, greedy gán ngày gần nhất rồi
+rebalance một lần. Preferred pool
+giữ activity reserve cân bằng; mọi ngày khả thi khác vẫn là reserve fallback,
+còn candidate user/URL giữ toàn bộ ngày khả thi.
 Runtime composition đặt `ITINERARY_LOG_SEARCH_PROGRESS=true` để OR-Tools phát
 search progress; test graph vẫn có thể truyền `SolverConfig` tắt log để tránh
 output nhiễu.
@@ -104,8 +110,13 @@ P25/P50/P80 tương ứng low/medium/high cho Accommodation, Restaurant và
 TravelPlace. Transportation dùng cùng Xanh SM fare estimator cho các ADM Việt
 Nam. Thiếu giá ở một nhóm bắt buộc thì giữ budget `unspecified`, không tạo số
 tiền giả.
-Phase 5 lấy detail cho selected arcs và accommodation transfers, repair tối đa một vòng khi duration
-thực tế phá timeline, rồi tạo public `ItineraryPlannerOutput`. Root/API trả nó
+Phase 5 lấy detail cho selected arcs và accommodation transfers, thử repair có
+day locks khi duration thực tế phá timeline; nếu repair `INFEASIBLE` hoặc
+`UNKNOWN`, Planner dùng baseline hint rồi hybrid-replan compact pool theo ngày
+để thay/drop optional candidate. Route detail mới tiếp tục được correction và
+repair cho đến khi timeline ổn định, không dùng wall-clock timeout mặc định,
+rồi tạo public
+`ItineraryPlannerOutput`. Root/API trả nó
 qua `plannerOutput`; legacy `itinerary` được giữ riêng cho PlanEditor. Root
 orchestration không còn tạo lịch giả từ `VerifiedPlace` legacy.
 Mỗi itinerary day có `costBreakdown` gồm accommodation, food, localTransport,
@@ -169,12 +180,11 @@ caption, adapter chỉ tải audio stream, chia mặc định thành chunk 5 ph�
 overlap 5 giây và transcribe song song qua Gemini; media tạm bị xóa sau request.
 Timestamp `t=`/`start=` chỉ ưu tiên chunk gần mốc đó vào hàng đợi trước; toàn bộ
 caption/audio vẫn được xử lý.
-TikTok ưu
-tiên `curl-cffi` Safari đọc JSON
+TikTok ưu tiên `curl-cffi` Safari đọc JSON
 `__UNIVERSAL_DATA_FOR_REHYDRATION__`, lấy URL CDN thuộc allowlist và stream MP4
-với giới hạn dung lượng; nếu HTML không có media mới fallback sang `yt-dlp`
-theo thứ tự legacy standard, Chrome và Chrome 131/Android 14. Instagram vẫn
-dùng chuỗi `yt-dlp` legacy. Không cần chuyển cookie từ frontend. OCR
+với giới hạn dung lượng; lỗi HTML/media được trả cục bộ và không fallback sang
+`yt-dlp`. Instagram vẫn dùng chuỗi `yt-dlp` legacy. Không cần chuyển cookie từ
+frontend. OCR
 lấy một frame mỗi 3 giây, giới hạn 48 frame và tối đa 10 ảnh trong mỗi batch
 Gemini. Audio social dùng chunk động dài khoảng 60 giây và không vượt quá ba
 chunk, nên clip ngắn chỉ tạo một STT request. Hai nhánh OCR/STT chạy đồng thời;
@@ -184,8 +194,8 @@ quả source partial, ghi log theo code và đưa vào warning mà không làm m
 evidence của nhánh còn lại. Website dùng `curl-cffi` giả lập Safari để tải
 HTML, fallback Playwright Chromium khi bị chặn hoặc nội dung rỗng, rồi dùng
 `trafilatura` tạo Markdown. Nếu browser vẫn bị anti-bot
-chặn, source thất bại cục bộ mà không làm hỏng source khác. TikTok/Instagram có thể yêu cầu cookie
-Netscape qua `EXPLORER_YTDLP_COOKIE_FILE`.
+chặn, source thất bại cục bộ mà không làm hỏng source khác. Instagram có thể yêu
+cầu cookie Netscape qua `EXPLORER_YTDLP_COOKIE_FILE`.
 
 Trước khi tải URL, Explorer tra cache PostgreSQL do module sở hữu trong bảng
 `source_documents`, theo canonical URL, extractor version và TTL

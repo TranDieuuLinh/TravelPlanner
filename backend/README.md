@@ -1,6 +1,6 @@
 # Travel Planner Agents
 
-Cập nhật lần cuối: 2026-08-14.
+Cập nhật lần cuối: 2026-08-17.
 
 Greenfield modular backend for a LangGraph-based travel-planning workflow.
 
@@ -48,16 +48,17 @@ This is a working architecture scaffold, not a production travel-data system.
 - Explorer now uses a two-route LangGraph intake flow. Prompt-only extraction
   and parallel URL/image source import converge on normalization, ADM
   reconciliation, defaults, and separate ready/clarification/failure snapshot
-  paths. With Gemini configured, raw images use OCR; TikTok/Instagram media use
-  yt-dlp with curl-cffi Chrome impersonation, an Android Chrome fallback, and a
-  small muxed MP4 preference. Analysis uses 3-second frame sampling capped at
+  paths. With Gemini configured, raw images use OCR; TikTok reads its embedded
+  Safari HTML media data directly, while Instagram uses yt-dlp with browser
+  impersonation fallbacks. Analysis uses 3-second frame sampling capped at
   48 frames and 10 images per parallel Gemini batch. Social audio uses dynamic
   60-second chunks capped at three, so short clips no longer always create
   three STT requests. OCR uses
   `GEMINI_IMAGE_OCR_MODEL`, while STT uses `GEMINI_AUDIO_MODEL`; a failed media
   branch is logged and reported without discarding successful evidence from the
   other branch. YouTube prefers captions and falls back to chunked audio
-  transcription. Generic websites use `trafilatura`, trying
+  transcription, limited to one audio chunk at a time by default. Generic
+  websites use `trafilatura`, trying
   Safari-impersonated `curl-cffi` and then a bounded
   Playwright Chromium fallback after HTTP block.
   Snapshots remain process-local, and
@@ -90,13 +91,17 @@ This is a working architecture scaffold, not a production travel-data system.
   and never presents them as verified. Without the database, the compatibility
   graph uses deterministic `DevelopmentCatalog` placeholders.
 - ItineraryPlanner preprocesses the compact PlaceChecker payload, builds a
-  global Valhalla driving matrix with Xanh SM fare estimates, then runs a
-  three-pass OR-Tools CP-SAT model. It enriches selected route legs, performs at
-  most one affected-day repair, and returns the new plan in `plannerOutput`.
+  deterministic geographic preferred pool with reserve fallback, builds a
+  global Valhalla driving matrix with Xanh SM fare estimates, then runs two-pass
+  daily OR-Tools CP-SAT models. It enriches selected route legs, first attempts
+  an affected-day repair with a baseline solution hint and falls back to one
+  compact per-day hybrid replan when the locked repair is infeasible or unknown,
+  then returns the plan in `plannerOutput`.
   Valhalla must be configured and available for production matrix routing;
   missing route geometry after a valid matrix is surfaced as a warning.
-- The checkpointer is in memory and must be replaced by durable storage in
-  production.
+- The root graph uses the PostgreSQL checkpointer when `DATABASE_URL` is set and
+  fails startup composition if a usable psycopg runtime is missing. Development
+  without a database uses the explicit in-memory fallback.
 - Root graph checkpoints retain a bounded recent conversation context for the
   Supervisor LLM. This context is not a durable chat-history or production
   memory system.
@@ -145,10 +150,10 @@ For Explorer-only contract testing, use `POST /v1/explorer/invoke` with
 `rawPrompt`, `urls`, and/or `images`. Send `forceRefresh: true` to bypass the
 URL cache. This bypasses Supervisor, PlaceChecker,
 and ItineraryPlanner and returns the complete `ExplorerOutput`.
-For TikTok pages that require a logged-in session, export a Netscape-format
+For Instagram pages that require a logged-in session, export a Netscape-format
 cookie file outside source control and set `EXPLORER_YTDLP_COOKIE_FILE` to its
-absolute path. Cookie files are ignored by the backend `.gitignore`; never
-commit or log them.
+absolute path. TikTok does not use the yt-dlp fallback. Cookie files are ignored
+by the backend `.gitignore`; never commit or log them.
 Docker Compose loads provider, Explorer, and cloud database settings from
 `backend/.env` when that file exists; copy `.env.example` and set the cloud
 `DATABASE_URL` before starting the stack.

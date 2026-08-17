@@ -214,9 +214,10 @@ def test_geographic_projection_keeps_priority_global_and_links_special_near() ->
         )
     )
 
-    assert 1 <= len(prepared.feasible_days["optional_0"]) <= 2
-    assert prepared.feasible_days["required"] == frozenset({1, 2, 3, 4})
-    assert prepared.feasible_days["linked"] == prepared.feasible_days["optional_0"]
+    assert 1 <= len(prepared.preferred_days["optional_0"]) <= 2
+    assert prepared.preferred_days["required"] == frozenset({1, 2, 3, 4})
+    assert prepared.preferred_days["linked"] == prepared.preferred_days["optional_0"]
+    assert prepared.feasible_days["optional_0"] == frozenset({1, 2, 3, 4})
     assert any("Geographic day-domain projection" in item for item in prepared.warnings)
 
 
@@ -232,7 +233,7 @@ def test_geographic_projection_balances_small_daily_pool() -> None:
 
     assert [
         sum(
-            day in prepared.feasible_days[item.place_id]
+            day in prepared.preferred_days[item.place_id]
             for item in prepared.valid_places
         )
         for day in range(1, 5)
@@ -259,12 +260,16 @@ def test_outlier_cannot_deplete_a_daily_activity_reserve() -> None:
 
     daily_counts = [
         sum(
-            day in prepared.feasible_days[item.place_id]
+            day in prepared.preferred_days[item.place_id]
             for item in prepared.valid_places
         )
         for day in range(1, 4)
     ]
-    assert daily_counts == [14, 14, 14]
+    assert all(count >= 14 for count in daily_counts)
+    assert all(
+        prepared.feasible_days[item.place_id] == frozenset({1, 2, 3})
+        for item in prepared.valid_places
+    )
 
 
 def test_repeats_restaurant_only_when_original_pool_has_no_distinct_matching() -> None:

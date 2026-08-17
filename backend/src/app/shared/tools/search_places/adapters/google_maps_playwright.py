@@ -40,8 +40,30 @@ class GoogleMapsPlaywrightSearch:
         self.max_alias_queries = max(0, max_alias_queries)
         self.max_concurrency = max(1, max_concurrency)
         self.headless = headless
+        # This limiter is shared by every search using this adapter instance.
+        # The detail-page limiter below only bounds pages within one search and
+        # cannot prevent several candidate resolutions opening browsers at once.
+        self._search_limiter = asyncio.Semaphore(self.max_concurrency)
 
     async def search(
+        self,
+        lookup_names: list[str],
+        *,
+        input_adm: AdministrativeArea,
+        place_type_hint: str | None,
+        limit: int,
+        anchor_place_id: str | None = None,
+    ) -> list[PlaceProviderCandidate]:
+        async with self._search_limiter:
+            return await self._search(
+                lookup_names,
+                input_adm=input_adm,
+                place_type_hint=place_type_hint,
+                limit=limit,
+                anchor_place_id=anchor_place_id,
+            )
+
+    async def _search(
         self,
         lookup_names: list[str],
         *,

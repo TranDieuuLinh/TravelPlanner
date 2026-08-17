@@ -68,7 +68,8 @@ Trường destinations chỉ chứa tỉnh/thành phố đích của chuyến đ
 trả về destination nếu evidence không xác định được rõ ràng.
 Khi extractNotes là true, trường notes chỉ chứa các thông tin hữu ích có evidence từ
 nguồn như cách tiếp cận, thời điểm, giá, thời gian đóng cửa, cảnh báo, món đặc trưng,
-hoạt động đặc biệt hoặc trải nghiệm khác biệt. Loại trừ budget của cả chuyến đi, people,
+hoạt động đặc biệt (distinctive-activity) hoặc trải nghiệm khác biệt. Loại trừ budget
+của cả chuyến đi, people,
 preferences, destinations và lời khen chung chung. Khi extractNotes là false, trả về
 một danh sách notes rỗng. Mọi item phải có artifact_index để có thể khôi phục
 provenance."""

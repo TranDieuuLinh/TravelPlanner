@@ -24,8 +24,10 @@ cần phân biệt:
 
 - **Database runtime:** các table được liệt kê bên dưới tồn tại trong database
   PostgreSQL cloud sau khi migration tương ứng đã được áp dụng.
-- **Backend mới:** không sử dụng các table legacy khác; graph state vẫn dùng
-  `InMemorySaver`. Explorer dùng `source_documents` và `explorer_draft_cache`;
+- **Backend mới:** không sử dụng các table legacy khác; khi có `DATABASE_URL`,
+  root graph dùng PostgreSQL checkpointer và fail fast nếu runtime psycopg không
+  khả dụng. Chỉ môi trường không cấu hình database mới dùng `InMemorySaver`.
+  Explorer dùng `source_documents` và `explorer_draft_cache`;
   Information Finder dùng
   các bảng cache mô tả bên dưới khi có `DATABASE_URL` và migration tương ứng đã
   được áp dụng.
@@ -57,8 +59,9 @@ hay migration và không ghi raw prompt/raw third-party payload. Trước produc
 cần xác định database ownership rồi triển khai durable adapter cho port
 `ExplorerSnapshotRepository`; lỗi lưu snapshot không được phép đi tiếp sang
 PlaceChecker.
-YouTube/TikTok/Instagram importer dùng `yt-dlp`; website dùng `httpx`,
-`curl-cffi`, fallback Playwright và `trafilatura`; OCR/STT dùng Gemini. Migration
+YouTube/Instagram importer dùng `yt-dlp`; TikTok đọc HTML Safari và media CDN
+trực tiếp; website dùng `httpx`, `curl-cffi`, fallback Playwright và
+`trafilatura`; OCR/STT dùng Gemini. Migration
 `002_explorer_source_document_cache.sql` nhận ownership bảng
 `source_documents`. Cache chỉ lưu `SourceArtifact` đã chuẩn hóa và lỗi nhánh
 gọn; media tạm và raw third-party payload không được lưu. Media tạm được xóa

@@ -198,11 +198,11 @@ class RootNodes:
             projection = PlaceCheckerPlanningProjector().project(output)
             update = {
                 "place_output": output,
-                "warnings": [
+                "warnings": list(dict.fromkeys([
                     *state.get("warnings", []),
                     *projection.warnings,
                     *output.warnings,
-                ],
+                ])),
             }
             if output.status.value == "blocked":
                 update.update(
@@ -294,6 +294,9 @@ class RootNodes:
             update = {
                 "warnings": [*state.get("warnings", []), error],
                 "response": f"Itinerary planning stopped: {error}",
+                "planner_error_code": result.get(
+                    "error_code", "itinerary_planning_failed"
+                ),
             }
             if failure := result.get("preflight_failure"):
                 update["planner_preflight_failure"] = failure

@@ -321,11 +321,13 @@ def test_google_description_and_map_url_become_provider_note() -> None:
 
 def test_concurrent_catalog_calls_create_only_one_pool(monkeypatch) -> None:
     calls = 0
+    options = {}
     pool = object()
 
     async def create_pool(*args, **kwargs):
-        nonlocal calls
+        nonlocal calls, options
         calls += 1
+        options = kwargs
         await asyncio.sleep(0)
         return pool
 
@@ -342,4 +344,6 @@ def test_concurrent_catalog_calls_create_only_one_pool(monkeypatch) -> None:
     results = asyncio.run(get_concurrently())
 
     assert calls == 1
+    assert options["min_size"] == 1
+    assert options["max_size"] == 2
     assert results == [pool] * 20

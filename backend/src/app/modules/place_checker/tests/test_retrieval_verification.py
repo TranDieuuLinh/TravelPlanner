@@ -144,6 +144,25 @@ def test_kg_sufficient_short_circuits_external_sources() -> None:
     assert external.calls == 0
 
 
+def test_any_kg_result_short_circuits_external_source() -> None:
+    kg = FakeSource(
+        "knowledge_graph",
+        RetrievalSourceKind.knowledge_graph,
+        [evidence(entity_id="kg:pho")],
+    )
+    external = FakeSource("external_a", RetrievalSourceKind.external, [evidence()])
+    service = TargetedRetrievalService(
+        kg,
+        external_sources=[external],
+        verified_target_per_gap=5,
+    )
+
+    result = asyncio.run(service.retrieve(gap(), analysis_context()))
+
+    assert result.gaps[0].candidates[0].place_id == "kg:pho"
+    assert external.calls == 0
+
+
 def test_one_external_source_is_provisional_and_not_eligible() -> None:
     service = TargetedRetrievalService(
         FakeSource("kg", RetrievalSourceKind.knowledge_graph),
@@ -158,6 +177,39 @@ def test_one_external_source_is_provisional_and_not_eligible() -> None:
     assert candidate.verification_status == VerificationStatus.provisional
     assert candidate.planner_eligible is False
     assert result.promotion_event_ids == []
+
+
+def test_external_source_budget_is_shared_across_gaps() -> None:
+    external = FakeSource("external_a", RetrievalSourceKind.external)
+    service = TargetedRetrievalService(
+        FakeSource("kg", RetrievalSourceKind.knowledge_graph),
+        external_sources=[external],
+        external_call_budget=5,
+    )
+    gaps = GapAnalysis(
+        gaps=[
+            AnalysisGap(
+                gap_id=f"gap:food:{index}",
+                gap_type=GapType.food_coverage,
+                severity=IssueSeverity.high,
+                trigger="missing coverage",
+                suggested_action="search",
+            )
+            for index in range(7)
+        ],
+        open_count=7,
+    )
+
+    result = asyncio.run(service.retrieve(gaps, analysis_context()))
+
+    assert external.calls == 5
+    assert sum(
+        any(
+            attempt.source_kind == RetrievalSourceKind.external
+            for attempt in gap_result.attempts
+        )
+        for gap_result in result.gaps
+    ) == 5
 
 
 def test_unverified_draft_kg_entity_remains_provisional() -> None:
@@ -377,13 +429,50 @@ def test_external_search_places_adapter_requests_external_scope_and_keeps_draft(
         country_code="VN",
         category_hint="travel_place",
         budget_level="medium",
+        anchor_place_ids=["kg:anchor-1", "kg:anchor-2"],
     )
 
     result = asyncio.run(source.search(query))
 
     assert tool.requests[0].provider_scope == "external"
+    assert len(tool.requests) == 1
+    assert tool.requests[0].anchor_place_id == "kg:anchor-1"
     assert result[0].entity_id is None
     assert result[0].is_verified is False
+
+
+def test_search_places_adapter_limits_anchor_queries() -> None:
+    tool = FakeSearchTool(
+        PlaceSearchResult(
+            status="unresolved",
+            query="museum",
+            normalized_query="museum",
+            search_mode="requirement",
+            resolution_reason="no_match",
+        )
+    )
+    source = SearchPlacesGapSource(
+        tool,
+        provider_name="knowledge_graph",
+        source_kind=RetrievalSourceKind.knowledge_graph,
+        max_anchor_queries=1,
+    )
+    query = TargetedRetrievalQuery(
+        gap_id="gap:museum",
+        gap_type=GapType.experience_coverage,
+        severity=IssueSeverity.high,
+        query_text="museum",
+        adm_id="adm1_vn_ha_noi",
+        adm_name="Hà Nội",
+        country_code="VN",
+        category_hint="travel_place",
+        budget_level="medium",
+        anchor_place_ids=[f"kg:anchor-{index}" for index in range(10)],
+    )
+
+    asyncio.run(source.search(query))
+
+    assert [request.anchor_place_id for request in tool.requests] == ["kg:anchor-0"]
 
 
 def test_relation_candidates_are_selected_before_keyword_fallbacks() -> None:

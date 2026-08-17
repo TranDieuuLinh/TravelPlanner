@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 from app.modules.itinerary_planner.contract import (
     CandidatePriority,
@@ -46,8 +47,8 @@ def build_day_shortlist(
     food_ids = {item.place_id for item in problem.valid_food}
     available = {
         candidate_id
-        for candidate_id, feasible in problem.feasible_days.items()
-        if day in feasible and candidate_id not in used_ids
+        for candidate_id, preferred in problem.preferred_days.items()
+        if day in preferred and candidate_id not in used_ids
     }
     activities = [
         problem.candidate_by_id[candidate_id]
@@ -281,7 +282,7 @@ def _route_cost(ordered: tuple[str, ...], routing: RoutingProblem) -> int:
         routing.travel_by_candidate_pair.get((origin, destination), None).safe_minutes
         if (origin, destination) in routing.travel_by_candidate_pair
         else missing
-        for origin, destination in zip(ordered, ordered[1:], strict=False)
+        for origin, destination in pairwise(ordered)
     )
 
 

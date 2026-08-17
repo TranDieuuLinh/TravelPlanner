@@ -16,7 +16,7 @@ Pipeline chính:
 
 ```text
 prepared candidates
--> geographic day-domain (mỗi optional candidate tối đa 1-2 ngày gần nhất)
+-> geographic preferred pool (heuristic center + greedy + một lần rebalance)
 -> greedy activity cluster từng ngày
 -> tạo placeholder breakfast/lunch/dinner quanh activity skeleton
 -> chọn food theo corridor activity trước/sau meal
@@ -24,6 +24,11 @@ prepared candidates
 -> CP-SAT repair hai pass trên từng ngày
 -> ghép ngày, chọn accommodation, kiểm tra budget/rest/transfers
 ```
+
+Geographic partition không chạy CP-SAT. `preferred_days` cấp shortlist nhanh;
+`feasible_days` vẫn giữ mọi candidate-day hợp lệ làm reserve. Nếu shortlist
+không có nghiệm, daily optimizer thử lại với reserve pool đầy đủ trước khi nới
+hard wait cap.
 
 Greedy không loại candidate theo tổng `durationMinutes`; nó giữ toàn bộ priority
 candidate và lấy optional có điểm tổng hợp cao nhất đến ngưỡng 16 activity.
@@ -70,7 +75,9 @@ hybrid/
 
 LangGraph node gọi hybrid optimizer qua worker thread để việc solve CPU-bound
 không chặn event loop. `solver.py` vẫn là CP-SAT engine thấp tầng: hybrid gọi nó
-cho từng ngày, còn affected-day route repair dùng model global cùng repair locks.
+cho từng ngày. Route repair thử model global khóa ngày không ảnh hưởng trước;
+nếu model đó `INFEASIBLE`, runtime bỏ day locks và hybrid-replan toàn chuyến để
+optional candidate có thể được thay hoặc loại.
 
 ## Biến quyết định
 
@@ -382,8 +389,8 @@ Config phải inject, không hard-code trong model builder:
 
 ```text
 num_search_workers
-priority_timeout_seconds = 2
-utility_timeout_seconds = 5
+priority_timeout_seconds = None
+utility_timeout_seconds = None
 utility_relative_gap_limit = 0.05
 random_seed
 log_search_progress
@@ -391,10 +398,13 @@ max_inter_stop_wait_minutes = 150  # None chỉ dùng cho relaxed fallback
 ```
 
 Dùng solution pass trước làm hint cho pass sau; hint không thay constraint lock.
+Khi không có wall-clock deadline, priority pass vẫn chứng minh count ưu tiên,
+còn utility pass nhận heuristic/baseline hint và dừng ở nghiệm khả thi đầu tiên
+để không phải giữ worker chỉ nhằm chứng minh utility tối ưu.
 Composition runtime đọc `ITINERARY_LOG_SEARCH_PROGRESS`, mặc định `true`, và
 truyền thành `SolverConfig(log_search_progress=True)` để OR-Tools phát progress
-log. Mỗi CP-SAT pass có deadline mặc định để một bài toán khó không giữ worker
-hoặc chặn Uvicorn reload vô hạn. Unit test có thể inject config khác khi cần.
+log. Runtime mặc định không đặt wall-clock deadline theo yêu cầu vận hành hiện
+tại; unit test hoặc deployment khác vẫn có thể inject giới hạn qua `SolverConfig`.
 
 Status gồm `OPTIMAL`, `FEASIBLE`, `INFEASIBLE`, `UNKNOWN`. Nếu priority pass chỉ
 `FEASIBLE`, output không được tuyên bố count tối đa hay `optimalityProven=true`.
