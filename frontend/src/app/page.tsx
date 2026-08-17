@@ -1,5 +1,6 @@
 "use client";
 
+import "@/styles/global/itinerary.css";
 import "@/styles/global/landing.css";
 
 import Image from "next/image";
