@@ -39,7 +39,6 @@ services:
       start_period: 10s
 
   valhalla:
-    profiles: ["routing"]
     image: ghcr.io/valhalla/valhalla-scripted:latest
     env_file:
       - path: ./backend/.env
