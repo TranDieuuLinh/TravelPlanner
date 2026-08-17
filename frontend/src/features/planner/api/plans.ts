@@ -882,10 +882,11 @@ export async function addTripChatItem(input: {
   if (input.item.personalNotes) form.append("personalNotes", input.item.personalNotes);
   if (input.item.position != null) form.append("position", String(input.item.position));
 
-  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/items`, {
+  const chat = await apiFetch<CurrentTripChat>(`/v1/trip-chats/${input.chatId}/plan/items`, {
     method: "POST",
     body: form
   });
+  return mapFullCurrentTripChat(chat);
 }
 
 export async function updateTripChatItem(input: {
@@ -907,7 +908,7 @@ export async function updateTripChatItem(input: {
   if (input.item.longitude != null) form.append("longitude", String(input.item.longitude));
   if (input.item.personalNotes !== undefined) form.append("personalNotes", input.item.personalNotes || "");
 
-  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
+  return apiFetch<TripChat>(`/v1/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
     method: "PATCH",
     body: form
   });
@@ -978,7 +979,7 @@ export async function removeTripChatItem(input: {
   const form = new FormData();
   form.append("expectedRevision", String(input.expectedRevision));
 
-  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
+  return apiFetch<TripChat>(`/v1/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
     method: "DELETE",
     body: form
   });
@@ -997,7 +998,7 @@ export async function removeTripChatUnscheduledPlace(input: {
     form.append("candidateId", input.place.candidateId);
   }
 
-  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/unscheduled-places`, {
+  return apiFetch<TripChat>(`/v1/trip-chats/${input.chatId}/plan/unscheduled-places`, {
     method: "DELETE",
     body: form
   });
@@ -1015,7 +1016,7 @@ export async function reorderTripChatItem(input: {
     form.append("itemIds", itemId);
   }
 
-  return apiFetch<TripChat>(`/trip-chats/${input.chatId}/plan/days/${input.day}/items/reorder`, {
+  return apiFetch<TripChat>(`/v1/trip-chats/${input.chatId}/plan/days/${input.day}/items/reorder`, {
     method: "PUT",
     body: form
   });

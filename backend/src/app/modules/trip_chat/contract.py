@@ -63,6 +63,10 @@ TransportSelectionStatus = Literal[
     "updated", "chat_not_found", "revision_conflict", "day_not_found", "leg_not_found"
 ]
 
+PlanItemMutationStatus = Literal[
+    "updated", "chat_not_found", "revision_conflict", "day_not_found"
+]
+
 
 class TripChatMessage(TripChatModel):
     id: str

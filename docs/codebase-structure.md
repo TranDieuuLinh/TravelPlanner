@@ -157,6 +157,7 @@ Backend hiện chỉ expose:
 - `GET /health`
 - `POST /v1/agent/invoke`
 - `GET/POST/DELETE /v1/trip-chats` và các endpoint message theo chat có auth
+- `GET /v1/plans/places/search` tìm địa điểm chuẩn hóa trong Knowledge Graph cho thao tác thêm thủ công
 - `GET /v1/trip-chats/bootstrap` trả tối đa 30 summary gần nhất cùng full chat
   đang mở để frontend không phải tải danh sách rồi mới tải chi tiết tuần tự
 

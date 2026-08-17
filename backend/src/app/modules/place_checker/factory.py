@@ -69,3 +69,11 @@ def build_postgres_place_checker_pipeline(
         ),
         food_selection=FoodRestaurantSelectionService(catalog),
     )
+
+
+def build_postgres_place_search_tool(
+    database_url: str,
+) -> tuple[SearchPlacesTool, PostgresPlaceCatalog]:
+    """Build the read-only search used by manual itinerary additions."""
+    catalog = PostgresPlaceCatalog(database_url)
+    return SearchPlacesTool(catalog), catalog

@@ -4,6 +4,7 @@ from app.modules.trip_chat.contract import (
     AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
     TransportSelectionStatus,
+    PlanItemMutationStatus,
     TripChat,
     TripChatSummary,
 )
@@ -59,6 +60,11 @@ class TripChatRepository(Protocol):
         leg_index: int,
         selection: dict[str, Any],
     ) -> TransportSelectionStatus: ...
+
+    async def add_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item: dict[str, Any], position: int | None = None,
+    ) -> PlanItemMutationStatus: ...
 
     async def delete_chat(self, user_id: int, chat_id: str) -> bool: ...
 

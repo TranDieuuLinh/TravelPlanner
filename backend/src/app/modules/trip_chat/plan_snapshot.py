@@ -1,4 +1,59 @@
 from typing import Any
+from uuid import uuid4
+
+
+def add_plan_item(
+    output: dict[str, Any] | None,
+    *,
+    day: int,
+    item: dict[str, Any],
+    position: int | None = None,
+) -> str:
+    """Insert a user-selected place into one planner day."""
+    if not isinstance(output, dict):
+        return "day_not_found"
+    raw_day = next(
+        (candidate for candidate in output.get("days", [])
+         if isinstance(candidate, dict) and candidate.get("day") == day),
+        None,
+    )
+    if raw_day is None:
+        return "day_not_found"
+    stops = raw_day.setdefault("stops", [])
+    if not isinstance(stops, list):
+        raw_day["stops"] = stops = []
+    item_copy = dict(item)
+    item_copy.setdefault("itemId", f"manual:{day}:{uuid4()}")
+    item_copy.setdefault("placeId", item_copy["itemId"])
+    item_copy.setdefault(
+        "kind",
+        "food"
+        if str(item_copy.get("placeType", "")).lower() in {"food", "restaurant"}
+        else "place",
+    )
+    item_copy.setdefault("priority", "manual")
+    item_copy.setdefault("startMinute", 540)
+    item_copy.setdefault(
+        "endMinute",
+        item_copy["startMinute"] + int(item_copy.get("durationMinutes") or 60),
+    )
+    item_copy.setdefault("durationMinutes", 60)
+    latitude = item_copy.pop("latitude", None)
+    longitude = item_copy.pop("longitude", None)
+    item_copy.setdefault("coordinates", {
+        "latitude": latitude if latitude is not None else 0.0,
+        "longitude": longitude if longitude is not None else 0.0,
+    })
+    item_copy.setdefault("costPerPerson", 0)
+    item_copy.pop("placeType", None)
+    item_copy.pop("timeWindow", None)
+    item_copy.setdefault("position", len(stops))
+    insert_at = len(stops) if position is None else max(0, min(position, len(stops)))
+    stops.insert(insert_at, item_copy)
+    for index, stop in enumerate(stops):
+        if isinstance(stop, dict):
+            stop["position"] = index
+    return "updated"
 
 
 def _remove_accommodation_cost(output: dict[str, Any]) -> None:

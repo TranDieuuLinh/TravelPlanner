@@ -71,7 +71,11 @@ from app.modules.place_checker.retrieval_contract import (
 from app.modules.place_checker.scoring import CandidateScoringService
 from app.modules.place_checker.scoring_contract import CandidateRankingBatch
 from app.modules.place_checker.service import TripContextBuilder
-from app.modules.place_checker.factory import build_postgres_place_checker_pipeline
+from app.modules.place_checker.factory import (
+    build_postgres_place_checker_pipeline,
+    build_postgres_place_search_tool,
+)
+from app.modules.place_checker.manual_search import router as manual_search_router
 from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
 from app.modules.place_checker.food_selection_contract import (
     FoodMealCoverage,
@@ -147,5 +151,7 @@ __all__ = [
     "build_place_checker_graph",
     "build_place_checker_pipeline_graph",
     "build_postgres_place_checker_pipeline",
+    "build_postgres_place_search_tool",
+    "manual_search_router",
     "bayesian_rating",
 ]

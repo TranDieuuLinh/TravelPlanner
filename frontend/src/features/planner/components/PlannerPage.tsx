@@ -526,12 +526,17 @@ function Planner() {
   const suppressMobileItineraryClickRef = useRef(false);
   const mobilePlanInitializedRef = useRef(false);
   const previousChatCollapsedRef = useRef(chatCollapsed);
+  const chatCollapsedRef = useRef(chatCollapsed);
   const suppressChatToggleClickRef = useRef(false);
   const expandedChatSizeRef = useRef<Pick<
     FloatingChatRect,
     "width" | "height"
   > | null>(null);
   const [plannerEntryResolved, setPlannerEntryResolved] = useState(false);
+
+  useEffect(() => {
+    chatCollapsedRef.current = chatCollapsed;
+  }, [chatCollapsed]);
 
   const clampFloatingChatRect = useCallback(
     (rect: FloatingChatRect, collapsed = chatCollapsed): FloatingChatRect => {
@@ -670,6 +675,34 @@ function Planner() {
       )
     );
     setChatCollapsed(false);
+  }
+
+  function collapseChatAfterPlan() {
+    if (chatCollapsedRef.current) return;
+    if (window.innerWidth <= 900) {
+      chatCollapsedRef.current = true;
+      setChatCollapsed(true);
+      return;
+    }
+    const currentRect = currentFloatingChatRect();
+    if (!currentRect) return;
+    expandedChatSizeRef.current = {
+      width: currentRect.width,
+      height: currentRect.height,
+    };
+    chatCollapsedRef.current = true;
+    setFloatingChatRect(
+      clampFloatingChatRect(
+        {
+          x: window.innerWidth - FLOATING_CHAT_MARGIN - FLOATING_CHAT_COLLAPSED_SIZE,
+          y: window.innerHeight - FLOATING_CHAT_MARGIN - FLOATING_CHAT_COLLAPSED_SIZE,
+          width: FLOATING_CHAT_COLLAPSED_SIZE,
+          height: FLOATING_CHAT_COLLAPSED_SIZE,
+        },
+        true,
+      ),
+    );
+    setChatCollapsed(true);
   }
 
   function resizedFloatingChatRect(
@@ -1360,7 +1393,10 @@ function Planner() {
               result.turn.chatId
             )
           ) {
-            applyTripChat(fresh, { streamLatestAssistant: true });
+            applyTripChat(fresh, {
+              collapseOnPlan: true,
+              streamLatestAssistant: true,
+            });
           }
         }
         setTripChats(await listTripChats());
@@ -3841,7 +3877,7 @@ function Planner() {
         listUrlImportJobs().catch(() => ({ jobs: [] })),
       ]);
       if (!controller.signal.aborted && activeChatIdRef.current === chatId) {
-        applyTripChat(chat);
+        applyTripChat(chat, { collapseOnPlan: true });
         setPlannerEntryResolved(true);
         setUrlJobSnapshot(jobsResponse.jobs);
         const active = jobsResponse.jobs.filter(
@@ -3973,7 +4009,10 @@ function Planner() {
 
   function applyTripChat(
     chat: TripChat,
-    options?: { streamLatestAssistant?: boolean },
+    options?: {
+      collapseOnPlan?: boolean;
+      streamLatestAssistant?: boolean;
+    },
   ) {
     setGuidedIntakeStep("complete");
     setGuidedIntakeOpen(false);
@@ -4045,6 +4084,9 @@ function Planner() {
       setBackgroundPlanning(false);
       setInitialPlanningActive(false);
       setActivePlanningJobs([]);
+      if (options?.collapseOnPlan) {
+        window.requestAnimationFrame(collapseChatAfterPlan);
+      }
     }
     setSelectedMapPlaceKey(null);
   }

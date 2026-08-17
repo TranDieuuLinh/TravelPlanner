@@ -11,6 +11,7 @@ from app.modules.conversation_memory.public import build_conversation_memory_ser
 from app.modules.knowledge_graph.public import build_knowledge_graph_service
 from app.modules.itinerary_planner.public import build_valhalla_directions_service
 from app.modules.observability.public import build_observability_service
+from app.modules.place_checker.public import build_postgres_place_search_tool
 from app.modules.trip_chat.public import build_trip_chat_repository
 from app.bootstrap import get_graph
 
@@ -36,6 +37,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             trip_close = getattr(trip_repository, "close", None)
             if trip_close is not None:
                 closers.append(trip_close())
+            place_catalog = getattr(application.state, "manual_place_search_catalog", None)
+            place_close = getattr(place_catalog, "close", None)
+            if place_close is not None:
+                closers.append(place_close())
             memory_service = getattr(application.state, "conversation_memory_service", None)
             repository = getattr(memory_service, "repository", None)
             close = getattr(repository, "close", None)
@@ -74,6 +79,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.knowledge_graph_service = build_knowledge_graph_service(settings)
     application.state.observability_service = build_observability_service(settings)
     application.state.trip_chat_repository = build_trip_chat_repository(settings)
+    if settings.database_url:
+        (
+            application.state.manual_place_search_tool,
+            application.state.manual_place_search_catalog,
+        ) = build_postgres_place_search_tool(settings.database_url)
+    else:
+        application.state.manual_place_search_tool = None
+        application.state.manual_place_search_catalog = None
     application.state.conversation_memory_service = (
         build_conversation_memory_service(settings)
         if settings.conversation_memory_enabled

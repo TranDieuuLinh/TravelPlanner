@@ -8,6 +8,7 @@ from app.modules.trip_chat.contract import (
     AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
     TransportSelectionStatus,
+    PlanItemMutationStatus,
     TripChat,
     TripChatMessage,
     TripChatSummary,
@@ -17,6 +18,7 @@ from app.modules.trip_chat.plan_snapshot import (
     select_transport_option,
     update_accommodation,
     update_stop_personal_notes,
+    add_plan_item,
 )
 
 
@@ -315,6 +317,34 @@ class PostgresTripChatRepository:
                     datetime.now(timezone.utc),
                     chat_id,
                     user_id,
+                )
+        return "updated"
+
+    async def add_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item: dict[str, Any], position: int | None = None,
+    ) -> PlanItemMutationStatus:
+        pool = await self._get_pool()
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                row = await connection.fetchrow(
+                    """SELECT revision, current_planner_output
+                       FROM agent_trip_chats WHERE id=$1 AND user_id=$2 FOR UPDATE""",
+                    chat_id, user_id,
+                )
+                if row is None:
+                    return "chat_not_found"
+                if row["revision"] != expected_revision:
+                    return "revision_conflict"
+                output = deepcopy(_json(row["current_planner_output"]))
+                status = add_plan_item(output, day=day, item=item, position=position)
+                if status != "updated":
+                    return status
+                await connection.execute(
+                    """UPDATE agent_trip_chats SET revision=revision+1,
+                       current_planner_output=$1::jsonb, updated_at=$2
+                       WHERE id=$3 AND user_id=$4""",
+                    json.dumps(output), datetime.now(timezone.utc), chat_id, user_id,
                 )
         return "updated"
 

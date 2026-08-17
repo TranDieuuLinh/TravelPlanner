@@ -28,6 +28,6 @@ export async function searchPlaces(
   const params = new URLSearchParams({ query, topK: String(topK) });
   if (destination) params.append("destination", destination);
   return apiFetch<PlaceSuggestion[]>(
-    `/plans/places/search?${params.toString()}`
+    `/v1/plans/places/search?${params.toString()}`
   );
 }

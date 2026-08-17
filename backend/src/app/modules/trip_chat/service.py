@@ -14,6 +14,7 @@ from app.modules.trip_chat.contract import (
     AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
     TransportSelectionStatus,
+    PlanItemMutationStatus,
     TripChat,
     TripChatBootstrap,
 )
@@ -142,6 +143,17 @@ class TripChatService:
             if status == "updated"
             else None
         )
+        return status, chat
+
+    async def add_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item: dict[str, Any], position: int | None = None,
+    ) -> tuple[PlanItemMutationStatus, TripChat | None]:
+        status = await self.repository.add_plan_item(
+            user_id, chat_id, expected_revision=expected_revision,
+            day=day, item=item, position=position,
+        )
+        chat = await self.repository.get_chat(user_id, chat_id) if status == "updated" else None
         return status, chat
 
     async def send(
