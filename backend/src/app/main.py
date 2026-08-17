@@ -9,6 +9,7 @@ from app.core.config import Settings, get_settings
 from app.modules.auth.public import build_auth_service
 from app.modules.conversation_memory.public import build_conversation_memory_service
 from app.modules.knowledge_graph.public import build_knowledge_graph_service
+from app.modules.itinerary_planner.public import build_valhalla_directions_service
 from app.modules.observability.public import build_observability_service
 from app.modules.trip_chat.public import build_trip_chat_repository
 from app.bootstrap import get_graph
@@ -77,6 +78,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         build_conversation_memory_service(settings)
         if settings.conversation_memory_enabled
         else None
+    )
+    application.state.directions_service = build_valhalla_directions_service(
+        settings.valhalla_base_url,
+        timeout_seconds=settings.valhalla_timeout_seconds,
+        provider_version=settings.valhalla_graph_version,
     )
     origins = [
         origin.strip()

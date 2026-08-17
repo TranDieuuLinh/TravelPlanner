@@ -63,7 +63,7 @@
 .globalPlannerBubble > circle { fill: #fff; stroke: none; }
 .globalPlannerLauncherLabel {
   position: absolute;
-  right: 50%;
+  left: 50%;
   bottom: 0;
   min-width: max-content;
   border: 1px solid rgba(49, 95, 88, .12);
@@ -74,7 +74,7 @@
   box-shadow: 0 5px 14px rgba(32, 69, 63, .1);
   font-size: .64rem;
   font-weight: 850;
-  transform: translateX(50%);
+  transform: translateX(-50%);
   white-space: nowrap;
 }
 .globalPlannerPanel {
@@ -419,6 +419,9 @@
 .eyebrow { display: block; margin-bottom: 8px; color: var(--brand); font-size: 0.68rem; font-weight: 900; letter-spacing: 0.13em; text-transform: uppercase; }
 .eyebrow.light { color: #365f5a; }
 /* Compact planner rules used by the lazily loaded global assistant. */
+.plannerChat.plannerChat--compact .panelHeading { padding: 12px 14px 10px; }
+.plannerChat.plannerChat--compact .chatMessages { padding: 8px 14px 10px; }
+.plannerChat.plannerChat--compact:not(.is-collapsed) .plannerEntryComposer { margin: 0 14px 12px; }
 .plannerChat.plannerChat--compact:not(.is-collapsed) .plannerEntryComposer .urlImportDock { padding: 5px 8px; }
 .plannerChat.plannerChat--compact:not(.is-collapsed) .urlImportControlIcon { width: 38px; height: 38px; }
 .plannerChat.plannerChat--compact:not(.is-collapsed) .urlImportControl textarea { max-height: 62px; padding-block: 6px; }

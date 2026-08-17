@@ -104,7 +104,6 @@
     width: 30px;
     height: 30px;
   }
-  .globalPlannerLauncherLabel { display: none; }
   .globalPlannerPanel {
     width: min(370px, calc(100vw - 24px));
     max-height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px) - 20px);

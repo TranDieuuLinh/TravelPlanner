@@ -4924,9 +4924,10 @@
 }
 
 .plannerChat.is-collapsed .plannerChatLauncherLabel {
-  right: 50%;
+  right: auto;
+  left: 50%;
   bottom: -9px;
-  transform: translateX(50%);
+  transform: translateX(-50%);
 }
 
 /* Finished, loading, and Explore chats share one compact component treatment. */
@@ -5858,4 +5859,16 @@
     width: var(--planner-chat-avatar-size);
     height: var(--planner-chat-avatar-size);
   }
+}
+
+.plannerLayout:not(.is-new-chat) .plannerChat.plannerChat--compact > .panelHeading {
+  padding: 10px 12px 8px;
+}
+
+.plannerLayout:not(.is-new-chat) .plannerChat.plannerChat--compact .chatMessages {
+  padding: 8px 12px 8px;
+}
+
+.plannerLayout:not(.is-new-chat) .plannerChat.plannerChat--compact:not(.is-collapsed) .plannerEntryComposer {
+  margin-bottom: 10px;
 }

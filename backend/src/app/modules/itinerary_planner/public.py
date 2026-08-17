@@ -12,6 +12,7 @@ from app.modules.itinerary_planner.adapters import (
     StraightLineRoutingAdapter,
     ValhallaAdapter,
 )
+from app.modules.itinerary_planner.directions import DirectionsService, router
 from app.modules.itinerary_planner.graph import build_itinerary_planner_graph
 from app.modules.itinerary_planner.optimizer import SolverConfig
 from app.shared.tools.transport_cost import XanhSmTransportCostEstimator
@@ -24,11 +25,7 @@ def build_valhalla_itinerary_planner_graph(
     provider_version: str = "local",
     log_search_progress: bool = False,
 ):
-    valhalla = ValhallaAdapter(
-        base_url,
-        timeout_seconds=timeout_seconds,
-        provider_version=provider_version,
-    )
+    valhalla = ValhallaAdapter(base_url, timeout_seconds=timeout_seconds, provider_version=provider_version)
     adapter = FallbackRoutingAdapter(valhalla, StraightLineRoutingAdapter())
     return build_itinerary_planner_graph(
         adapter,
@@ -39,6 +36,20 @@ def build_valhalla_itinerary_planner_graph(
         solver_config=SolverConfig(log_search_progress=log_search_progress),
     )
 
+
+def build_valhalla_directions_service(
+    base_url: str,
+    *,
+    timeout_seconds: float = 15,
+    provider_version: str = "local",
+) -> DirectionsService:
+    valhalla = ValhallaAdapter(
+        base_url,
+        timeout_seconds=timeout_seconds,
+        provider_version=provider_version,
+    )
+    return DirectionsService(FallbackRoutingAdapter(valhalla, StraightLineRoutingAdapter()))
+
 __all__ = [
     "ItineraryPlannerInput",
     "FoodCoverageFeasibility",
@@ -48,4 +59,6 @@ __all__ = [
     "ItineraryPlannerOutput",
     "build_itinerary_planner_graph",
     "build_valhalla_itinerary_planner_graph",
+    "build_valhalla_directions_service",
+    "router",
 ]

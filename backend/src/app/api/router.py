@@ -13,6 +13,7 @@ from app.modules.knowledge_graph.public import (
 )
 from app.modules.observability.public import router as observability_router
 from app.modules.observability.service import ObservabilityService
+from app.modules.itinerary_planner.public import router as itinerary_planner_router
 from app.modules.explorer.public import ExplorerInput, ExplorerOutput
 from app.modules.supervisor.public import SupervisorClassificationError
 from app.modules.trip_chat.public import router as trip_chat_router
@@ -24,6 +25,7 @@ router.include_router(knowledge_graph_router)
 router.include_router(knowledge_graph_public_router)
 router.include_router(observability_router)
 router.include_router(trip_chat_router)
+router.include_router(itinerary_planner_router)
 
 
 @router.get("/health")
