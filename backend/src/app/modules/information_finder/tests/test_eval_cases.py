@@ -59,4 +59,4 @@ def test_deterministic_eval_cases_enforce_answer_invariants():
             dict.fromkeys(case["sourceIds"])
         )
         assert "[1]" in answer
-    assert "không đáng tin cậy" in ANSWER_SYSTEM_PROMPT
+    assert "không đáng tin cậy" in " ".join(ANSWER_SYSTEM_PROMPT.split())

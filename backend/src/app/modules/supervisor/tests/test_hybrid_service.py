@@ -34,6 +34,7 @@ def decide(service: SupervisorService, message: str, **flags):
         ("Tôi muốn biết thêm về Hà Nội", "information_finder"),
         ("Lập kế hoạch Đà Nẵng 3 ngày", "explorer"),
         ("Hoàn Kiếm Lake thì sao?", "information_finder"),
+        ("Đổi kế hoạch trên sang Nha Trang", "explorer"),
     ],
 )
 def test_every_intent_is_delegated_to_the_llm(message, route):

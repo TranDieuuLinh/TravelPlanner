@@ -91,9 +91,13 @@ response ngắn cùng ngôn ngữ cho greeting, câu hỏi về trợ lý hoặc
 phạm vi.
 
 Input của root graph là `RootGraphInput`; output là `RootGraphOutput`.
-Root state nội bộ có `conversation_context` gồm tối đa sáu user message gần
-nhất để Supervisor xử lý follow-up. API không nhận raw history riêng; context
-được giữ theo `thread_id` trong checkpointer hiện tại.
+Root state nội bộ có `conversation_context` gồm tối đa sáu message trước đó,
+mỗi phần tử có tiền tố `User:` hoặc `Assistant:` để Supervisor xử lý follow-up.
+Message hiện tại nằm riêng trong trường `message` và không bị lặp trong context.
+API không nhận raw history riêng; Trip Chat dựng context từ transcript đã lưu.
+Trong routing, ý định rõ ở `message` hiện tại có ưu tiên hơn context. Với câu nối
+lược bỏ intent, Supervisor kế thừa tác vụ hỏi đáp hoặc lập kế hoạch từ các lượt
+có role gần nhất; nếu không đủ căn cứ phân biệt thì route `finish` hỏi lại.
 
 ### Explorer
 
@@ -296,8 +300,8 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | `PostgresSourceRepository` | `information_finder` | query/vector hoặc prepared sources | nguồn cache hybrid |
 | `GeminiUrlSourceChunker` | `information_finder` | URL public từ Tavily | semantic chunks có fallback deterministic |
 | `GeminiEmbeddingProvider` | `information_finder` | retrieval query/document | vector Gemini chuẩn hóa 384 chiều |
-| `ExtractiveAnswerGenerator` | `information_finder` | query và nguồn | câu trả lời fallback có citation |
-| `StructuredLlmAnswerGenerator` | `information_finder` | query và ranked sources | `GeneratedAnswer` gồm claim, source ID và `entityCandidates` |
+| `ExtractiveAnswerGenerator` | `information_finder` | query và nguồn | tối đa ba excerpt ngắn đã lọc nhiễu phổ biến, có citation; không giả lập tổng hợp LLM |
+| `StructuredLlmAnswerGenerator` | `information_finder` | query và ranked sources | `GeneratedAnswer` tiếng Việt gồm grounded claim, format Markdown linh hoạt, source ID và `entityCandidates` |
 | `KnowledgeGraphEntityResolver` | `information_finder` | `entityCandidates` gồm tên hiển thị và aliases | thử từng tên để xác nhận node rồi mới gắn `travel-entity://entity` |
 | `DevelopmentCatalog.resolve` | `place_checker` | `PlaceCandidate`, `TripIntent` | `VerifiedPlace \| None` |
 | `DevelopmentCatalog.discover` | `place_checker` | `TripIntent`, `limit: int` | `list[VerifiedPlace]` |

@@ -1,6 +1,8 @@
 import asyncio
 from uuid import uuid4
 
+from app.modules.supervisor.contract import ClassifierResult
+from app.modules.supervisor.service import SupervisorService
 from app.orchestration.root_graph import create_root_graph
 from app.modules.plan_editor.public import EditOperation
 from app.shared.contracts.itinerary import Itinerary, ItineraryDay, ItineraryItem
@@ -12,6 +14,43 @@ def invoke(graph, payload):
     return asyncio.run(
         graph.ainvoke(payload, config={"configurable": {"thread_id": str(uuid4())}})
     )
+
+
+class CapturingClassifier:
+    def __init__(self):
+        self.payload = None
+
+    async def classify(self, payload):
+        self.payload = payload
+        return ClassifierResult(
+            route="finish",
+            confidence=1.0,
+            reason="Context test",
+            response="Đã hiểu.",
+        )
+
+
+def test_supervisor_context_keeps_six_previous_role_tagged_messages():
+    classifier = CapturingClassifier()
+    context = [
+        f"{'User' if index % 2 == 0 else 'Assistant'}: Tin nhắn {index}"
+        for index in range(8)
+    ]
+
+    invoke(
+        create_root_graph(
+            supervisor_service=SupervisorService(classifier=classifier),
+        ),
+        {
+            "request_id": "context-1",
+            "message": "Thế còn Nha Trang?",
+            "recent_messages": context,
+        },
+    )
+
+    assert classifier.payload.message == "Thế còn Nha Trang?"
+    assert classifier.payload.conversation_context == context[-6:]
+    assert "User: Thế còn Nha Trang?" not in classifier.payload.conversation_context
 
 
 def test_information_finder_route_completes_with_response():

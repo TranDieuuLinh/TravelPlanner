@@ -5,6 +5,7 @@ import pytest
 
 from app.modules.supervisor.adapters.llm_classifier import GeminiIntentClassifier
 from app.modules.supervisor.contract import SupervisorInput
+from app.modules.supervisor.prompts import SYSTEM_PROMPT
 
 
 class FakeLlmClient:
@@ -45,20 +46,37 @@ def test_structured_llm_output_is_validated_and_minimal_context_is_sent():
     assert "response_json_schema" in client.calls[0][1]
 
 
-def test_classifier_receives_bounded_conversation_context():
+def test_classifier_receives_all_six_role_tagged_context_messages():
     client = FakeLlmClient(
         '{"route":"information_finder","confidence":0.9,"reason":"Follow-up"}'
     )
+    context = [
+        "User: Tôi muốn đi Hà Nội",
+        "Assistant: Bạn muốn đi mấy ngày?",
+        "User: 3 ngày",
+        "Assistant: Bạn thích hoạt động gì?",
+        "User: Thích lịch sử",
+        "Assistant: Mình đã ghi nhận",
+    ]
     asyncio.run(
         GeminiIntentClassifier(client).classify(
             SupervisorInput(
-                message="Còn Hà Nội thì sao?",
-                conversation_context=["Tôi muốn biết về Hải Phòng."],
+                message="Còn Nha Trang thì sao?",
+                conversation_context=context,
             )
         )
     )
     payload = json.loads(client.calls[0][0])
-    assert payload["conversationContext"] == ["Tôi muốn biết về Hải Phòng."]
+    assert payload["conversationContext"] == context
+
+
+def test_prompt_routes_short_followups_from_conversation_context():
+    prompt = " ".join(SYSTEM_PROMPT.split())
+    assert "đọc các lượt `User:` và `Assistant:` gần nhất" in prompt
+    assert "hội thoại đang khám phá, hỏi đáp" in prompt
+    assert "hội thoại đang chủ động tạo kế hoạch" in prompt
+    assert "context không đủ để phân biệt" in prompt
+    assert "hasItinerary=true" in prompt
 
 
 @pytest.mark.parametrize(

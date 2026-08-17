@@ -11,7 +11,6 @@ from app.modules.conversation_memory.public import (
     FactProvenance,
     MemoryFact,
     MemoryVersionConflict,
-    WorkingMemoryState,
 )
 from app.modules.trip_chat.contract import (
     PlanNoteUpdateStatus,
@@ -100,7 +99,10 @@ class TripChatService:
         if not chat:
             return None
 
-        recent_messages: list[str] = [m.content for m in chat.messages[-10:]]
+        recent_messages: list[str] = [
+            f"{'User' if message.role == 'user' else 'Assistant'}: {message.content}"
+            for message in chat.messages[-6:]
+        ]
         max_retries = 3
         memory_warning = None
         result = None
@@ -260,7 +262,7 @@ class TripChatService:
                     )
                     memory_version_after = working_memory.version + 1
                     break  # Success
-                except MemoryVersionConflict as version_exc:
+                except MemoryVersionConflict:
                     if attempt < max_retries - 1:
                         continue  # Retry pipeline
                     memory_warning = "Memory service error; version conflict after retries."

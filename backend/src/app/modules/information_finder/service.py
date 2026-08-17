@@ -41,8 +41,6 @@ from app.modules.information_finder.utils import (
 class InformationFinderOptions:
     retrieval_limit: int = 10
     answer_source_limit: int = 5
-    minimum_local_sources: int = 2
-    similarity_threshold: float = 0.8
     provider_relevance_threshold: float = 0.5
     minimum_content_chars: int = 80
     blocked_domains: tuple[str, ...] = ()

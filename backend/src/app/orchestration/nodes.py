@@ -22,7 +22,12 @@ from app.modules.supervisor.public import (
     build_supervisor_graph,
 )
 from app.orchestration.root_state import RootState
-from app.orchestration.memory_projection import information_query, memory_field, merge_memory_places
+from app.orchestration.memory_projection import (
+    information_query,
+    memory_field,
+    merge_memory_places,
+    supervisor_conversation_context,
+)
 
 
 class RootNodes:
@@ -51,63 +56,18 @@ class RootNodes:
         self.plan_editor = build_plan_editor_graph()
 
     async def run_supervisor(self, state: RootState) -> dict:
-        previous_response = state.get("response")
-        recent = state.get("recent_messages") or []
-        context_items = list(recent)
-
-        previous_response = state.get("response")
-        if previous_response and previous_response not in context_items:
-            context_items.append(previous_response)
-
-        current_msg = state.get("message")
-        if current_msg and current_msg not in context_items:
-            context_items.append(current_msg)
-
-        conversation_context = context_items[-10:]
+        conversation_context = supervisor_conversation_context(
+            state.get("recent_messages"),
+            state.get("response"),
+        )
 
         memory = state.get("conversation_memory")
-        dest = (
-            getattr(memory, "destination", None)
-            if memory
-            else None
-        )
-        if not dest and isinstance(memory, dict):
-            dest = memory.get("destination")
-        dur = (
-            getattr(memory, "duration_days", None)
-            if memory
-            else None
-        )
-        if not dur and isinstance(memory, dict):
-            dur = memory.get("duration_days") or memory.get("durationDays")
-        places = (
-            getattr(memory, "mentioned_places", [])
-            if memory
-            else []
-        )
-        if not places and isinstance(memory, dict):
-            places = memory.get("mentioned_places") or memory.get("mentionedPlaces") or []
-        sel_places = (
-            getattr(memory, "selected_places", [])
-            if memory
-            else []
-        )
-        if not sel_places and isinstance(memory, dict):
-            sel_places = memory.get("selected_places") or memory.get("selectedPlaces") or []
-        summary = (
-            getattr(memory, "summary", None)
-            if memory
-            else None
-        )
-        if not summary and isinstance(memory, dict):
-            summary = memory.get("summary")
-        pending_goal = (
-            getattr(memory, "pending_goal", None)
-            if memory
-            else None
-        )
-        if not pending_goal and isinstance(memory, dict):
-            pending_goal = memory.get("pending_goal") or memory.get("pendingGoal")
+        dest = memory_field(memory, "destination")
+        dur = memory_field(memory, "duration_days")
+        places = memory_field(memory, "mentioned_places", []) or []
+        sel_places = memory_field(memory, "selected_places", []) or []
+        summary = memory_field(memory, "summary")
+        pending_goal = memory_field(memory, "pending_goal")
         clarification = pending_goal == "clarify_reference"
 
         supervisor_payload = {

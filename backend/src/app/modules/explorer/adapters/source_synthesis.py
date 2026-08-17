@@ -58,19 +58,20 @@ class SourceChunkExtraction(BaseModel):
     notes: list[NoteItem] = Field(default_factory=list)
 
 
-SOURCE_CHUNK_PROMPT = """Extract one structured result from the supplied source chunk.
-Classify every named-place mention as PLACE, DESTINATION, ADDRESS, ACTIVITY,
-REGION_OUTSIDE_SCOPE, or GENERIC_MENTION. PLACE means a specific visitable physical
-place compatible with targetADM. A restaurant brand without enough branch information
-may remain PLACE with address_hint. Do not invent venues.
-destinations contains only the intended trip province/city. Historical places mentioned
-in narration and comparisons are not destinations. Return no destination when evidence
-does not establish one.
-When extractNotes is true, notes contains only useful source-backed access, timing,
-price, closure, caution, signature-item, or distinctive-activity details. Exclude trip
-budget, people, preferences, destinations, and generic praise. When extractNotes is
-false, return an empty notes list. Every item must include artifact_index so provenance
-can be reconstructed."""
+SOURCE_CHUNK_PROMPT = """Trích xuất một kết quả có cấu trúc từ source chunk được cung cấp.
+Phân loại mọi địa danh được nhắc đến thành PLACE, DESTINATION, ADDRESS, ACTIVITY,
+REGION_OUTSIDE_SCOPE hoặc GENERIC_MENTION. PLACE là một địa điểm vật lý cụ thể có thể
+tham quan và phù hợp với targetADM. Tên thương hiệu nhà hàng chưa đủ thông tin về chi
+nhánh vẫn có thể được giữ là PLACE kèm address_hint. Không tự tạo địa điểm.
+Trường destinations chỉ chứa tỉnh/thành phố đích của chuyến đi. Các địa danh lịch sử
+được nhắc trong phần tường thuật hoặc dùng để so sánh không phải là destinations. Không
+trả về destination nếu evidence không xác định được rõ ràng.
+Khi extractNotes là true, trường notes chỉ chứa các thông tin hữu ích có evidence từ
+nguồn như cách tiếp cận, thời điểm, giá, thời gian đóng cửa, cảnh báo, món đặc trưng,
+hoạt động đặc biệt hoặc trải nghiệm khác biệt. Loại trừ budget của cả chuyến đi, people,
+preferences, destinations và lời khen chung chung. Khi extractNotes là false, trả về
+một danh sách notes rỗng. Mọi item phải có artifact_index để có thể khôi phục
+provenance."""
 
 
 def _schema(value):

@@ -116,8 +116,6 @@ def make_service(
         search_provider=search,
         entity_resolver=entity_resolver,
         options=InformationFinderOptions(
-            minimum_local_sources=1,
-            similarity_threshold=0.5,
             provider_relevance_threshold=0.5,
             answer_fallback_enabled=enabled,
         ),

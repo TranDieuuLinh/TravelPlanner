@@ -1,4 +1,5 @@
 import asyncio
+import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -6,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.modules.conversation_memory.adapters.in_memory import InMemoryMemoryRepository
 from app.modules.conversation_memory.service import ConversationMemoryService
-from app.modules.trip_chat.contract import TripChat
+from app.modules.trip_chat.contract import TripChat, TripChatMessage
 from app.modules.trip_chat.service import TripChatService
 
 
@@ -67,9 +68,6 @@ class AliasedPlannerOutput(BaseModel):
     planner_output: str
 
 
-import unittest
-
-
 class TestTripChatService(unittest.TestCase):
     def test_bootstrap_returns_recent_summaries_and_selected_chat(self) -> None:
         repository = FakeRepository()
@@ -100,6 +98,38 @@ class TestTripChatService(unittest.TestCase):
         self.assertEqual(graph.input["existing_itinerary"], {"itineraryId": "legacy-1"})
         self.assertIsNone(repository.appended[-2])
         self.assertEqual(repository.appended[-1], planner_output)
+
+    def test_send_passes_six_recent_messages_with_explicit_roles(self) -> None:
+        repository = FakeRepository()
+        repository.chat.messages = [
+            TripChatMessage(
+                id=f"message-{index}",
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"Nội dung {index}",
+                created_at=datetime.now(timezone.utc),
+            )
+            for index in range(8)
+        ]
+        graph = FakeGraph(
+            {
+                "response": "Đã xử lý.",
+                "decision": SimpleNamespace(route="finish"),
+            }
+        )
+
+        asyncio.run(TripChatService(repository, graph).send(7, "chat-1", "Tin mới"))
+
+        self.assertEqual(
+            graph.input["recent_messages"],
+            [
+                "User: Nội dung 2",
+                "Assistant: Nội dung 3",
+                "User: Nội dung 4",
+                "Assistant: Nội dung 5",
+                "User: Nội dung 6",
+                "Assistant: Nội dung 7",
+            ],
+        )
 
     def test_send_keeps_new_and_legacy_outputs_in_separate_arguments(self) -> None:
         legacy = {"itineraryId": "legacy-2"}

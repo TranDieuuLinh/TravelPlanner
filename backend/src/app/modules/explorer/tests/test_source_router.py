@@ -123,6 +123,7 @@ def test_social_media_prefers_small_muxed_mp4(tmp_path, monkeypatch) -> None:
     )
 
     assert captured_options["format"] == "worst[ext=mp4]/worst"
+    assert captured_options["concurrent_fragment_downloads"] == 4
     assert result.file_path.endswith("media.mp4")
 
 

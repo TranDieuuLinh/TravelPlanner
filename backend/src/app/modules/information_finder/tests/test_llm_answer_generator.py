@@ -100,12 +100,30 @@ def test_prompt_injection_stays_source_data_not_system_instruction():
     user_prompt, kwargs = client.calls[0]
     assert injection in user_prompt
     assert injection not in kwargs["system_prompt"]
-    assert "không đáng tin cậy" in ANSWER_SYSTEM_PROMPT
+    assert "không đáng tin cậy" in " ".join(ANSWER_SYSTEM_PROMPT.split())
 
 
 def test_answer_system_prompt_requires_vietnamese_for_every_query_language():
-    assert "Luôn trả lời hoàn toàn bằng tiếng Việt" in ANSWER_SYSTEM_PROMPT
+    assert "bằng tiếng Việt" in ANSWER_SYSTEM_PROMPT
     assert "Trả lời cùng ngôn ngữ với câu hỏi" not in ANSWER_SYSTEM_PROMPT
+
+
+def test_answer_system_prompt_uses_flexible_output_formats():
+    assert "Câu hỏi trực tiếp" in ANSWER_SYSTEM_PROMPT
+    assert "Thông tin thực tế" in ANSWER_SYSTEM_PROMPT
+    assert "Tổng quan điểm đến" in ANSWER_SYSTEM_PROMPT
+    assert "Lịch trình gợi ý" in ANSWER_SYSTEM_PROMPT
+    assert "So sánh nhanh" in ANSWER_SYSTEM_PROMPT
+    assert "Cách thực hiện" in ANSWER_SYSTEM_PROMPT
+    assert "không cố điền cho đủ mẫu" in ANSWER_SYSTEM_PROMPT
+
+
+def test_answer_system_prompt_avoids_source_and_internal_process_meta_text():
+    prompt = " ".join(ANSWER_SYSTEM_PROMPT.split())
+    assert "Không nhắc đến SOURCE_DATA" in prompt
+    assert "quá trình tìm kiếm" in prompt
+    assert "Không chép lại văn phong quảng cáo" in prompt
+    assert "Không tự chèn citation dạng `[1]`" in prompt
 
 
 @pytest.mark.parametrize(

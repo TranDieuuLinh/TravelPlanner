@@ -96,10 +96,14 @@ class PythonYtDlpMediaClient:
         timeout_seconds: float = 30,
         cookie_file: str | None = None,
         max_filesize_mb: int = 120,
+        max_workers: int = 4,
     ) -> None:
+        if max_workers < 1:
+            raise ValueError("max_workers must be at least 1")
         self.timeout_seconds = timeout_seconds
         self.cookie_file = cookie_file
         self.max_filesize_mb = max_filesize_mb
+        self.max_workers = max_workers
 
     async def download(self, url: str, target_dir: str) -> DownloadedMedia:
         return await asyncio.to_thread(self._download_sync, url, target_dir)
@@ -117,6 +121,7 @@ class PythonYtDlpMediaClient:
             "retries": 1,
             "extractor_retries": 1,
             "fragment_retries": 1,
+            "concurrent_fragment_downloads": self.max_workers,
         }
         if self.cookie_file:
             options["cookiefile"] = self.cookie_file

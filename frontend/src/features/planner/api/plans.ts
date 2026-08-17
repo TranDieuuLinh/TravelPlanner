@@ -523,7 +523,6 @@ async function sendCurrentTripChatMessage(chatId: string, content: string): Prom
     {
       method: "POST",
       body: JSON.stringify({ content }),
-      signal: AbortSignal.timeout(120_000),
     },
   );
   return mapFullCurrentTripChat(response.chat);

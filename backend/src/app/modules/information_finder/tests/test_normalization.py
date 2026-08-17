@@ -45,3 +45,21 @@ def test_relevant_excerpt_skips_navigation_prefix():
     assert "Những điều thú vị về Hà Nội" in excerpt
     assert "Đăng nhập" not in excerpt
     assert "Bước tới nội dung" not in excerpt
+
+
+def test_relevant_excerpt_removes_scraped_ads_and_article_intro():
+    excerpt = select_relevant_excerpt(
+        (
+            "Qua bài viết này, chúng tôi giới thiệu các địa điểm nổi bật. "
+            "Discover flight with Traveloka Tue, 25 Aug 2026. "
+            "@Shutterstock Một buổi sáng ở bến cá. "
+            "Vũng Tàu có nhiều bãi biển và điểm tham quan trên núi."
+        ),
+        "Vũng Tàu có gì?",
+        title="Du lịch Vũng Tàu",
+        max_chars=280,
+    )
+
+    assert excerpt == "Vũng Tàu có nhiều bãi biển và điểm tham quan trên núi."
+    assert "Traveloka" not in excerpt
+    assert "Qua bài viết này" not in excerpt

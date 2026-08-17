@@ -146,12 +146,14 @@ def create_explorer_service(
             timeout_seconds=url_timeout_seconds,
             cookie_file=ytdlp_cookie_file,
             max_filesize_mb=max_media_mb,
+            max_workers=4,
         )
         tiktok = YtDlpSocialSourceExtractor(
             FallbackUrlMediaClient(
                 TikTokHtmlMediaClient(
                     timeout_seconds=url_timeout_seconds,
                     max_filesize_mb=max_media_mb,
+                    max_workers=4,
                 ),
                 media_client,
             ),

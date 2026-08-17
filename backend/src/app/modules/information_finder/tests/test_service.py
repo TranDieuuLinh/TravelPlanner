@@ -137,7 +137,7 @@ def web_result(
     )
 
 
-def service(repository, search=None, *, minimum=1, chunker=None, planner=None):
+def service(repository, search=None, *, chunker=None, planner=None):
     return InformationFinderService(
         repository=repository,
         embeddings=HashingEmbeddingProvider(),
@@ -146,8 +146,6 @@ def service(repository, search=None, *, minimum=1, chunker=None, planner=None):
         search_provider=search,
         search_query_planner=planner,
         options=InformationFinderOptions(
-            minimum_local_sources=minimum,
-            similarity_threshold=0.5,
             provider_relevance_threshold=0.5,
         ),
     )
@@ -205,7 +203,6 @@ def test_embedding_quota_falls_back_to_tavily_without_failing():
         answers=ExtractiveAnswerGenerator(),
         search_provider=FakeSearch([web_result()]),
         options=InformationFinderOptions(
-            minimum_local_sources=1,
             provider_relevance_threshold=0.5,
         ),
     )
@@ -307,8 +304,6 @@ def test_new_destination_refreshes_tavily_after_hanoi_cache_is_populated():
         answers=ExtractiveAnswerGenerator(),
         search_provider=search,
         options=InformationFinderOptions(
-            minimum_local_sources=1,
-            similarity_threshold=0.9,
             provider_relevance_threshold=0.5,
         ),
     )
@@ -319,10 +314,10 @@ def test_new_destination_refreshes_tavily_after_hanoi_cache_is_populated():
     assert search.calls == 3
 
 
-def test_insufficient_local_merges_local_and_tavily():
+def test_local_source_is_kept_without_search_planner():
     repository = StaticRepository([source("1", "https://a.test/x")])
     output = asyncio.run(
-        service(repository, FakeSearch([web_result()]), minimum=2).find("museum")
+        service(repository, FakeSearch([web_result()])).find("museum")
     )
     assert {item.source_id for item in output.sources} == {"1"}
 
@@ -389,23 +384,6 @@ def test_tavily_timeout_keeps_usable_local_source():
     assert "Web search unavailable" in output.warnings[-1]
     assert search.calls == 1
     assert repository.failures == ["provider_timeout"]
-
-
-def test_source_at_similarity_threshold_is_kept():
-    repository = StaticRepository([source("1", "https://a.test/x", score=0.8)])
-    output = asyncio.run(
-        InformationFinderService(
-            repository=repository,
-            embeddings=HashingEmbeddingProvider(),
-            answers=ExtractiveAnswerGenerator(),
-            options=InformationFinderOptions(
-                minimum_local_sources=1,
-                similarity_threshold=0.8,
-            ),
-        ).find("museum")
-    )
-
-    assert [item.source_id for item in output.sources] == ["1"]
 
 
 def test_quota_is_mapped_to_warning():

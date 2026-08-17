@@ -267,6 +267,10 @@ local có điểm semantic cao nhất rồi truyền cho `LlmSearchQueryPlanner`
 đặt `shouldSearch=true` và tạo tối đa ba truy vấn Tavily khi các nguồn này thiếu
 dữ kiện cần thiết. Nếu planner lỗi, service chỉ dùng truy vấn deterministic khi
 không có nguồn local hoặc cần refresh.
+Structured answer prompt dùng các format Markdown theo loại câu hỏi như gợi ý
+mềm, chỉ tạo section khi có đủ dữ kiện. Extractive fallback không tổng hợp bằng
+LLM; nó chỉ trả tối đa ba excerpt ngắn có citation và loại các segment quảng cáo,
+lời dẫn SEO phổ biến trước khi render.
 Answer generator trả về `entityCandidates` gồm tên hiển thị và các tên tra cứu,
 bao gồm alias hoặc tên tiếng Anh khi có căn cứ. `KnowledgeGraphEntityResolver`
 thử từng tên qua public Knowledge Graph contract và backend tự gắn
@@ -279,9 +283,14 @@ route `finish` có thể kèm phản hồi ngắn cùng ngôn ngữ cho greeting
 trợ lý hoặc yêu cầu ngoài phạm vi. Rule deterministic chỉ là provider offline
 hoặc runtime fallback. Supervisor hiện được cấu hình
 `SUPERVISOR_CLASSIFIER_PROVIDER=gemini`; provider này yêu cầu `GEMINI_API_KEY`.
-Routing baseline chưa
-được production-evaluated. Root graph truyền tối đa sáu user message gần nhất
-từ checkpoint làm context cho câu hỏi nối tiếp; đây chưa phải durable memory.
+Routing baseline chưa được production-evaluated. Trip Chat truyền tối đa sáu
+message trước đó với tiền tố `User:` hoặc `Assistant:`; root graph giữ nguyên
+role và không lặp message hiện tại trong context của Supervisor. Durable memory
+được truyền riêng dưới dạng structured state và rolling summary.
+Supervisor ưu tiên intent rõ trong message hiện tại. Với câu nối lược bỏ intent,
+Supervisor đọc các lượt có role gần nhất: tiếp tục hỏi đáp/khám phá thì đi
+`information_finder`, tiếp tục phiên đang thu thập ràng buộc để tạo plan thì đi
+`explorer`, còn context không đủ rõ thì hỏi lại.
 Itinerary Planner subgraph không kế thừa root checkpointer vì state tính toán
 tạm thời chứa dataclass và immutable mappings; root chỉ checkpoint public input,
 output và conversation state sau khi subgraph hoàn tất.
