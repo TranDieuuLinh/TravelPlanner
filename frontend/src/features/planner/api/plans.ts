@@ -1016,10 +1016,11 @@ export async function reorderTripChatItem(input: {
     form.append("itemIds", itemId);
   }
 
-  return apiFetch<TripChat>(`/v1/trip-chats/${input.chatId}/plan/days/${input.day}/items/reorder`, {
+  const chat = await apiFetch<CurrentTripChat>(`/v1/trip-chats/${input.chatId}/plan/days/${input.day}/items/reorder`, {
     method: "PUT",
     body: form
   });
+  return mapFullCurrentTripChat(chat);
 }
 
 export async function selectTripChatTransportOption(input: {

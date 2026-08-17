@@ -156,6 +156,17 @@ class TripChatService:
         chat = await self.repository.get_chat(user_id, chat_id) if status == "updated" else None
         return status, chat
 
+    async def reorder_plan_items(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_ids: list[str],
+    ) -> tuple[PlanItemMutationStatus, TripChat | None]:
+        status = await self.repository.reorder_plan_items(
+            user_id, chat_id, expected_revision=expected_revision,
+            day=day, item_ids=item_ids,
+        )
+        chat = await self.repository.get_chat(user_id, chat_id) if status == "updated" else None
+        return status, chat
+
     async def send(
         self,
         user_id: int,
