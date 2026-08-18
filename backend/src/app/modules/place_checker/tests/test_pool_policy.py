@@ -20,7 +20,14 @@ from app.modules.place_checker.pool_policy import (
     planner_pool_shortfall,
     pool_query_limit_for_days,
 )
-from app.modules.place_checker.retrieval import TargetedRetrievalService
+from app.modules.place_checker.retrieval import (
+    CORE_POOL_QUERY_SPECS,
+    POOL_QUERY_SPECS,
+    TargetedRetrievalService,
+)
+from app.modules.place_checker.retrieval_pool_selection import (
+    select_adaptive_pool_specs,
+)
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 
 
@@ -252,6 +259,47 @@ def test_adaptive_pool_only_adds_queries_needed_for_shortfall() -> None:
         "pool:culture_alternatives",
         "pool:nature_alternatives",
         "pool:entertainment_alternatives",
+    ]
+
+
+def test_small_handoff_shortfall_always_queries_special_experience() -> None:
+    coverage = CoverageAnalysis(
+        level=CoverageLevel.partial,
+        planner_eligible_place_count=42,
+        mandatory_place_count=0,
+        category_distribution={
+            "landmark": 23,
+            "entertainment": 18,
+            "accommodation": 1,
+        },
+        resolved_item_count=0,
+        unresolved_item_count=0,
+        food_covered=False,
+        experience_covered=True,
+    )
+
+    selected = select_adaptive_pool_specs(
+        {**CORE_POOL_QUERY_SPECS, **POOL_QUERY_SPECS},
+        GapAnalysis(
+            gaps=[
+                AnalysisGap(
+                    gap_id=f"gap:experience:{index}",
+                    gap_type=GapType.experience_coverage,
+                    severity=IssueSeverity.low,
+                    trigger="existing discovery gap",
+                    suggested_action="search",
+                )
+                for index in range(8)
+            ],
+            open_count=8,
+        ).gaps,
+        coverage,
+        days=3,
+        excluded_gap_types={GapType.food_coverage},
+    )
+
+    assert list(selected) == [
+        "pool:special_experience_candidates",
     ]
 
 

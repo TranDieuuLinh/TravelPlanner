@@ -41,6 +41,10 @@ cultural special experience` riêng, không phụ thuộc query chung `travel pl
 hay theme query. Entertainment reserve dùng query ưu tiên `water puppet`, nhà
 hát, biểu diễn văn hóa, live music và evening show thay cho từ khóa
 `entertainment` chung dễ trả về doanh nghiệp dịch vụ.
+Khi số TravelPlace đủ điều kiện còn thấp hơn hard handoff tối thiểu, query
+`authentic local cultural special experience` vẫn được thêm ngay cả khi phần
+thiếu chỉ còn một vài candidate; adaptive query budget không được chỉ chọn query
+generic đầu tiên rồi block mà chưa thử recovery theo trải nghiệm đặc trưng.
 
 - khoảng 8/14 có evidence hoặc provenance tag `Special_Experience` đã duyệt;
 - khoảng 4/14 có popularity signal từ Bayesian quality và `log(reviewCount)`;

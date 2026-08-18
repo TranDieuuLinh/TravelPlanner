@@ -114,3 +114,13 @@ def test_low_confidence_llm_result_asks_for_clarification():
     )
     assert decision.route == "finish"
     assert decision.clarification_question
+
+
+def test_short_trip_prompt_uses_explorer_when_llm_is_unavailable():
+    decision = decide(
+        SupervisorService(classifier=None),
+        "đi Hà Nội 2 ngày",
+    )
+
+    assert decision.route == "explorer"
+    assert decision.warnings == ["Supervisor LLM chưa được cấu hình."]

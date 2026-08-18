@@ -6,6 +6,26 @@ from app.modules.explorer.public import ExplorerPlace, PlaceSource
 SUPERVISOR_CONTEXT_LIMIT = 6
 
 
+def _blocked_warning(warnings: list[str]) -> str | None:
+    """Choose an actionable blocker instead of the first soft warning.
+
+    PlaceChecker may report non-blocking data-quality warnings (for example an
+    unknown operational status) before it adds the candidate-pool shortfall
+    that actually changes the result to ``blocked``.  The first warning is
+    therefore not a reliable explanation for a blocked response.
+    """
+    blocking_markers = (
+        "Planner candidate pools are incomplete",
+        "Không đủ địa điểm",
+        "thiếu candidate",
+        "chưa đủ điều kiện lập lịch",
+    )
+    for warning in warnings:
+        if any(marker.casefold() in warning.casefold() for marker in blocking_markers):
+            return warning
+    return warnings[0] if warnings else None
+
+
 def supervisor_conversation_context(
     recent_messages: list[str] | None,
     previous_response: str | None,
@@ -271,11 +291,10 @@ def build_blocked_clarification(output) -> tuple[str, str]:
         )
 
     warnings = getattr(output, "warnings", [])
-    reason_msg = (
-        warnings[0] if warnings else "Dữ liệu địa điểm chưa đủ điều kiện lập lịch."
+    reason_msg = _blocked_warning(warnings) or (
+        "Dữ liệu địa điểm chưa đủ điều kiện lập lịch."
     )
     return (
         f"{reason_msg} Bạn có thể điều chỉnh yêu cầu hoặc bổ sung thông tin không?",
         f"PlaceChecker không thể lập lịch: {reason_msg}",
     )
-

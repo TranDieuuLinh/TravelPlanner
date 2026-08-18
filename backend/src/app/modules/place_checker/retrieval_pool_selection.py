@@ -74,6 +74,8 @@ def select_adaptive_pool_specs(
         - accommodation_count,
     )
     shortfall = max(0, activity_pool_target_for_days(days) - travel_count)
+    handoff_target = max(8, days * 8)
+    handoff_shortfall = max(0, handoff_target - travel_count)
     existing_queries = sum(
         gap.status == GapStatus.open
         and gap.gap_type in _TRAVEL_DISCOVERY_GAPS
@@ -87,6 +89,15 @@ def select_adaptive_pool_specs(
     for key in _TRAVEL_POOL_ORDER[:travel_query_count]:
         if key in all_specs:
             selected[key] = all_specs[key]
+    # A small hard-handoff shortfall must still get a targeted recovery query.
+    # The generic query is often satisfied by already-known URL/landmark data;
+    # adding the special-experience query gives the planner a distinct local-
+    # culture candidate instead of silently blocking after the first query.
+    if handoff_shortfall and "pool:special_experience_candidates" in all_specs:
+        selected.setdefault(
+            "pool:special_experience_candidates",
+            all_specs["pool:special_experience_candidates"],
+        )
     if accommodation_count == 0 and "pool:accommodation_candidates" in all_specs:
         selected["pool:accommodation_candidates"] = all_specs[
             "pool:accommodation_candidates"

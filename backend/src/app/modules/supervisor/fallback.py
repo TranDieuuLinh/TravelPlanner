@@ -21,7 +21,7 @@ def build_fallback_decision(
         "len lich trinh",
         "plan a trip",
         "create itinerary",
-    ):
+    ) or _looks_like_trip_request(message):
         return _decision("explorer", warning, "Clear planning intent matched locally.")
     if _contains(
         message,
@@ -82,3 +82,16 @@ def _normalize(value: str) -> str:
 
 def _contains(value: str, *phrases: str) -> bool:
     return any(phrase in value for phrase in phrases)
+
+
+def _looks_like_trip_request(value: str) -> bool:
+    """Recognize the short planning prompts commonly used in the chat UI.
+
+    The LLM classifier is optional in development and test environments. A
+    prompt such as ``đi Hà Nội 2 ngày`` still contains enough structure to
+    route to Explorer without treating general questions containing "đi" as
+    trip-planning requests.
+    """
+    has_trip_verb = re.search(r"\b(di|du lich|nghi duong|tham quan)\b", value)
+    has_duration = re.search(r"\b\d+\s*(ngay|dem)\b", value)
+    return bool(has_trip_verb and has_duration)

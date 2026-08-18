@@ -323,6 +323,16 @@ class TestMemoryContaminationProjection(unittest.TestCase):
         self.assertIn("Không đủ địa điểm tham quan", q_pool)
         self.assertIn("Không đủ địa điểm tham quan", resp_pool)
 
+        # A soft operational warning must not hide the actual pool blocker.
+        pool_output.warnings = [
+            "Chưa xác định được trạng thái hoạt động hiện tại.",
+            "Không đủ địa điểm tham quan để lên lịch.",
+        ]
+        q_pool, resp_pool = build_blocked_clarification(pool_output)
+        self.assertNotIn("Chưa xác định được trạng thái hoạt động hiện tại", q_pool)
+        self.assertIn("Không đủ địa điểm tham quan", q_pool)
+        self.assertIn("Không đủ địa điểm tham quan", resp_pool)
+
     def test_ac5_stale_legacy_mentioned_places_safe_system_classification(self) -> None:
         """AC5: Old memory rows with only mentioned_places are classified safely as system."""
         legacy_memory = WorkingMemoryState(

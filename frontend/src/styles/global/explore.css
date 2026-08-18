@@ -227,15 +227,15 @@
 .budgetSummary > div { display: grid; gap: 2px; min-width: 0; }
 .budgetSummary strong { overflow: hidden; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
 .budgetSummary small { color: var(--brand-dark); font-size: .55rem; font-weight: 800; white-space: nowrap; }
-.plannerBudgetCard { position: relative; display: grid; gap: 0; margin: 0; overflow: hidden; border: 1px solid #e6efec; border-radius: 28px; padding: 30px; background: radial-gradient(circle at 10% 20%, rgba(63,177,144,.16), transparent 28%), linear-gradient(135deg, #fff 0%, #f7fbfa 60%, #eef8f5 100%); box-shadow: 0 14px 35px rgba(31,107,94,.10); }
+.plannerBudgetCard { position: relative; display: grid; gap: 0; margin: -8px 0 0; overflow: hidden; border: 1px solid #e6efec; border-radius: 26px; padding: 24px; background: radial-gradient(circle at 10% 20%, rgba(63,177,144,.16), transparent 28%), linear-gradient(135deg, #fff 0%, #f7fbfa 60%, #eef8f5 100%); box-shadow: 0 12px 30px rgba(31,107,94,.09); }
 .plannerBudgetCard > header { display: block; min-width: 0; }
-.plannerBudgetHero { display: grid; grid-template-columns: 230px minmax(0, 1fr); align-items: center; gap: 34px; }
-.plannerBudgetArtwork { position: relative; display: grid; min-height: 280px; overflow: hidden; place-items: center; margin: -30px 0 -30px -30px; border: 0; border-radius: 0 145px 145px 0; background: linear-gradient(145deg, #d7eee8, #f3faf7); }
+.plannerBudgetHero { display: grid; grid-template-columns: 200px minmax(0, 1fr); align-items: center; gap: 28px; }
+.plannerBudgetArtwork { position: relative; display: grid; min-height: 240px; overflow: hidden; place-items: center; margin: -24px 0 -24px -24px; border: 0; border-radius: 0 124px 124px 0; background: linear-gradient(145deg, #d7eee8, #f3faf7); }
 .plannerBudgetTowerPhoto, .plannerBudgetTowerFallback { position: absolute; inset: 0; width: 100%; height: 100%; }
 .plannerBudgetTowerPhoto { z-index: 1; object-fit: cover; object-position: center; }
 .plannerBudgetTowerFallback { z-index: 0; }
 .plannerBudgetHeroContent { min-width: 0; }
-.plannerBudgetHeading { display: flex; min-width: 0; align-items: center; gap: 8px; margin-bottom: 20px; }
+.plannerBudgetHeading { display: flex; min-width: 0; align-items: center; gap: 8px; margin-bottom: 12px; }
 .plannerBudgetHeading > strong { overflow: hidden; color: #173b36; font-size: 1rem; line-height: 1.2; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
 .plannerBudgetHeading > span:not(.plannerBudgetLocationIcon) { color: #879893; font-size: .85rem; }
 .plannerBudgetHeading > small { flex: 0 0 auto; color: #526a64; font-size: .82rem; font-weight: 600; }
@@ -248,14 +248,13 @@
 .plannerBudgetBasis { margin-bottom: 6px; border-radius: 999px; padding: 9px 13px; background: #e9f5f1; color: #1f6b5e; font-size: .8rem; font-weight: 800; white-space: nowrap; }
 .plannerBudgetInfo { display: inline-grid; width: 16px; height: 16px; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-size: .68rem; font-weight: 800; vertical-align: 1px; }
 .plannerBudgetExplanation { display: inline-flex; margin: 18px 0 0; border: 1px solid #dce8e4; border-radius: 14px; padding: 11px 14px; background: rgba(255,255,255,.82); color: #2f5c54; font-size: .82rem; }
-.plannerBudgetTarget { margin: 12px 0 0; color: #526a64; font-size: .75rem; }
+.plannerBudgetTarget { margin: 8px 0 0; color: #526a64; font-size: .75rem; }
 .plannerBudgetTarget strong { color: #1f6b5e; }
-.plannerBudgetTarget.is-over, .plannerBudgetTarget.is-over strong { color: #a24e3c; }
-.plannerBudgetDistribution { margin-top: 26px; border: 1px solid #e1ebe8; border-radius: 22px; padding: 20px; background: rgba(255,255,255,.82); backdrop-filter: blur(8px); }
+.plannerBudgetDistribution { margin-top: 16px; border: 1px solid #e1ebe8; border-radius: 18px; padding: 14px 18px; background: rgba(255,255,255,.82); backdrop-filter: blur(8px); }
 .plannerBudgetDistributionHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .plannerBudgetDistributionHeader strong { color: #173b36; font-size: 1rem; font-weight: 900; }
 .plannerBudgetDetailsDropdown { position: relative; color: #1f6b5e; font-size: .82rem; font-weight: 800; }
-.plannerBudgetDistribution > summary { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 16px; cursor: pointer; list-style: none; }
+.plannerBudgetDistribution > summary { min-height: 40px; display: flex; align-items: center; justify-content: space-between; gap: 16px; cursor: pointer; list-style: none; }
 .plannerBudgetDistribution > summary::-webkit-details-marker { display: none; }
 .plannerBudgetDistribution:not([open]) > summary { margin-bottom: 0; }
 .plannerBudgetDetailsDropdown::after { content: "›"; display: inline-block; margin-left: 5px; font-size: 1.1em; transition: transform 160ms ease; }

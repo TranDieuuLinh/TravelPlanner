@@ -87,7 +87,16 @@ class ExplorerService:
         }
 
     async def prompt_draft(self, prompt: str) -> ExplorerDraft:
-        return await run_with_one_retry(lambda: self.drafts.from_prompt(prompt))
+        try:
+            return await run_with_one_retry(lambda: self.drafts.from_prompt(prompt))
+        except Exception:
+            # Prompt-only requests can still use the deterministic extractor
+            # when the optional semantic provider is unavailable. URL/image
+            # imports keep their stricter source-quality handling below.
+            if self.fallback_drafts is self.drafts:
+                raise
+            logger.warning("Explorer prompt provider unavailable; using fallback draft")
+            return await self.fallback_drafts.from_prompt(prompt)
 
     async def extract_sources(self, payload: ExplorerInput) -> list[SourceExtractionResult]:
         jobs = []

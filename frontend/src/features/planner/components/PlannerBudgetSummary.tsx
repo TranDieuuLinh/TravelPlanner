@@ -39,10 +39,6 @@ export function PlannerBudgetSummary({
   const referenceBudgetLabel = referenceBudget?.source === "estimated_daily_cost"
     ? "Ngân sách đề xuất"
     : "Ngân sách của bạn";
-  const budgetDifference =
-    referenceBudget == null
-      ? null
-      : referenceBudget.amountPerPerson - budget.perPersonTotal;
   const visibleNotes = notes.map((note) => note.trim()).filter(Boolean);
   const budgetItems = ([
     { key: "travelPlaces", label: "Địa điểm", value: budget.travelPlaces },
@@ -117,13 +113,10 @@ export function PlannerBudgetSummary({
             <span className="plannerBudgetBasis">mỗi người</span>
           </div>
           {referenceBudget == null ? null : (
-            <p className={`plannerBudgetTarget ${budgetDifference != null && budgetDifference < 0 ? "is-over" : ""}`}>
+            <p className="plannerBudgetTarget">
               <span title={referenceBudget.source === "estimated_daily_cost" ? "Ước tính từ dữ liệu giá theo điểm đến của PlaceChecker" : undefined}>
-                {referenceBudgetLabel}: <strong>{formatPlannerMoney(referenceBudget.amountPerPerson, budget.currency)}</strong> <small>/ người</small>
+                {referenceBudgetLabel}: <strong>{formatPlannerMoney(referenceBudget.amountPerPerson, budget.currency)}</strong>
               </span>
-              {budgetDifference == null ? null : (
-                <span>{budgetDifference < 0 ? "Vượt" : "Còn lại"} {formatPlannerMoney(Math.abs(budgetDifference), budget.currency)}</span>
-              )}
             </p>
           )}
         </div>
