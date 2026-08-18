@@ -52,6 +52,8 @@ class FoodRestaurantSelectionService:
         self,
         context: TripEvaluationContext,
         anchors: list[FoodSelectionAnchor],
+        *,
+        active_style_ids: set[str] | None = None,
     ) -> FoodSelectionBatch:
         adm_id = context.destination.adm_id
         if not adm_id or not anchors:
@@ -88,7 +90,11 @@ class FoodRestaurantSelectionService:
             eligible.append(candidate)
         priors = self.policy.priors(eligible)
         diverse, style_coverage = select_style_item_candidates(
-            eligible, context.days, priors, self.policy.rank
+            eligible,
+            context.days,
+            priors,
+            self.policy.rank,
+            active_style_ids=active_style_ids,
         )
         preferred = {item.restaurant_id: item for item in diverse}
         aggregates = aggregate_restaurants(
@@ -132,7 +138,11 @@ class FoodRestaurantSelectionService:
                     eligible.append(candidate)
             priors = self.policy.priors(eligible)
             diverse, style_coverage = select_style_item_candidates(
-                eligible, context.days, priors, self.policy.rank
+                eligible,
+                context.days,
+                priors,
+                self.policy.rank,
+                active_style_ids=active_style_ids,
             )
             preferred = {item.restaurant_id: item for item in diverse}
             aggregates = aggregate_restaurants(

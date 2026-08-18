@@ -30,7 +30,10 @@ enrich_selected_routes route detail cho selected arcs và accommodation transfer
 finalize_output       sort timeline, totals, warnings, unscheduled
 ```
 
-Runtime mặc định giữ một CP-SAT search worker cho mỗi daily repair và sparse graph `K=10` theo
+Runtime chọn top accommodation trước daily repair, không dùng global CP-SAT làm
+fallback khi bước ghép accommodation thất bại. Candidate đó làm endpoint anchor
+cho từng ngày; lỗi anchor công bố `placeId`, ngày và nhóm route/timeline/rest
+constraint liên quan. Runtime mặc định giữ một CP-SAT search worker cho mỗi daily repair và sparse graph `K=10` theo
 `safeTravelMinutes` từ matrix. Forced relationship, meal-access, priority và
 component-bridge arcs luôn được union lại sau nearest-neighbor pruning.
 Hai solver pass của mỗi ngày không có wall-clock timeout mặc định. Deployment
@@ -57,8 +60,9 @@ progressive idle penalty. Nếu pool food unique vẫn làm ngày vô nghiệm, 
 cuối chỉ mở lại restaurant đã dùng; activity đã dùng vẫn bị loại. Timeout/
 `UNKNOWN` hoặc `INFEASIBLE` ở locked route repair kích hoạt hybrid replan với
 compact per-day pool; daily shortlist vẫn có thể mở rộng pool khi cần. Khi ghép ngày, Planner kiểm tra
-lại explicit budget, tối thiểu 7 giờ nghỉ và thời gian transfer accommodation; vi phạm
-trả infeasible, không xuất lịch sai.
+lại explicit budget, tối thiểu 7 giờ nghỉ và thời gian transfer của top
+accommodation; vi phạm trả diagnostic infeasible, không đổi sang accommodation
+khác và không xuất lịch sai.
 
 Node chỉ đọc/ghi state và gọi service. Retry, timeout và fallback policy nằm
 trong service/adapter.
@@ -115,9 +119,12 @@ contract sớm.
 So sánh route detail duration với matrix safe duration. Repair khi:
 
 ```text
-detail duration > safe matrix duration + tolerance
-và timeline bị overlap/vi phạm opening/meal/end-of-day
+route detail làm timeline bị overlap/vi phạm opening/meal/end-of-day
 ```
+
+Timeline validity là hard invariant nên chênh 1-2 phút vẫn phải repair. Tolerance
+chỉ phân loại sai lệch lớn hơn safe matrix khi schedule slack vẫn hấp thụ được;
+nó không được phép bỏ qua một overlap thực tế.
 
 Repair policy:
 

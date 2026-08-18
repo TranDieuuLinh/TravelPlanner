@@ -19,6 +19,9 @@ FOOD_DRINK_STYLES = {
     "style_food_relaxation": "Ẩm thực & Thư giãn",
     "style_nightlife": "Cuộc sống về đêm",
 }
+DEFAULT_MEAL_STYLE_IDS = frozenset(
+    {"style_breakfast", "style_lunch", "style_dinner"}
+)
 CandidateRank = Callable[
     [FoodRestaurantCandidate, dict[str, BayesianRatingPrior]], tuple
 ]
@@ -29,6 +32,8 @@ def select_style_item_candidates(
     days: int,
     priors: dict[str, BayesianRatingPrior],
     rank: CandidateRank,
+    *,
+    active_style_ids: set[str] | None = None,
 ) -> tuple[list[FoodRestaurantCandidate], list[FoodStyleCoverage]]:
     """Select unique venues while cycling items inside each anchor region."""
     styled = [item for item in candidates if item.style_id and item.style_name]
@@ -36,8 +41,11 @@ def select_style_item_candidates(
         # Compatibility sources may not expose Style provenance yet. Keep the
         # existing meal-pool behavior instead of reporting six synthetic gaps.
         return [], []
+    active = active_style_ids or set(DEFAULT_MEAL_STYLE_IDS)
     styles: dict[str, list[FoodRestaurantCandidate]] = {
-        style_id: [] for style_id in FOOD_DRINK_STYLES
+        style_id: []
+        for style_id in FOOD_DRINK_STYLES
+        if style_id in active
     }
     for candidate in styled:
         if candidate.style_id in styles:

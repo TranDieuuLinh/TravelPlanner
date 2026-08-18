@@ -23,6 +23,75 @@ _DRINK_DESSERT = frozenset(
 _ENTERTAINMENT = frozenset(
     {"entertainment", "game center", "cinema", "karaoke", "music venue"}
 )
+_ENTERTAINMENT_NAME_MARKERS = (
+    "bi a",
+    "billiard",
+    "billiards",
+    "bowling",
+    "candles",
+    "culcat",
+    "cua hang",
+    "dau vai",
+    "elly",
+    "entertainment",
+    "faculty",
+    "game center",
+    "garden center",
+    "garmin",
+    "giai co",
+    "gift shop",
+    "gifts",
+    "golf",
+    "interior plant service",
+    "karaoke",
+    "khoa",
+    "kinh mat",
+    "mall",
+    "massage",
+    "miniwood design",
+    "mood on",
+    "music box",
+    "musicbox",
+    "noraebang",
+    "pilates",
+    "pickleball",
+    "school",
+    "photo booth",
+    "showroom",
+    "spa",
+    "studio",
+    "souvenir",
+    "souvenirs",
+    "souvernirs",
+    "store",
+    "art supply store",
+    "artistic handicrafts",
+    "tam quat",
+    "tiredcity",
+    "tri lieu",
+    "truong dh",
+    "vong hoa",
+    "nha tang le",
+    "cong ty",
+    "costume rental service",
+    "vinhomes",
+)
+_DRINK_NAME_MARKERS = (
+    "cafe",
+    "ca phe",
+    "coffee",
+    "tea",
+    "tra sua",
+)
+_RESTAURANT_NAME_MARKERS = (
+    "bun cha",
+    "com",
+    "lau",
+    "mi van than",
+    "pho",
+    "quan mi",
+    "sui cao",
+)
 
 
 def planner_category(value: str | None) -> str:
@@ -37,3 +106,39 @@ def planner_category(value: str | None) -> str:
     if normalized == "accommodation":
         return "accommodation"
     return "travel_place"
+
+
+def planner_category_for_candidate(
+    value: str | None,
+    *,
+    name: str | None,
+    tags: list[str] | tuple[str, ...] = (),
+    pool_category: str | None = None,
+    context: str | None = None,
+) -> str:
+    """Correct obvious leisure venues mislabeled as TravelPlace upstream."""
+    category = planner_category(value)
+    padded_name = f" {normalize_text(name)} "
+    if category == "restaurant" and any(
+        f" {marker} " in padded_name for marker in _DRINK_NAME_MARKERS
+    ):
+        return "drink_dessert"
+    if category != "accommodation" and any(
+        f" {marker} " in padded_name
+        for marker in _RESTAURANT_NAME_MARKERS
+    ):
+        return "restaurant"
+    if category != "travel_place":
+        return category
+    if normalize_text(pool_category) == "shopping":
+        return "entertainment"
+    identity = normalize_text(" ".join([name or "", context or "", *tags]))
+    padded_identity = f" {identity} "
+    if any(
+        f" {marker} " in padded_identity
+        for marker in _ENTERTAINMENT_NAME_MARKERS
+    ):
+        return "entertainment"
+    if "entertainment" in {normalize_text(tag) for tag in tags}:
+        return "entertainment"
+    return category

@@ -49,7 +49,7 @@ def test_graph_prepares_new_planner_input() -> None:
     assert len(result["output"].days[0].stops) >= 6
     assert (
         result["output"].solver.objective_policy_version
-        == "hybrid-activity-corridor-v2"
+        == "hybrid-activity-corridor-v8-first-visitor-landmarks"
     )
     assert result["output"].phase_timings_ms["total"] >= 0
 

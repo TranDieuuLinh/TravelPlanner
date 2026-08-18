@@ -1,6 +1,6 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-17.
+Cập nhật lần cuối: 2026-08-18.
 
 ## Phạm vi và trạng thái
 
@@ -184,7 +184,7 @@ continues to serve the bounded recent-chat lookup.
 | Cột | Kiểu | Nullable | Giải thích |
 |---|---|---|---|
 | `current_itinerary` | jsonb | Có | Snapshot legacy dành cho PlanEditor. |
-| `current_planner_output` | jsonb | Có | Output mới gồm `days[].stops` và `days[].legs`. |
+| `current_planner_output` | jsonb | Có | Output mới gồm `people`, `days[].stops` và `days[].legs`. |
 
 Stop trong snapshot giữ hai vùng note độc lập: `notes` là object chỉ đọc gồm
 `text`, `sourceType`, `sourceUrl`; `personalNotes` là chuỗi do user sở hữu.
@@ -199,6 +199,8 @@ Lựa chọn phương tiện của user được lưu dưới
 Mutation khóa row, kiểm tra revision rồi tăng revision; không cần thêm table
 hoặc migration và chỉ lưu option routing đã chuẩn hóa, không lưu raw provider
 payload.
+Quy mô nhóm được lưu tại `current_planner_output.people`; đây là field trong
+JSONB hiện hữu nên thay đổi không cần migration hoặc cột mới.
 
 ### `agent_trip_chat_messages`
 
@@ -478,11 +480,11 @@ Runtime relationship semantics observed on 2026-08-13:
   derivation rule. PlaceChecker xử lý được cả hai hướng của cạnh;
 - `Offer_Item`: place → item; recommendations may be an evidence array or an
   object containing status/priority;
-- `Has_Style`: place → style. Runtime reads `time_windows` and `time_duration`
+- `Has_Style`: place/item → style. Runtime reads `time_windows` and `time_duration`
   from the target `Style` node. Chỉ duration lớn nhất được dùng làm place-level
   fallback; Style windows là preferred timing và không thay thế hard opening
-  hours trực tiếp của place. Style không được dùng để phân loại hoặc
-  chia quota generic TravelPlace retrieval.
+  hours trực tiếp của place. Generic TravelPlace retrieval không chia quota
+  theo Style; selector Style riêng mới sở hữu quota active Style.
 
 Generic TravelPlace retrieval không chỉ đọc `Special_Experience`: nó còn lấy
 `TravelPlace` nằm trong cây ADM qua `Located_In`, xen kẽ hai nhóm special và
@@ -495,7 +497,20 @@ không thêm cột, table hoặc ghi ngược dữ liệu Knowledge Graph.
 PlaceChecker nhận bốn place entity type từ catalog: `TravelPlace`, `Restaurant`,
 `DrinkDessert` và `Entertainment` (ngoài `Accommodation`). Compact boundary
 nhóm `DrinkDessert`/`Entertainment` vào pool optional `entertainment`; đây chỉ
-là thay đổi read/projection contract, không thêm bảng hoặc cột.
+là thay đổi read/projection contract, không thêm bảng hoặc cột. Runtime compact
+pool dùng quota 22 TravelPlace và 6 DrinkDessert/Entertainment mỗi ngày; chỉ
+Entertainment tự gợi ý có Bayesian-adjusted rating từ 4,2/5 mới được giữ, đồng
+thời giới hạn reserve tùy chọn có thể xếp 08:00-18:00 ở
+`max(1, ceil(days / 3))`. TravelPlace reserve dùng tỷ lệ tham chiếu 8/14 cho
+Special Experience có evidence/provenance đã duyệt. Chính sách này chỉ đọc các field
+`rating`, `review_count` và time window hiện có nên không cần migration.
+Runtime còn dùng canonical name/tag để sửa các leisure venue rõ ràng bị gắn
+`TravelPlace` sai sang `Entertainment`, và chỉ tính popular TravelPlace khi có
+ít nhất 500 review cùng Bayesian/popularity đủ cao. Đây là read-time policy;
+không ghi sửa `knowledge_entities` và không cần migration.
+Provider note hiện có cũng được đọc làm semantic context để nhận source category
+thương mại như art supply store, photo booth, garden center và plant service;
+không thêm cột và không ghi ngược category.
 
 PlaceChecker metadata read path truyền toàn bộ giá trị từ property `tags` cùng
 tag suy ra từ `Special_Experience`, `Offer_Item`, `Has_Style` và `Special_Near`.
@@ -503,15 +518,24 @@ Planner normalize cả tag tiếng Việt (`Tâm linh`, `Văn hóa`, `kiến tr�
 `di tích`, ...) để preference và diversity objective dùng đúng dữ liệu cloud;
 thay đổi này không thêm bảng hoặc ghi ngược Knowledge Graph.
 
-PlaceChecker read path ngày 2026-08-17 bắt đầu từ `FoodItem`/`DrinkItem` có
+PlaceChecker food read path bắt đầu từ `FoodItem`/`DrinkItem` có
 `Has_Style`, rồi reverse `Offer_Item` sang `Restaurant`/`DrinkDessert` trong cây
 ADM và tính khoảng cách tới batch TravelPlace anchor, giới hạn 5 km.
 `Special_Near` chỉ là evidence. Selector giữ provenance Style/Item, dùng target
-mềm `2 × days` cho mỗi trong sáu Style food/drink và ưu tiên Item/quán chưa dùng
+mềm `2 × days` cho mỗi Style food/drink active và ưu tiên Item/quán chưa dùng
 trong từng anchor region. Khi meal matching hoặc Style coverage còn thiếu, read
 path chạy general ADM một lần. Item hiện có thể ở trạng thái `draft`; read path
 chỉ loại entity `rejected`, thống nhất với policy catalog hiện tại. Không thêm
 bảng/cột và không nối Item bằng tên.
+
+Read path Style tổng quát ngày 2026-08-18 resolve tên request sang canonical
+Style ID hoặc canonical Item ID trước. Từ Item, adapter theo `Has_Style` tới
+Style rồi reverse `Offer_Item` sang holder trong cây ADM; holder chỉ gồm
+`TravelPlace`, `Restaurant` và `DrinkDessert`. Với Style không có Item liên kết,
+adapter dùng direct holder `Has_Style`. Selector dedup `place_id`, giữ provenance
+Style/Item/relationship, dùng target `2 × days` cho từng Style active và trả
+shortfall thay vì tạo dữ liệu giả. Đây là read/runtime state, không thêm bảng,
+cột hoặc dữ liệu đếm vào Knowledge Graph.
 
 ### `knowledge_entity_images`
 

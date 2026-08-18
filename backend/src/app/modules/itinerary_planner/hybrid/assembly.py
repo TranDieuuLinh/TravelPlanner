@@ -70,7 +70,7 @@ def assemble_hybrid_result(
         ),
         objective_value=sum(result.objective_value for result in day_results),
         objective_components=dict(components),
-        objective_policy_version="hybrid-activity-corridor-v2",
+        objective_policy_version="hybrid-activity-corridor-v8-first-visitor-landmarks",
         passes=tuple(item for result in day_results for item in result.passes),
         source_mix=_combine_source_mix(day_results),
     )
@@ -98,67 +98,74 @@ def _select_accommodation(
     if not problem.accommodations or not problem.accommodation_nights:
         _validate_plain_overnight_rest(stops_by_day)
         return None, (), 0
-    options: list[tuple[int, str, tuple[SelectedAccommodationTransfer, ...]]] = []
-    for accommodation in problem.accommodations:
-        transfers: list[SelectedAccommodationTransfer] = []
-        transfer_cost = 0
-        valid = True
-        for day, stops in stops_by_day.items():
-            departure_minutes = 0
-            if day > 1:
-                pair = (accommodation.place_id, stops[0].place_id)
-                if pair not in routing.travel_by_candidate_pair:
-                    valid = False
-                    break
-                departure = routing.travel_by_candidate_pair[pair]
-                departure_minutes = departure.safe_minutes
-                transfer_cost += departure.transport_cost_per_person
-                transfers.append(
-                    SelectedAccommodationTransfer(
-                        accommodation.place_id, stops[0].place_id, day, "start"
-                    )
+    accommodation = problem.accommodations[0]
+    reasons: list[str] = []
+    transfers: list[SelectedAccommodationTransfer] = []
+    transfer_cost = 0
+    valid = True
+    for day, stops in stops_by_day.items():
+        departure_minutes = 0
+        if day > 1:
+            pair = (accommodation.place_id, stops[0].place_id)
+            if pair not in routing.travel_by_candidate_pair:
+                reasons.append(f"day {day} missing route {pair[0]} -> {pair[1]}")
+                valid = False
+                break
+            departure = routing.travel_by_candidate_pair[pair]
+            departure_minutes = departure.safe_minutes
+            transfer_cost += departure.transport_cost_per_person
+            transfers.append(
+                SelectedAccommodationTransfer(
+                    accommodation.place_id, stops[0].place_id, day, "start"
                 )
-            if day < problem.trip.days:
-                pair = (stops[-1].place_id, accommodation.place_id)
-                if pair not in routing.travel_by_candidate_pair:
-                    valid = False
-                    break
-                travel = routing.travel_by_candidate_pair[pair]
-                if stops[-1].end_minute + travel.safe_minutes > OVERNIGHT_END_MINUTE:
-                    valid = False
-                    break
-                transfer_cost += travel.transport_cost_per_person
-                if stops[-1].end_minute >= LATE_NIGHT_START_MINUTE:
-                    transfer_cost += travel.late_night_surcharge_per_person
-                transfers.append(
-                    SelectedAccommodationTransfer(
-                        accommodation.place_id, stops[-1].place_id, day, "end"
-                    )
-                )
-            if day > 1:
-                previous = stops_by_day[day - 1][-1]
-                previous_pair = (previous.place_id, accommodation.place_id)
-                previous_travel = routing.travel_by_candidate_pair.get(previous_pair)
-                if previous_travel is None or (
-                    stops[0].start_minute
-                    - departure_minutes
-                    + 1440
-                    - previous.end_minute
-                    - previous_travel.safe_minutes
-                    < MINIMUM_OVERNIGHT_REST_MINUTES
-                ):
-                    valid = False
-                    break
-        if valid:
-            stay = problem.accommodation_cost_per_person_by_id[accommodation.place_id]
-            stay *= problem.accommodation_nights
-            options.append(
-                (stay + transfer_cost, accommodation.place_id, tuple(transfers))
             )
-    if not options:
-        raise OptimizationError("INFEASIBLE", "hybrid_accommodation")
-    total, accommodation_id, transfers = min(options)
-    return accommodation_id, transfers, ceil(total)
+        if day < problem.trip.days:
+            pair = (stops[-1].place_id, accommodation.place_id)
+            if pair not in routing.travel_by_candidate_pair:
+                reasons.append(f"day {day} missing route {pair[0]} -> {pair[1]}")
+                valid = False
+                break
+            travel = routing.travel_by_candidate_pair[pair]
+            if stops[-1].end_minute + travel.safe_minutes > OVERNIGHT_END_MINUTE:
+                reasons.append(f"day {day} return reaches accommodation after 03:00")
+                valid = False
+                break
+            transfer_cost += travel.transport_cost_per_person
+            if stops[-1].end_minute >= LATE_NIGHT_START_MINUTE:
+                transfer_cost += travel.late_night_surcharge_per_person
+            transfers.append(
+                SelectedAccommodationTransfer(
+                    accommodation.place_id, stops[-1].place_id, day, "end"
+                )
+            )
+        if day > 1:
+            previous = stops_by_day[day - 1][-1]
+            previous_pair = (previous.place_id, accommodation.place_id)
+            previous_travel = routing.travel_by_candidate_pair.get(previous_pair)
+            if previous_travel is None or (
+                stops[0].start_minute
+                - departure_minutes
+                + 1440
+                - previous.end_minute
+                - previous_travel.safe_minutes
+                < MINIMUM_OVERNIGHT_REST_MINUTES
+            ):
+                reasons.append(
+                    f"night {day - 1} -> {day} leaves less than "
+                    f"{MINIMUM_OVERNIGHT_REST_MINUTES} minutes of rest"
+                )
+                valid = False
+                break
+    if valid:
+        stay = problem.accommodation_cost_per_person_by_id[accommodation.place_id]
+        stay *= problem.accommodation_nights
+        return accommodation.place_id, tuple(transfers), ceil(stay + transfer_cost)
+    detail = "; ".join(dict.fromkeys(reasons)) or "unknown anchor validation failure"
+    raise OptimizationError(
+        "INFEASIBLE",
+        "hybrid_accommodation_anchor",
+        f"Top accommodation {accommodation.place_id} was rejected: {detail}.",
+    )
 
 
 def _validate_plain_overnight_rest(stops_by_day: StopsByDay) -> None:

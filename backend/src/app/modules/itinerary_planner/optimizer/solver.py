@@ -6,6 +6,9 @@ from time import monotonic
 from ortools.sat.python import cp_model
 
 from app.modules.itinerary_planner.contract import CandidatePriority
+from app.modules.itinerary_planner.optimizer.accommodation_anchor import (
+    DailyAccommodationAnchor,
+)
 from app.modules.itinerary_planner.optimizer.config import (
     ObjectiveWeights,
     SolverConfig,
@@ -36,10 +39,20 @@ from app.modules.itinerary_planner.routing_models import RoutingProblem
 
 
 class OptimizationError(RuntimeError):
-    def __init__(self, status: str, pass_name: str) -> None:
+    def __init__(
+        self,
+        status: str,
+        pass_name: str,
+        detail: str | None = None,
+    ) -> None:
         self.status = status
         self.pass_name = pass_name
-        super().__init__(f"CP-SAT {pass_name} pass returned {status}.")
+        self.detail = detail
+        prefix = "Hybrid" if pass_name.startswith("hybrid_") else "CP-SAT"
+        message = f"{prefix} {pass_name} pass returned {status}."
+        if detail:
+            message = f"{message} {detail}"
+        super().__init__(message)
 
 
 def optimize_itinerary(
@@ -50,6 +63,7 @@ def optimize_itinerary(
     weights: ObjectiveWeights | None = None,
     repair_locks: RepairLocks | None = None,
     initial_hint: InitialSolutionHint | None = None,
+    daily_accommodation_anchor: DailyAccommodationAnchor | None = None,
 ) -> OptimizationResult:
     selected_config = config or SolverConfig()
     selected_weights = weights or ObjectiveWeights()
@@ -63,6 +77,7 @@ def optimize_itinerary(
         max_inter_stop_wait_minutes=(
             selected_config.max_inter_stop_wait_minutes
         ),
+        daily_accommodation_anchor=daily_accommodation_anchor,
     )
     if repair_locks is not None:
         apply_repair_locks(model, problem, variables, repair_locks)

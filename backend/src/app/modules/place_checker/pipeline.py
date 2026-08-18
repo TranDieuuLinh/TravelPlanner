@@ -18,13 +18,20 @@ from app.modules.place_checker.output_contract import (
     ToolCallSummary,
 )
 from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
-from app.modules.place_checker.enums import GapType, PlaceCheckerStatus
+from app.modules.place_checker.enums import (
+    GapType,
+    PlaceCheckerStatus,
+    VerificationStatus,
+)
 from app.modules.place_checker.ports import PlaceCheckerMetricsSink
 from app.modules.place_checker.resolution import EntityResolutionService
 from app.modules.place_checker.retrieval import TargetedRetrievalService
 from app.modules.place_checker.retrieval_projection import RetrievalCandidateProjector
 from app.modules.place_checker.scoring import CandidateScoringService
 from app.modules.place_checker.service import TripContextBuilder
+from app.modules.place_checker.style_candidate_selection import (
+    StyleCandidateSelectionService,
+)
 
 
 class PlaceCheckerPipeline:
@@ -41,6 +48,7 @@ class PlaceCheckerPipeline:
         scoring: CandidateScoringService | None = None,
         metrics: PlaceCheckerMetricsSink | None = None,
         food_selection: FoodRestaurantSelectionService | None = None,
+        style_selection: StyleCandidateSelectionService | None = None,
     ) -> None:
         self.context_builder = context_builder
         self.entity_resolution = entity_resolution
@@ -52,6 +60,7 @@ class PlaceCheckerPipeline:
         self.scoring = scoring or CandidateScoringService()
         self.metrics = metrics
         self.food_selection = food_selection
+        self.style_selection = style_selection
         self.output = PlaceCheckerOutputAssembler()
         self.retrieval_projection = RetrievalCandidateProjector()
 
@@ -91,9 +100,37 @@ class PlaceCheckerPipeline:
         analysis = self.aggregate_analysis.analyze(evaluated, items, context)
         phase["evaluation_and_analysis"] = self._elapsed(evaluation_started)
 
+        style_selection = None
+        style_verification: dict[str, VerificationStatus] = {}
+        if (
+            self.style_selection is not None
+            and context.destination.status == AdmResolutionStatus.resolved
+        ):
+            style_started = perf_counter()
+            style_selection = await self.style_selection.select(
+                context,
+                style_inputs=payload.short_preferences,
+                item_inputs=[item.name for item in payload.input_items],
+                anchor_coordinates=[
+                    place.place.metadata.coordinates
+                    for place in evaluated.places
+                    if place.place.metadata
+                    and place.place.metadata.coordinates
+                ],
+            )
+            style_places = self.style_selection.to_enriched_places(style_selection)
+            style_evaluations = self.evaluation.evaluate_all(style_places, context)
+            evaluated = self._merge_evaluations(evaluated, style_evaluations)
+            analysis = self.aggregate_analysis.analyze(evaluated, items, context)
+            style_verification = {
+                item.place_id: VerificationStatus.verified_kg
+                for item in style_selection.selections
+            }
+            phase["style_selection"] = self._elapsed(style_started)
+
         retrieval = None
         ranking = None
-        verification_by_id = {}
+        verification_by_id = dict(style_verification)
         ranking_by_id = {}
         if (
             self.targeted_retrieval is not None
@@ -117,9 +154,10 @@ class PlaceCheckerPipeline:
                 coverage=analysis.coverage,
             )
             ranking = self.scoring.rank(retrieval, context, evaluated)
-            optional_places, verification_by_id, ranking_by_id = (
+            optional_places, retrieved_verification, ranking_by_id = (
                 self.retrieval_projection.to_enriched_places(ranking.ranked, context)
             )
+            verification_by_id.update(retrieved_verification)
             optional_evaluations = self.evaluation.evaluate_all(optional_places, context)
             evaluated = self._merge_evaluations(evaluated, optional_evaluations)
             analysis = self.aggregate_analysis.analyze(evaluated, items, context)
@@ -136,6 +174,19 @@ class PlaceCheckerPipeline:
             food_selection = await self.food_selection.select(
                 context,
                 food_anchors,
+                active_style_ids={
+                    "style_breakfast",
+                    "style_lunch",
+                    "style_dinner",
+                    *(
+                        item.style_id
+                        for item in (
+                            style_selection.resolved_intents
+                            if style_selection
+                            else []
+                        )
+                    ),
+                },
             )
             phase["food_selection"] = self._elapsed(food_started)
 
@@ -160,6 +211,7 @@ class PlaceCheckerPipeline:
                 ),
                 metadata_repository=int(bool(payload.places)),
                 food_selection=int(food_selection is not None),
+                style_selection=int(style_selection is not None),
             ),
             partial=bool(
                 payload.validation_issues
@@ -168,6 +220,7 @@ class PlaceCheckerPipeline:
                 or enriched.warnings
                 or (retrieval and retrieval.warnings)
                 or (food_selection and food_selection.warnings)
+                or (style_selection and style_selection.warnings)
             ),
         )
         result = self.output.assemble(
@@ -183,6 +236,7 @@ class PlaceCheckerPipeline:
             ranking_by_place_id=ranking_by_id,
             extra_warnings=[*identities.warnings, *enriched.warnings],
             food_selection=food_selection,
+            style_selection=style_selection,
         )
         planner_output_builder = PlaceCheckerPlannerOutputBuilder()
         travel_target, food_target, missing_places, missing_food = (

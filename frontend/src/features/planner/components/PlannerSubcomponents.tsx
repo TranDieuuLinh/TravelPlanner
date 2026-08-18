@@ -240,11 +240,13 @@ export function AccommodationRouteStrip({
   onToggle,
   routeKey,
   selected,
+  travelerCount,
 }: {
   leg: TransportLeg;
   onToggle: (routeKey: string) => void;
   routeKey: string | null;
   selected: boolean;
+  travelerCount: number;
 }) {
   return (
     <div
@@ -263,7 +265,10 @@ export function AccommodationRouteStrip({
           <span className="itineraryRouteCopy">
             <small>
               {formatDuration(leg.estimatedDurationMinutes)} · {formatDistance(leg.distanceMeters)}
-              <TransportFareInline option={leg} />
+              <TransportFareInline
+                option={leg}
+                travelerCount={travelerCount}
+              />
             </small>
           </span>
         </div>

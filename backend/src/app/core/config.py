@@ -106,9 +106,9 @@ class Settings(BaseSettings):
     google_maps_scraper_max_concurrency: int = Field(default=2, ge=1, le=5)
     route_provider: Literal["valhalla", "disabled"] = "valhalla"
     valhalla_base_url: str = "http://localhost:8002"
-    valhalla_timeout_seconds: float | None = Field(default=None, gt=0)
+    valhalla_timeout_seconds: float = Field(default=60.0, gt=0)
     valhalla_graph_version: str = "local"
-    itinerary_log_search_progress: bool = True
+    itinerary_log_search_progress: bool = False
 
 
 @lru_cache

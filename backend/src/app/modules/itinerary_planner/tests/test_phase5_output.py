@@ -90,6 +90,7 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
     )
 
     output = result["output"]
+    assert output.people == 2
     assert len(provider.calls) == len(result["optimization_result"].selected_arcs)
     assert all(leg.geometry_available for leg in output.days[0].legs)
     assert (
@@ -257,7 +258,10 @@ def test_phase5_keeps_upstream_excluded_user_input_in_unscheduled() -> None:
     ] == [("lake", "verification_required")]
 
 
-def test_route_detail_overrun_is_repaired_by_resolving_the_affected_day() -> None:
+@pytest.mark.parametrize("overrun_minutes", [1, 2, 3])
+def test_route_detail_overrun_is_repaired_by_resolving_the_affected_day(
+    overrun_minutes: int,
+) -> None:
     raw = payload(
         places=[
             candidate("lake", priority="user_input"),
@@ -310,7 +314,7 @@ def test_route_detail_overrun_is_repaired_by_resolving_the_affected_day() -> Non
                     (chosen.origin_id, chosen.destination_id)
                 ].safe_minutes
                 + slack
-                + 3
+                + overrun_minutes
             )
             * 60
         }

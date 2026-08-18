@@ -1,5 +1,5 @@
 from app.modules.place_checker.food_item_diversity import (
-    FOOD_DRINK_STYLES,
+    DEFAULT_MEAL_STYLE_IDS,
     select_style_item_candidates,
 )
 from app.modules.place_checker.tests.test_food_selection import candidate
@@ -62,7 +62,7 @@ def test_balances_style_selection_across_anchor_regions() -> None:
     assert len({item.restaurant_id for item in selected}) == 4
 
 
-def test_reports_all_active_food_drink_styles_when_catalog_supports_styles() -> None:
+def test_reports_only_default_meal_styles_when_no_explicit_styles_are_active() -> None:
     selected, coverage = select_style_item_candidates(
         [_styled("area:a", "restaurant:a", "food:pho")],
         days=1,
@@ -71,10 +71,23 @@ def test_reports_all_active_food_drink_styles_when_catalog_supports_styles() -> 
     )
 
     assert len(selected) == 1
-    assert {item.style_id for item in coverage} == set(FOOD_DRINK_STYLES)
+    assert {item.style_id for item in coverage} == set(DEFAULT_MEAL_STYLE_IDS)
     assert next(
         item for item in coverage if item.style_id == "style_breakfast"
     ).selected_restaurants == 1
-    assert next(
-        item for item in coverage if item.style_id == "style_nightlife"
-    ).selected_restaurants == 0
+    assert all(item.style_id != "style_nightlife" for item in coverage)
+
+
+def test_reports_only_explicit_active_food_styles() -> None:
+    _, coverage = select_style_item_candidates(
+        [_styled("area:a", "restaurant:a", "food:pho")],
+        days=1,
+        priors={},
+        rank=_rank,
+        active_style_ids={"style_breakfast", "style_nightlife"},
+    )
+
+    assert {item.style_id for item in coverage} == {
+        "style_breakfast",
+        "style_nightlife",
+    }

@@ -4,6 +4,9 @@ from typing import Literal, Protocol
 from app.modules.place_checker.contract import AdmResolution
 from app.modules.place_checker.enums import RetrievalSourceKind
 from app.modules.place_checker.food_selection_contract import FoodRestaurantCandidate
+from app.modules.place_checker.style_candidate_contract import (
+    StyleCandidateSourceBatch,
+)
 from app.modules.place_checker.resolution_contract import PlaceMetadata
 from app.modules.place_checker.retrieval_contract import (
     PromotionEvent,
@@ -39,6 +42,17 @@ class SpecialFoodRestaurantSource(Protocol):
         excluded_restaurant_ids: list[str] | None = None,
         required_meals: list[str] | None = None,
     ) -> list[FoodRestaurantCandidate]: ...
+
+
+class StyleCandidateSource(Protocol):
+    async def find_style_candidates(
+        self,
+        *,
+        adm_id: str,
+        style_inputs: list[str],
+        item_inputs: list[str],
+        per_style_limit: int,
+    ) -> StyleCandidateSourceBatch: ...
 
 
 class GapCandidateSource(Protocol):

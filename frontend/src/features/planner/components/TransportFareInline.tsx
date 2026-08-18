@@ -1,18 +1,26 @@
 import type { TransportOption } from "@/features/planner/api/plans";
 import {
-  estimateGreenSmHanoiFare,
   GREEN_SM_FARE_URL,
+  resolveTransportGroupFare,
 } from "@/features/planner/lib/green-sm-fare";
 import { formatPlannerMoney } from "@/features/planner/lib/planner-budget";
 import { isCarMode } from "@/features/planner/lib/transport-options";
 
-export function TransportFareInline({ option }: { option: TransportOption }) {
+export function TransportFareInline({
+  option,
+  travelerCount,
+}: {
+  option: TransportOption;
+  travelerCount: number;
+}) {
   if (!isCarMode(option.mode)) {
     return null;
   }
-  const fare =
-    option.estimatedCostPerPerson ??
-    estimateGreenSmHanoiFare(option.distanceMeters);
+  const fare = resolveTransportGroupFare(
+    option.distanceMeters,
+    option.estimatedCostPerPerson,
+    travelerCount,
+  );
 
   return (
     <>
@@ -23,6 +31,7 @@ export function TransportFareInline({ option }: { option: TransportOption }) {
           option.currency ?? "VND"
         )}
       </span>
+      <small className="transportFareBasis">tổng nhóm</small>
       <a
         aria-label="Mở bảng giá GreenSM"
         className="transportFareLink"

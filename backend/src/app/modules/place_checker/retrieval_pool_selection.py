@@ -31,6 +31,9 @@ _TRAVEL_DISCOVERY_GAPS = {
 }
 _TRAVEL_POOL_ORDER = (
     "pool:travel_place_candidates",
+    "pool:popular_landmark_candidates",
+    "pool:heritage_landmark_candidates",
+    "pool:special_experience_candidates",
     "pool:culture_alternatives",
     "pool:nature_alternatives",
     "pool:shopping_alternatives",

@@ -14,11 +14,31 @@ TimeSource = Literal[
 
 def source_metadata(
     relationships: list[PlaceRelationshipEvidence],
+    tags: list[str] | tuple[str, ...] = (),
 ) -> tuple[SourceKind, list[str]]:
+    normalized_tags = {tag.strip().casefold() for tag in tags}
     special = any(
         relation.relationship_type == "Special_Experience"
         and not relation.is_pending
         for relation in relationships
+    ) or bool(
+        normalized_tags
+        & {
+            "relation_special_experience",
+            "experience:special_experience",
+            "pool_category:special_experience",
+            "pool_category:special_experience_candidates",
+            "van_hoa",
+            "văn_hóa",
+            "tam_linh",
+            "tâm_linh",
+            "di_tich",
+            "di_tích",
+            "lich_su",
+            "lịch_sử",
+            "nghe_thu_cong",
+            "nghề_thủ_công",
+        }
     )
     activity_ids = list(
         dict.fromkeys(

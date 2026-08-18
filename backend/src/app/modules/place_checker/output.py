@@ -42,6 +42,9 @@ from app.modules.place_checker.scoring_contract import (
     CandidateRankingBatch,
     ScoredCandidate,
 )
+from app.modules.place_checker.style_candidate_contract import (
+    StyleCandidateSelectionBatch,
+)
 
 
 class PlaceCheckerOutputAssembler:
@@ -60,6 +63,7 @@ class PlaceCheckerOutputAssembler:
         ranking_by_place_id: dict[str, ScoredCandidate] | None = None,
         extra_warnings: list[str] | None = None,
         food_selection: FoodSelectionBatch | None = None,
+        style_selection: StyleCandidateSelectionBatch | None = None,
     ) -> PlaceCheckerResult:
         verification = verification_by_place_id or {}
         ranking_map = ranking_by_place_id or {}
@@ -95,6 +99,7 @@ class PlaceCheckerOutputAssembler:
                     *(retrieval.warnings if retrieval else []),
                     *(extra_warnings or []),
                     *(food_selection.warnings if food_selection else []),
+                    *(style_selection.warnings if style_selection else []),
                     *(warning for place in checked for warning in place.warnings),
                 ]
             )
@@ -137,6 +142,18 @@ class PlaceCheckerOutputAssembler:
             ),
             food_style_coverage=(
                 food_selection.style_coverage if food_selection else []
+            ),
+            style_candidate_selections=(
+                style_selection.selections if style_selection else []
+            ),
+            style_candidate_coverage=(
+                style_selection.coverage if style_selection else []
+            ),
+            unresolved_style_inputs=(
+                style_selection.unresolved_style_inputs if style_selection else []
+            ),
+            unresolved_item_style_inputs=(
+                style_selection.unresolved_item_inputs if style_selection else []
             ),
             budget_analysis=analysis.budget,
             capacity_analysis=analysis.capacity,

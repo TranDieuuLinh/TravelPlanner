@@ -50,6 +50,11 @@ edge `Offer_Item` để khớp món. Với hoạt động, các edge `Special_Ex
 `Has_Style` được đưa vào tags để nhận diện trải nghiệm và phong cách thay vì
 chỉ dựa vào tên địa điểm.
 
+Rich PostgreSQL pipeline còn có read path Style riêng: resolve Style/Item input
+sang canonical ID, reverse `Offer_Item` cho Style có Item và fallback direct
+`Has_Style` chỉ khi Style không có Item. Kết quả giữ holder entity type và
+provenance Style/Item/relationship để selector áp quota mà không join bằng tên.
+
 PostgreSQL adapter duyệt cây `Located_In` đệ quy từ destination xuống các ADM
 con, nên query ADM1 vẫn lấy được place gắn trực tiếp vào ADM2. Mỗi edge được
 chuẩn hóa thành evidence gồm type, direction, scope, status, confidence,

@@ -2,12 +2,14 @@ import type { TravelPlan } from "@/features/planner/api/plans";
 import {
   formatPlannerMoney,
   plannerBudgetBreakdown,
+  plannerBudgetReference,
 } from "@/features/planner/lib/planner-budget";
 
 type PlannerBudgetSummaryProps = {
   budgetTarget?: number | null;
   notes?: string[];
   plan: TravelPlan;
+  travelerCount?: number | null;
 };
 
 const HANOI_TURTLE_TOWER_IMAGE = "/images/hanoi-turtle-tower.jpg";
@@ -24,15 +26,23 @@ export function PlannerBudgetSummary({
   budgetTarget,
   notes = [],
   plan,
+  travelerCount,
 }: PlannerBudgetSummaryProps) {
-  const budget = plannerBudgetBreakdown(plan);
-  const userBudget =
-    budgetTarget ??
-    (plan.budget?.source === "explicit"
-      ? plan.budget.amountPerPerson
-      : null);
+  // Older persisted planner snapshots do not contain `people`. The current
+  // intake policy defaults an unspecified party to two travelers, so use the
+  // same fallback while those snapshots age out.
+  const effectiveTravelerCount = travelerCount ?? plan.travelerCount ?? 2;
+  const budget = plannerBudgetBreakdown(plan, {
+    travelerCount: effectiveTravelerCount,
+  });
+  const referenceBudget = plannerBudgetReference(plan, budgetTarget);
+  const referenceBudgetLabel = referenceBudget?.source === "estimated_daily_cost"
+    ? "Ngân sách đề xuất"
+    : "Ngân sách của bạn";
   const budgetDifference =
-    userBudget == null ? null : userBudget - budget.perPersonTotal;
+    referenceBudget == null
+      ? null
+      : referenceBudget.amountPerPerson - budget.perPersonTotal;
   const visibleNotes = notes.map((note) => note.trim()).filter(Boolean);
   const budgetItems = ([
     { key: "travelPlaces", label: "Địa điểm", value: budget.travelPlaces },
@@ -91,20 +101,29 @@ export function PlannerBudgetSummary({
               <strong>{plan.destination}</strong>
               <span aria-hidden="true">·</span>
               <small>{plan.days.length} ngày</small>
+              {effectiveTravelerCount && effectiveTravelerCount > 0 ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <small>Nhóm {effectiveTravelerCount} người</small>
+                </>
+              ) : null}
             </div>
           </header>
           <div className="plannerBudgetTotalRow">
             <div className="plannerBudgetTotal">
-              <span>Chi phí dự kiến <span className="plannerBudgetInfo" title="Tổng chi phí ước tính cho toàn bộ chuyến đi">i</span></span>
+              <span>Chi phí dự kiến <span className="plannerBudgetInfo" title="Chi phí bình quân cho một người">i</span></span>
               <strong>{formatPlannerMoney(budget.perPersonTotal, budget.currency)}</strong>
             </div>
             <span className="plannerBudgetBasis">mỗi người</span>
           </div>
-          <p className="plannerBudgetExplanation">Tổng chi phí ước tính cho toàn bộ chuyến đi</p>
-          {userBudget == null ? null : (
+          {referenceBudget == null ? null : (
             <p className={`plannerBudgetTarget ${budgetDifference != null && budgetDifference < 0 ? "is-over" : ""}`}>
-              Ngân sách của bạn: <strong>{formatPlannerMoney(userBudget, budget.currency)}</strong>
-              {budgetDifference == null ? null : ` · ${budgetDifference < 0 ? "Vượt" : "Còn lại"} ${formatPlannerMoney(Math.abs(budgetDifference), budget.currency)}`}
+              <span title={referenceBudget.source === "estimated_daily_cost" ? "Ước tính từ dữ liệu giá theo điểm đến của PlaceChecker" : undefined}>
+                {referenceBudgetLabel}: <strong>{formatPlannerMoney(referenceBudget.amountPerPerson, budget.currency)}</strong> <small>/ người</small>
+              </span>
+              {budgetDifference == null ? null : (
+                <span>{budgetDifference < 0 ? "Vượt" : "Còn lại"} {formatPlannerMoney(Math.abs(budgetDifference), budget.currency)}</span>
+              )}
             </p>
           )}
         </div>
@@ -121,7 +140,10 @@ export function PlannerBudgetSummary({
                 <span className="plannerBudgetItemIcon" aria-hidden="true"><svg viewBox="0 0 24 24">{budgetIcons[item.key]}</svg></span>
                 <span>{item.label}</span>
               </div>
-              <strong>{formatPlannerMoney(item.value, budget.currency)}</strong>
+              <div className="plannerBudgetItemAmount">
+                <strong>{formatPlannerMoney(item.value, budget.currency)}</strong>
+                <small>/ người</small>
+              </div>
               <div className="plannerBudgetMeter" aria-hidden="true"><span style={{ width: `${item.share}%` }} /></div>
               <small>{item.share.toFixed(1)}%</small>
             </div>

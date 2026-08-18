@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
+from collections.abc import Mapping
+from dataclasses import fields, is_dataclass
 import json
 import re
 from typing import Any
@@ -81,9 +82,11 @@ def sanitize_payload(
             data = obj.model_dump(mode="json", exclude_none=True)
             return sanitize_payload(data, max_depth - 1, max_chars, max_items, _seen)
         if is_dataclass(obj) and not isinstance(obj, type):
-            data = asdict(obj)
+            # ``dataclasses.asdict`` deep-copies values and therefore fails for
+            # immutable runtime state such as ``types.MappingProxyType``.
+            data = {field.name: getattr(obj, field.name) for field in fields(obj)}
             return sanitize_payload(data, max_depth - 1, max_chars, max_items, _seen)
-        if isinstance(obj, dict):
+        if isinstance(obj, Mapping):
             sanitized_dict: dict[str, Any] = {}
             for index, (key, value) in enumerate(obj.items()):
                 if index >= max_items:

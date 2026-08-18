@@ -44,27 +44,50 @@ Planner projection chọn đúng một source note cho mỗi candidate: `urlNote
 Knowledge Graph làm Google/KG fallback. Output là object
 `notes={text,sourceType,sourceUrl}`; ghi chú cá nhân không thuộc Place Checker.
 
-Candidate pool gửi sang Planner có hard gate độc lập: 20 TravelPlace/ngày,
-16 Restaurant/ngày và 6 DrinkDessert/Entertainment/ngày. Food reserve
+Candidate pool gửi sang Planner có quota độc lập: 22 TravelPlace/ngày,
+16 Restaurant/ngày và 6 DrinkDessert/Entertainment/ngày. Entertainment do hệ
+thống gợi ý phải đạt Bayesian-adjusted rating tối thiểu 4,2/5; input trực tiếp
+và URL luôn được giữ. Compact pool chỉ giữ tối đa
+`max(1, ceil(days / 3))` Entertainment tùy chọn có thể xếp trong khung
+08:00-18:00; candidate chỉ mở buổi tối và DrinkDessert không chịu giới hạn này.
+`22 TravelPlace/ngày` là target retrieval
+để tạo nhiều phương án, không phải hard gate: compact handoff chỉ cần tối thiểu
+8 TravelPlace/ngày trước khi gọi Planner. Food reserve
 được over-fetch riêng để chứa `2 × days` candidate cho sáu Style. Chỉ candidate vượt đủ
-verification, metadata và compact-output policy mới được tính. Thiếu một pool
-làm kết quả `blocked`; root không tạo `planner_input`. Thiếu relationship gần
+verification, metadata và compact-output policy mới được tính. Thiếu hard
+handoff pool làm kết quả `blocked`; root không tạo `planner_input`. Thiếu relationship gần
 chỉ tạo warning vì Planner vẫn có thể dùng general food pool theo route. Compact
 output gửi cả `foodCoverage` gồm hard/reserve assignments và missing slots để
 Planner biết feasibility đã được kiểm tra trước.
 
-TravelPlace reserve chạy các query khám phá độc lập cho culture, nature,
+TravelPlace reserve chạy hai query lõi cho famous/must-see và
+historic landmark/museum/temple/old quarter, một query lõi cho authentic local
+cultural special experience và các
+query khám phá độc lập cho culture, nature,
 shopping, nightlife, workshop, performance, outdoor, family, special
 experience và local activity. Đây là query intent, không phải theme của place.
 Selection giữ một đại diện cho mỗi tag KG có ý nghĩa trước khi bù theo tỷ lệ
-tham chiếu theo tỷ lệ 6/14 candidate có evidence `Special_Experience`,
+tham chiếu 8/14 candidate có evidence/tag provenance `Special_Experience`,
 4/14 candidate có Bayesian popularity signal và phần còn lại theo ranking.
+Popular chỉ được tính khi có ít nhất 500 review và popularity score từ 0,70;
+candidate vài trăm review không còn làm đầy bucket landmark. Nếu tên/tag cho
+thấy rõ venue giải trí/dịch vụ/retail như music box, karaoke, golf, bi-a,
+studio, massage/trị liệu hoặc store/souvenir, runtime sửa category `TravelPlace`
+sai thành `Entertainment` trước khi chia quota.
+Candidate có provenance `pool_category=shopping` cũng đi vào leisure pool thay
+vì được tính là landmark, kể cả tên thương hiệu không chứa từ retail rõ ràng.
+Compact projection còn đọc provider note để nhận các source category như art
+supply store, photo booth, garden center và plant service; các venue thương mại
+này cũng đi vào leisure pool thay vì TravelPlace.
+Ngược lại, tên món/quán ăn rõ ràng sửa source `cafe/entertainment` sai về
+`Restaurant` trước scoring và compact projection.
 Khi fill phần còn lại, selector ưu tiên tag ít xuất hiện và soft-cap một tag
 rộng ở tối đa 3 candidate nếu còn tag khác để thay thế. `pool_category` chỉ lưu
 provenance và không tạo diversity.
-Category đưa sang Planner được chuẩn hóa từ `entity_type`; các alias như
+PostgreSQL adapter ánh xạ `entity_type` thành `category` canonical; các bước
+downstream chuẩn hóa `category` trước khi đưa sang Planner. Các alias như
 `cafe`, `coffee` và `DrinkDessert` đi vào pool `drink_dessert`, không rơi vào
-TravelPlace. `place_id` chỉ là định danh và không bị đổi theo category.
+TravelPlace. `place_id` không bị đổi theo category.
 Query khám phá bắt buộc match relation/style term; một `Special_Experience`
 không liên quan không được dùng để lấp mọi query.
 `Special_Experience` trạng thái `pending` không được tính là special. Bucket

@@ -1,6 +1,6 @@
 # Travel Planner Agents
 
-Cập nhật lần cuối: 2026-08-17.
+Cập nhật lần cuối: 2026-08-18.
 
 Greenfield modular backend for a LangGraph-based travel-planning workflow.
 
@@ -93,7 +93,8 @@ This is a working architecture scaffold, not a production travel-data system.
 - ItineraryPlanner preprocesses the compact PlaceChecker payload, builds a
   deterministic geographic preferred pool with reserve fallback, builds a
   global Valhalla driving matrix with Xanh SM fare estimates, then runs two-pass
-  daily OR-Tools CP-SAT models. It enriches selected route legs, first attempts
+  daily OR-Tools CP-SAT models with the top ranked accommodation fixed as the
+  cross-day endpoint anchor. It enriches selected route legs, first attempts
   an affected-day repair with a baseline solution hint and falls back to one
   compact per-day hybrid replan when the locked repair is infeasible or unknown,
   then returns the plan in `plannerOutput`.

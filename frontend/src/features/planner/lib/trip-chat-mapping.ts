@@ -65,6 +65,7 @@ function currentItineraryToPlan(
     id: itinerary.itineraryId ?? itinerary.itinerary_id ?? "agent-itinerary",
     title: `${intent.destination ?? "Chuyến đi"} · ${itinerary.days?.length ?? 0} ngày`,
     destination: intent.destination ?? "",
+    travelerCount: intent.people ?? null,
     kind: "main",
     warnings: itinerary.warnings ?? [],
     days: (itinerary.days ?? []).map((day: any) => ({

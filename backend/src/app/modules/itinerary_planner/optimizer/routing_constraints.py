@@ -4,6 +4,10 @@ from math import ceil, floor
 
 from ortools.sat.python import cp_model
 
+from app.modules.itinerary_planner.optimizer.accommodation_anchor import (
+    DailyAccommodationAnchor,
+    add_daily_anchor_transfer,
+)
 from app.modules.itinerary_planner.optimizer.variables import PlannerVariables
 from app.modules.itinerary_planner.policies import (
     ITINERARY_START_MINUTE,
@@ -25,6 +29,7 @@ def add_routing_and_budget_constraints(
     variables: PlannerVariables,
     *,
     max_inter_stop_wait_minutes: int | None = MAX_INTER_STOP_WAIT_MINUTES,
+    daily_accommodation_anchor: DailyAccommodationAnchor | None = None,
 ) -> None:
     arcs_by_pair = {
         (arc.origin_id, arc.destination_id): arc for arc in routing.sparse_arcs
@@ -101,7 +106,20 @@ def add_routing_and_budget_constraints(
                     variables.first_start[day]
                     == variables.start[(destination_id, day)]
                 ).OnlyEnforceIf(arc)
-                if day > 1:
+                if (
+                    daily_accommodation_anchor is not None
+                    and daily_accommodation_anchor.requires_start_transfer
+                ):
+                    add_daily_anchor_transfer(
+                        model,
+                        routing,
+                        variables,
+                        daily_accommodation_anchor,
+                        candidate_id=destination_id,
+                        direction="start",
+                        endpoint_arc=arc,
+                    )
+                elif day > 1:
                     _add_accommodation_transfer(
                         model,
                         problem,
@@ -117,7 +135,20 @@ def add_routing_and_budget_constraints(
                     variables.last_end[day]
                     == variables.end[(origin_id, day)]
                 ).OnlyEnforceIf(arc)
-                if day < problem.trip.days:
+                if (
+                    daily_accommodation_anchor is not None
+                    and daily_accommodation_anchor.requires_end_transfer
+                ):
+                    add_daily_anchor_transfer(
+                        model,
+                        routing,
+                        variables,
+                        daily_accommodation_anchor,
+                        candidate_id=origin_id,
+                        direction="end",
+                        endpoint_arc=arc,
+                    )
+                elif day < problem.trip.days:
                     _add_accommodation_transfer(
                         model,
                         problem,

@@ -33,6 +33,7 @@ test("maps the full planner snapshot received after sending a message", () => {
     currentPlannerOutput: {
       destination: "Hà Nội",
       timezone: "Asia/Ho_Chi_Minh",
+      people: 2,
       days: [{
         day: 1,
         date: "2026-08-15",
@@ -73,6 +74,7 @@ test("maps the full planner snapshot received after sending a message", () => {
   }, plannerOutputToTravelPlan);
 
   assert.equal(chat.hasPlan, true);
+  assert.equal(chat.currentPlan.travelerCount, 2);
   assert.equal(chat.currentPlan.days.length, 1);
   assert.equal(chat.currentPlan.days[0].items[0].name, "Hồ Hoàn Kiếm");
 });

@@ -1,5 +1,8 @@
 import asyncio
 
+from dataclasses import replace
+from types import MappingProxyType
+
 import pytest
 
 from app.modules.itinerary_planner.adapters.transport_cost import (
@@ -47,7 +50,10 @@ def _hybrid_result(days: int = 2):
 def test_hybrid_repairs_each_day_and_never_reuses_candidate() -> None:
     result = _hybrid_result(days=2)
 
-    assert result.objective_policy_version == "hybrid-activity-corridor-v2"
+    assert (
+        result.objective_policy_version
+        == "hybrid-activity-corridor-v8-first-visitor-landmarks"
+    )
     assert [item.name for item in result.passes] == [
         "day_1:priority",
         "day_1:utility",
@@ -57,6 +63,68 @@ def test_hybrid_repairs_each_day_and_never_reuses_candidate() -> None:
     scheduled = [stop.place_id for stop in result.scheduled_stops]
     assert len(scheduled) == len(set(scheduled))
     assert {stop.day for stop in result.scheduled_stops} == {1, 2}
+
+
+def test_hybrid_distributes_popular_places_across_trip_days() -> None:
+    landmarks = [candidate(f"landmark_{index}") for index in range(6)]
+    for index, item in enumerate(landmarks):
+        item.update({"rating": 4.8, "reviewCount": 20_000 - index})
+        item["sourceKind"] = "generic"
+    problem = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(
+            base_payload(days=3, places=landmarks)
+        )
+    )
+    routing = asyncio.run(
+        build_routing_problem(
+            problem,
+            GeneratedMatrixProvider(),
+            XanhSmTransportCostEstimator(),
+        )
+    )
+
+    result = optimize_hybrid_itinerary(problem, routing, config=FAST_CONFIG)
+    popular_by_day = {
+        day: sum(
+            stop.place_id.startswith("landmark_")
+            for stop in result.scheduled_stops
+            if stop.day == day
+        )
+        for day in range(1, 4)
+    }
+
+    assert all(count >= 1 for count in popular_by_day.values()), popular_by_day
+
+
+def test_hybrid_reserves_two_special_places_for_each_trip_day() -> None:
+    specials = [candidate(f"special_{index}") for index in range(6)]
+    for item in specials:
+        item["sourceKind"] = "special_experience"
+    problem = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(
+            base_payload(days=3, places=specials)
+        )
+    )
+    routing = asyncio.run(
+        build_routing_problem(
+            problem,
+            GeneratedMatrixProvider(),
+            XanhSmTransportCostEstimator(),
+        )
+    )
+
+    result = optimize_hybrid_itinerary(problem, routing, config=FAST_CONFIG)
+    special_by_day = {
+        day: sum(
+            stop.place_id.startswith("special_")
+            for stop in result.scheduled_stops
+            if stop.day == day
+        )
+        for day in range(1, 4)
+    }
+
+    assert sum(special_by_day.values()) >= 5
+    assert all(count >= 1 for count in special_by_day.values())
 
 
 def test_two_opt_and_swap_reduce_route_cost() -> None:
@@ -162,6 +230,69 @@ def test_greedy_shortlist_uses_bayesian_review_quality() -> None:
 
     assert "reliable" in shortlist.candidate_ids
     assert "sparse" not in shortlist.candidate_ids
+
+
+def test_greedy_shortlist_reserves_high_review_popular_places() -> None:
+    landmarks = [candidate("landmark_a"), candidate("landmark_b")]
+    for index, item in enumerate(landmarks):
+        item.update({"rating": 4.7, "reviewCount": 20_000 - index})
+        item["sourceKind"] = "generic"
+    leisure = [candidate(f"music_box_{index}") for index in range(17)]
+    for item in leisure:
+        item.update({"rating": 5.0, "reviewCount": 200})
+    problem = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(
+            base_payload(places=[*landmarks, *leisure])
+        )
+    )
+    routing = asyncio.run(
+        build_routing_problem(
+            problem,
+            GeneratedMatrixProvider(),
+            XanhSmTransportCostEstimator(),
+        )
+    )
+
+    shortlist = build_day_shortlist(
+        problem,
+        routing,
+        day=1,
+        used_ids=frozenset(),
+    )
+
+    assert {"landmark_a", "landmark_b"} <= shortlist.candidate_ids
+
+
+def test_popular_places_remain_available_outside_geographic_preferred_day() -> None:
+    landmark = candidate("major_landmark")
+    landmark.update({"rating": 4.8, "reviewCount": 20_000})
+    problem = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(
+            base_payload(days=2, places=[landmark, candidate("local_place")])
+        )
+    )
+    problem = replace(
+        problem,
+        preferred_days=MappingProxyType(
+            {**problem.preferred_days, "major_landmark": frozenset({1})}
+        ),
+    )
+    routing = asyncio.run(
+        build_routing_problem(
+            problem,
+            GeneratedMatrixProvider(),
+            XanhSmTransportCostEstimator(),
+        )
+    )
+
+    shortlist = build_day_shortlist(
+        problem,
+        routing,
+        day=2,
+        used_ids=frozenset(),
+    )
+
+    assert "major_landmark" in shortlist.candidate_ids
 
 
 def test_greedy_shortlist_allows_sixteen_optional_activities() -> None:

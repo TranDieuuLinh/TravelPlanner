@@ -45,6 +45,27 @@ def test_pending_special_relationship_is_not_promoted_to_special_source() -> Non
     assert activity_ids == []
 
 
+def test_normalized_special_tag_survives_when_edge_evidence_is_absent() -> None:
+    kind, activity_ids = source_metadata([], ["relation_special_experience"])
+
+    assert kind == "special_experience"
+    assert activity_ids == []
+
+
+def test_special_pool_provenance_is_promoted_to_special_source() -> None:
+    kind, _ = source_metadata(
+        [], ["pool_category:special_experience_candidates"]
+    )
+
+    assert kind == "special_experience"
+
+
+def test_cultural_semantics_promote_a_place_to_special_source() -> None:
+    kind, _ = source_metadata([], ["văn_hóa", "tâm_linh"])
+
+    assert kind == "special_experience"
+
+
 def test_activity_timing_precedes_style_and_style_is_fallback() -> None:
     activity = relationship(
         "Offer_Item",

@@ -25,6 +25,13 @@ def test_prompt_without_days_defaults_to_three_day_plan() -> None:
 
     assert output.status == "ready"
     assert output.days == 3
+    assert output.people.adults == 2
+
+
+def test_explicit_solo_party_overrides_two_person_default() -> None:
+    output = invoke({"rawPrompt": "Lập kế hoạch ở Huế cho 1 người"})
+
+    assert output.people.adults == 1
 
 
 def test_prompt_date_overrides_tomorrow_default() -> None:
@@ -63,7 +70,7 @@ def test_defaults_do_not_infer_days_from_image() -> None:
     assert output.status == "ready"
     assert output.days == 3
     assert output.budget.level == "low"
-    assert output.people.adults == 1
+    assert output.people.adults == 2
     assert output.places[0].source_places[0].evidence_type == "image_ocr"
     assert output.url_notes[0].evidence_type == "image_ocr"
 

@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from app.modules.place_checker.enums import VerificationStatus
 from app.modules.place_checker.planner_category import planner_category
 from app.modules.place_checker.output_contract import (
@@ -6,6 +8,7 @@ from app.modules.place_checker.output_contract import (
     PlannerPrice,
 )
 from app.modules.place_checker.price_policy import typical_cost
+from app.shared.contracts.place import Coordinates
 
 PERCENTILE_BY_BUDGET_LEVEL = {"low": 0.25, "medium": 0.50, "high": 0.80}
 ACCOMMODATION_CANDIDATE_LIMIT = 3
@@ -13,8 +16,10 @@ ACCOMMODATION_CANDIDATE_LIMIT = 3
 
 def select_accommodations(
     result: PlaceCheckerResult,
+    *,
+    anchor_coordinates: Sequence[Coordinates] = (),
 ) -> list[PlannerOutputAccommodation]:
-    """Return a small priced pool around the requested budget percentile."""
+    """Return a priced pool with its top candidate nearest the activity center."""
     priced = []
     budget_currency = result.trip_context.budget.currency or "VND"
     for checked in result.checked_places:
@@ -58,6 +63,22 @@ def select_accommodations(
             item[1][0],
         ),
     )[:ACCOMMODATION_CANDIDATE_LIMIT]
+    if anchor_coordinates:
+        latitude = sum(item.latitude for item in anchor_coordinates) / len(
+            anchor_coordinates
+        )
+        longitude = sum(item.longitude for item in anchor_coordinates) / len(
+            anchor_coordinates
+        )
+        ranked.sort(
+            key=lambda item: (
+                (item[1][1].coordinates.latitude - latitude) ** 2
+                + (item[1][1].coordinates.longitude - longitude) ** 2,
+                abs(item[0] - target_index),
+                item[1][0],
+                item[1][1].canonical_name or "",
+            )
+        )
     return [
         PlannerOutputAccommodation(
             place_id=checked.place_id or "",

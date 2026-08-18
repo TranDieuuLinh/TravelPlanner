@@ -30,6 +30,7 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
   const output = {
     destination: "Hà Nội",
     timezone: "Asia/Ho_Chi_Minh",
+    people: 2,
     accommodation: {
       placeId: "hotel-old-quarter",
       name: "Khách sạn Phố Cổ",
@@ -155,6 +156,7 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
   const plan = plannerOutputToTravelPlan(output, { id: "plan-1" });
 
   assert.equal(plan.id, "plan-1");
+  assert.equal(plan.travelerCount, 2);
   assert.equal(plan.days[0].items.length, 2);
   assert.equal(plan.days[0].items[1].timelineCategory, "food");
   assert.equal(plan.days[0].items[1].ontologyType, "Restaurant");

@@ -21,7 +21,7 @@ CandidateDay = tuple[str, int]
 MealKey = tuple[str, int, MealType]
 SourceMixKey = tuple[str, int, str]
 MIN_PLACES_PER_DAY = 2
-MAX_ENTERTAINMENT_PER_DAY = 3
+MAX_ENTERTAINMENT_PER_DAY = 1
 
 
 @dataclass(slots=True)

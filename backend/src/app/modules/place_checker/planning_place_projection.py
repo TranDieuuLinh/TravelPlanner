@@ -29,7 +29,8 @@ class PlannerPlaceProjector:
     @classmethod
     def place(cls, checked: CheckedPlace, days: int) -> PlannerOutputPlace:
         source_kind, offered_activity_ids = source_metadata(
-            checked.relationship_evidence
+            checked.relationship_evidence,
+            [*checked.tags, f"pool_category:{checked.pool_category or ''}"],
         )
         tags, styles = candidate_semantics(checked.tags, checked.relationship_evidence)
         if planner_category(checked.category) == "drink_dessert" and "drink_dessert" not in tags:
@@ -83,7 +84,7 @@ class PlannerPlaceProjector:
     def item_place(cls, item, days: int) -> PlannerOutputPlace:
         option = item.selected
         relations = option.relationships
-        source_kind, offered_activity_ids = source_metadata(relations)
+        source_kind, offered_activity_ids = source_metadata(relations, option.tags)
         tags, styles = candidate_semantics(option.tags, relations)
         if planner_category(option.category) == "drink_dessert" and "drink_dessert" not in tags:
             tags.append("drink_dessert")

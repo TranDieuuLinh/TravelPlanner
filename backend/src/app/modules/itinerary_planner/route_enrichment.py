@@ -142,8 +142,13 @@ async def enrich_selected_routes(
                     > matrix_travel.safe_minutes + repair_tolerance_minutes
                 )
                 breaks_timeline = destination.start_minute < origin.end_minute + duration
-                if exceeds_safe and breaks_timeline:
+                if breaks_timeline:
                     repair_days.add(day)
+                elif exceeds_safe:
+                    warnings.append(
+                        f"Route detail exceeded matrix safe duration for {origin_id} -> "
+                        f"{destination_id}; existing schedule slack retained a valid timeline."
+                    )
             elif duration > matrix_travel.safe_minutes:
                 repair_days.add(day)
             if detail.provider == STRAIGHT_LINE_PROVIDER:

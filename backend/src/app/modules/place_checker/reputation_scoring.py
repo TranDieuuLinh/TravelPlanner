@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from math import log1p
 
 from app.modules.place_checker.planner_category import planner_category
+from app.modules.place_checker.planner_category import planner_category_for_candidate
 from app.modules.place_checker.retrieval_contract import RetrievedCandidate
 from app.shared.tools.bayesian_rating import (
     BayesianRatingPrior,
@@ -38,7 +39,12 @@ def build_reputation_profiles(
     observations: dict[str, list[tuple[float | None, int | None]]] = {}
     for candidate in candidates:
         metadata = candidate.metadata
-        category = planner_category(candidate.category)
+        category = planner_category_for_candidate(
+            candidate.category,
+            name=candidate.canonical_name,
+            tags=candidate.tags,
+            pool_category=candidate.pool_category,
+        )
         observations.setdefault(category, []).append(
             (
                 metadata.rating if metadata else None,
@@ -66,7 +72,14 @@ def reputation_components(
     profiles: dict[str, CategoryReputationProfile],
 ) -> tuple[float, float]:
     metadata = candidate.metadata
-    profile = profiles.get(planner_category(candidate.category))
+    profile = profiles.get(
+        planner_category_for_candidate(
+            candidate.category,
+            name=candidate.canonical_name,
+            tags=candidate.tags,
+            pool_category=candidate.pool_category,
+        )
+    )
     if metadata is None or profile is None:
         return 0.0, 0.0
 

@@ -136,6 +136,7 @@ class SourceMixAudit(PlannerContractModel):
 class ItineraryPlannerOutput(PlannerContractModel):
     destination: str
     timezone: str
+    people: int = Field(ge=1, le=100)
     accommodation: PlannerAccommodation | None = None
     accommodation_nights: int = Field(default=0, ge=0, le=29)
     days: list[ItineraryDay]

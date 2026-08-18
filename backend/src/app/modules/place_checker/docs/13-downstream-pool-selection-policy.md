@@ -1,5 +1,7 @@
 # Chính sách bốc candidate cho flow sau PlaceChecker
 
+Cập nhật lần cuối: 2026-08-18.
+
 ## Ranh giới
 
 PlaceChecker không gán ngày hoặc buổi. Module chỉ trả pool đã xác minh cùng:
@@ -10,10 +12,17 @@ PlaceChecker không gán ngày hoặc buổi. Module chỉ trả pool đã xác 
 - preference matches, avoid conflicts và suitability;
 - score, tọa độ, chi phí và data quality.
 
-Pool có ba quota độc lập: reserve 20 `TravelPlace`/ngày, 16 `Restaurant`/ngày
-và 6 `DrinkDessert`/`Entertainment` mỗi ngày.
-Food reserve chọn Item trước theo sáu Style food/drink, target mềm `2 × days`
-cho mỗi Style, rồi truy ngược `Offer_Item` sang `Restaurant`/`DrinkDessert`.
+Pool có ba quota độc lập: reserve 22 `TravelPlace`/ngày, 16 `Restaurant`/ngày
+và 6 `DrinkDessert`/`Entertainment` mỗi ngày. TravelPlace tăng để bảo vệ
+preflight; trong compact pool, Entertainment tùy chọn có thể rơi vào ban ngày
+08:00-18:00 có cap riêng nhỏ hơn quota toàn ngày.
+Target 22 TravelPlace/ngày điều khiển retrieval và ranking. Hard handoff gate
+riêng chỉ yêu cầu 8 TravelPlace/ngày; vì vậy pool đủ lớn để Planner tối ưu sẽ
+không bị chặn chỉ vì nguồn live không lấp đầy toàn bộ reserve mong muốn.
+Ba Style bữa chính active mặc định cho meal feasibility. Style food/drink khác
+chỉ active khi resolve từ preference hoặc input Item. Food reserve chọn Item
+trước, target mềm `2 × days` cho mỗi Style active, rồi truy ngược `Offer_Item`
+sang `Restaurant`/`DrinkDessert`.
 Trong từng anchor region, Item và quán chưa dùng được ưu tiên; Item chỉ được lặp
 khi lựa chọn khác đã cạn. Food hard feasibility vẫn là unique matching cho ba
 meal slot/ngày; Style coverage không thay thế meal-window gate.
@@ -26,14 +35,50 @@ quán user-requested rồi quán đã ghép và vẫn chặn tổng Restaurant t
 
 TravelPlace selector dùng coverage mềm trên phần candidate retrieval cần thêm:
 
-- khoảng 6/14 có evidence `Special_Experience` thật;
+Core retrieval luôn có query `famous landmark must see top attraction`, query
+`iconic historic landmark museum temple old quarter` và query `authentic local
+cultural special experience` riêng, không phụ thuộc query chung `travel place`
+hay theme query.
+
+- khoảng 8/14 có evidence hoặc provenance tag `Special_Experience` đã duyệt;
 - khoảng 4/14 có popularity signal từ Bayesian quality và `log(reviewCount)`;
 - phần còn lại theo ranking diversity/preference/geography đã có.
 
+Popular candidate phải có ít nhất 500 review và popularity score từ 0,70;
+mọi candidate chỉ có review signal nhưng chưa đạt hai ngưỡng này không được tính
+đã lấp popular target. Trước scoring/quota/compact projection, semantic category
+guard chuyển các tên/tag rõ ràng là music box, karaoke, golf, billiard/bi-a,
+bowling, studio, game center, massage/trị liệu, spa hoặc retail store/souvenir
+từ `TravelPlace` sai sang `Entertainment`.
+Provenance `pool_category=shopping` là tín hiệu tổng quát cho cùng mapping, tránh
+phải hard-code từng thương hiệu retail từ nguồn live.
+Ở compact boundary, provider note được dùng làm semantic context để chuyển art
+supply store, photo booth, garden center, plant service và venue thương mại
+tương tự khỏi TravelPlace trước khi áp cap Entertainment.
+Food-name guard sửa nguồn gắn nhầm quán phở/bún/cơm/lẩu/mì thành leisure về
+`Restaurant` trước khi chia quota.
+
 Candidate được dedup giữa bucket; thiếu bucket thì ranking chung bù đủ target.
-Đây là reserve toàn chuyến `14 × days`, không phải quota cứng cho từng itinerary
+Đây là reserve TravelPlace toàn chuyến `22 × days`, không phải quota cứng cho từng itinerary
 day. FinalItineraryPlanner áp tỷ lệ khi đã biết số slot sáng/tối. Không xóa
 candidate khỏi PlaceChecker chỉ vì chưa được bốc vào một slot.
+
+Entertainment tùy chọn do hệ thống tìm phải có Bayesian-adjusted rating tối
+thiểu 4,2/5. Candidate direct-user/URL không qua quality gate này. Với candidate
+có thể xếp 08:00-18:00, compact selector chỉ giữ tối đa
+`max(1, ceil(days / 3))`; candidate chỉ khả thi buổi tối vẫn cạnh tranh trong
+quota chung.
+Đây là giảm reserve trước Planner, không phải gán lịch tại PlaceChecker.
+
+Selector Style tổng quát hoạt động trước thematic retrieval. Preference được
+resolve sang Style ID; input Item được resolve bằng canonical name/alias sang
+Item ID. Style có Item đi theo `Style <- Has_Style - Item <- Offer_Item - holder`;
+Style không có Item dùng direct holder `Has_Style`. Holder hợp lệ gồm
+`TravelPlace`, `Restaurant` và `DrinkDessert` trong đúng cây ADM. Mỗi Style
+active có target `2 × days`; một `place_id` chỉ được chọn một lần trong pool.
+Thứ tự fill là Style deficit, requested Item deficit, tag ít dùng,
+relationship, quality và khoảng cách anchor. Bộ đếm chỉ tồn tại trong request.
+Thiếu dữ liệu trả coverage và reason theo Style, không tạo candidate giả.
 
 ## Thứ tự điều kiện
 
@@ -78,9 +123,11 @@ tạo diversity group. `pool_category` chỉ ghi query intent đã tìm ra candi
 không được coi là category/tag thật và không tham gia diversity. `Has_Style`
 được tách thành `styles` ở compact boundary thay vì dùng làm tag diversity.
 Phần fill cuối ưu tiên tag ít xuất hiện và soft-cap một tag rộng ở tối đa 3
-candidate khi còn tag khác để thay thế. Category được chuẩn hóa từ `entity_type`
-trước khi chia pool; alias `cafe`/`coffee`/`DrinkDessert` được xem là
-`drink_dessert`, còn `place_id` vẫn giữ nguyên để truy vết.
+candidate khi còn tag khác để thay thế. PostgreSQL adapter ánh xạ
+`entity_type` thành `category` canonical; các bước downstream tiếp tục
+chuẩn hóa `category` trước khi chia pool. Alias
+`cafe`/`coffee`/`DrinkDessert` được xem là `drink_dessert`, còn `place_id`
+không bị đổi theo category để giữ khả năng truy vết.
 Relationship `Special_Experience` pending không tạo special slot. Query khám
 phá chỉ nhận relationship candidate khi relation/style term khớp; Special
 Experience chung không bypass điều kiện này.
