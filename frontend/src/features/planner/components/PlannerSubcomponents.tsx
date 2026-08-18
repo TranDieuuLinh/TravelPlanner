@@ -1,12 +1,14 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import type {
+  PlaceSuggestion,
   TransportLeg,
   TravelPlan,
   UnscheduledPlace,
 } from "@/features/planner/api/plans";
+import { searchPlaces } from "@/features/planner/api/plans";
 import {
   MapPinIcon,
   TransportModeIcon,
@@ -27,6 +29,19 @@ import {
 } from "@/features/planner/lib/planner-formatters";
 
 const ITINERARY_NO_IMAGE_SRC = "/images/penguin-no-image.png";
+
+type UnscheduledPlaceMatch = {
+  rank?: number;
+  placeId?: string | null;
+  name: string;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  rating?: number | null;
+  reviewCount?: number | null;
+  imageUrl?: string | null;
+  placeType?: string | null;
+};
 
 type Accommodation = NonNullable<TravelPlan["accommodation"]>;
 
@@ -297,23 +312,76 @@ export function AccommodationRouteStrip({
 }
 
 export function UnscheduledPlacesSection({
-  candidateResolutionProgress = {},
+  dayOptions = [],
+  destination,
   disabled = false,
-  onConfirmCandidate,
   onDismissPlace,
+  onSelectMatch,
   places,
 }: {
-  candidateResolutionProgress?: Record<
-    string,
-    { key: string; status: "queued" | "resolving" }
-  >;
+  dayOptions?: number[];
+  destination?: string | null;
   disabled?: boolean;
-  onConfirmCandidate?: (place: UnscheduledPlace, matchRank: number) => void;
   onDismissPlace?: (place: UnscheduledPlace) => void;
+  onSelectMatch?: (
+    place: UnscheduledPlace,
+    match: UnscheduledPlaceMatch,
+    day: number,
+  ) => void;
   places: UnscheduledPlace[];
 }) {
-  const candidateQueueActive =
-    Object.keys(candidateResolutionProgress).length > 0;
+  const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<Record<string, number>>({});
+  const [searchQuery, setSearchQuery] = useState<Record<string, string>>({});
+  const [searchState, setSearchState] = useState<
+    Record<
+      string,
+      { loading: boolean; completed: boolean; error: string | null; results: PlaceSuggestion[] }
+    >
+  >({});
+
+  const placeKey = (place: UnscheduledPlace, index: number) =>
+    `${place.candidateId ?? place.placeId ?? place.name}-${index}`;
+  const defaultDay = (place: UnscheduledPlace) =>
+    place.day != null && dayOptions.includes(place.day)
+      ? place.day
+      : dayOptions[0] ?? 1;
+
+  async function searchMatches(
+    place: UnscheduledPlace,
+    key: string,
+    query = searchQuery[key] ?? place.name,
+  ) {
+    if (disabled) return;
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length < 2) return;
+    setOpenMenuKey(null);
+    setSearchState((current) => ({
+      ...current,
+      [key]: { loading: true, completed: false, error: null, results: [] },
+    }));
+    try {
+      const results = await searchPlaces(
+        normalizedQuery,
+        destination ?? undefined,
+        5,
+      );
+      setSearchState((current) => ({
+        ...current,
+        [key]: { loading: false, completed: true, error: null, results },
+      }));
+    } catch (caught) {
+      setSearchState((current) => ({
+        ...current,
+        [key]: {
+          loading: false,
+          completed: true,
+          error: caught instanceof Error ? caught.message : "Không thể tìm địa điểm.",
+          results: [],
+        },
+      }));
+    }
+  }
 
   if (places.length === 0) {
     return (
@@ -333,6 +401,7 @@ export function UnscheduledPlacesSection({
       </header>
       <div className="itineraryStops unscheduledPlaceList">
           {places.map((place, index) => {
+            const key = placeKey(place, index);
             const displayName = itineraryDisplayName(place.name);
             const sourceActivity = formatSourceNoteForDisplay(
               place.sourceActivity
@@ -381,6 +450,60 @@ export function UnscheduledPlacesSection({
                         </div>
                       </header>
                         <div className="itineraryPlaceQuickActions">
+                          <div className="itineraryPlaceQuickActionMenu">
+                            <button
+                              aria-expanded={openMenuKey === key}
+                              aria-haspopup="menu"
+                              aria-label={`Mở thao tác cho ${displayName}`}
+                              className="itineraryQuickActionMenuButton"
+                              disabled={disabled}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenMenuKey(openMenuKey === key ? null : key);
+                              }}
+                              title="Thao tác"
+                              type="button"
+                            >
+                              <svg aria-hidden="true" viewBox="0 0 24 24">
+                                <circle cx="5" cy="12" r="1.5" />
+                                <circle cx="12" cy="12" r="1.5" />
+                                <circle cx="19" cy="12" r="1.5" />
+                              </svg>
+                            </button>
+                            {openMenuKey === key ? (
+                              <div className="itineraryPlaceQuickActionPopup" role="menu">
+                                <button
+                                  aria-label={`Sửa và tìm lại ${displayName}`}
+                                  className="itineraryActionButton"
+                                  onClick={() => void searchMatches(place, key)}
+                                  role="menuitem"
+                                  title="Sửa / tìm lại địa điểm"
+                                  type="button"
+                                >
+                                  <svg viewBox="0 0 24 24">
+                                    <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.9-10.9a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z" />
+                                  </svg>
+                                </button>
+                                {onDismissPlace ? (
+                                  <button
+                                    aria-label={`Xóa ${displayName}`}
+                                    className="itineraryActionButton danger"
+                                    onClick={() => {
+                                      setOpenMenuKey(null);
+                                      onDismissPlace(place);
+                                    }}
+                                    role="menuitem"
+                                    title="Xóa khỏi kế hoạch"
+                                    type="button"
+                                  >
+                                    <svg viewBox="0 0 24 24">
+                                      <path d="M4 7h16M9 7V4h6v3M18 7l-1 13H7L6 7M10 11v5M14 11v5" />
+                                    </svg>
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
                           {sourceLabel?.url ? (
                             <a
                               aria-label={`Mở link ${sourceLabel.text} của ${displayName}`}
@@ -432,38 +555,106 @@ export function UnscheduledPlacesSection({
                         <span>Chưa xếp</span>
                         <strong>{place.reason}</strong>
                       </div>
-                      {place.reasonCode === "identity_needs_review" &&
-                      (place.topMatches?.length ?? 0) > 0 ? (
+                      {(() => {
+                        const existingMatches = (place.topMatches ?? []).map(
+                          (match) => ({
+                            rank: match.rank,
+                            name: match.name,
+                            placeId: match.placeId,
+                            address: match.address,
+                            latitude: match.latitude,
+                            longitude: match.longitude,
+                            rating: null,
+                            reviewCount: null,
+                            imageUrl: null,
+                            placeType: null,
+                          }),
+                        );
+                        const loadedMatches = searchState[key]?.results ?? [];
+                        const matches: UnscheduledPlaceMatch[] =
+                          existingMatches.length > 0 ? existingMatches : loadedMatches;
+                        const state = searchState[key];
+                        return state?.loading || state?.completed || matches.length > 0 ? (
                         <div
                           aria-label={`Chọn địa điểm đúng cho ${displayName}`}
                           className="unscheduledMatchPicker"
                         >
-                          <span>Kết quả cần xác nhận</span>
+                          <span>Top 5 kết quả · chọn để thêm vào lịch</span>
+                          <div className="unscheduledSearchControl">
+                            <input
+                              aria-label={`Sửa từ khóa tìm kiếm cho ${displayName}`}
+                              disabled={disabled || state?.loading}
+                              onChange={(event) =>
+                                setSearchQuery((current) => ({
+                                  ...current,
+                                  [key]: event.target.value,
+                                }))
+                              }
+                              placeholder="Sửa tên địa điểm để tìm lại"
+                              value={searchQuery[key] ?? place.name}
+                            />
+                            <button
+                              disabled={disabled || state?.loading}
+                              onClick={() =>
+                                void searchMatches(place, key, searchQuery[key] ?? place.name)
+                              }
+                              type="button"
+                            >
+                              Tìm
+                            </button>
+                          </div>
+                          {dayOptions.length > 0 ? (
+                            <label className="unscheduledDayPicker">
+                              <span>Thêm vào ngày</span>
+                              <select
+                                aria-label={`Chọn ngày cho ${displayName}`}
+                                disabled={disabled}
+                                onChange={(event) =>
+                                  setSelectedDay((current) => ({
+                                    ...current,
+                                    [key]: Number(event.target.value),
+                                  }))
+                                }
+                                value={selectedDay[key] ?? defaultDay(place)}
+                              >
+                                {dayOptions.map((day) => (
+                                  <option key={day} value={day}>Ngày {day}</option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
+                          {state?.loading ? (
+                            <small className="unscheduledSearchStatus">Đang tìm 5 lựa chọn…</small>
+                          ) : null}
+                          {state?.error ? (
+                            <small className="unscheduledSearchStatus isError">{state.error}</small>
+                          ) : null}
+                          {!state?.loading && state?.completed && matches.length === 0 && !state.error ? (
+                            <small className="unscheduledSearchStatus">Không tìm thấy kết quả phù hợp.</small>
+                          ) : null}
                           <div className="unscheduledMatchList">
-                            {place.topMatches?.slice(0, 3).map((match) => {
-                              const buttonKey = `${place.candidateId ?? ""}:${match.rank}`;
-                              const resolutionProgress = place.candidateId
-                                ? candidateResolutionProgress[place.candidateId]
-                                : undefined;
+                            {matches.slice(0, 5).map((match, matchIndex) => {
                               const canChoose = Boolean(
-                                onConfirmCandidate &&
-                                place.candidateId &&
+                                onSelectMatch &&
                                 match.latitude != null &&
-                                match.longitude != null
+                                match.longitude != null &&
+                                !state?.loading,
                               );
-                              const handleChoice = onConfirmCandidate;
                               return (
                                 <button
                                   className="unscheduledMatchButton"
                                   disabled={
                                     !canChoose ||
-                                    Boolean(resolutionProgress) ||
-                                    (disabled && !candidateQueueActive)
+                                    disabled
                                   }
-                                  key={`${match.rank}-${match.name}`}
+                                  key={`${match.rank ?? matchIndex}-${match.name}`}
                                   onClick={() => {
-                                    if (canChoose && handleChoice) {
-                                      handleChoice(place, match.rank);
+                                    if (canChoose && onSelectMatch) {
+                                      onSelectMatch(
+                                        place,
+                                        match,
+                                        selectedDay[key] ?? defaultDay(place),
+                                      );
                                     }
                                   }}
                                   title={
@@ -473,13 +664,7 @@ export function UnscheduledPlacesSection({
                                   }
                                   type="button"
                                 >
-                                  <strong>
-                                    {resolutionProgress?.key === buttonKey
-                                      ? resolutionProgress.status === "queued"
-                                        ? "Đã xếp hàng..."
-                                        : "Đang chọn..."
-                                      : match.name}
-                                  </strong>
+                                  <strong>{match.name}</strong>
                                   {match.address ? (
                                     <small>{match.address}</small>
                                   ) : null}
@@ -488,7 +673,17 @@ export function UnscheduledPlacesSection({
                             })}
                           </div>
                         </div>
-                      ) : null}
+                        ) : (
+                          <button
+                            className="unscheduledSearchButton"
+                            disabled={disabled}
+                            onClick={() => void searchMatches(place, key)}
+                            type="button"
+                          >
+                            Tìm top 5 địa điểm để chọn
+                          </button>
+                        );
+                      })()}
                       {place.day != null || sourceActivity ? (
                         <p className="unscheduledPlaceContext">
                           {place.day != null

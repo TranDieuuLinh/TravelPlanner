@@ -235,6 +235,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
             priority=item.priority,
             reason_code=item.reason_code,
             message=item.message,
+            source_refs=tuple(item.source_refs),
         )
         for item in payload.excluded_candidates
     ]

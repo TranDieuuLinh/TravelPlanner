@@ -162,6 +162,48 @@ class TripChatService:
         )
         return status, chat
 
+    async def confirm_unscheduled_place(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        name: str, place_id: str | None, candidate_id: str | None,
+        day: int, item: dict[str, Any], position: int | None = None,
+    ) -> tuple[PlanItemMutationStatus, TripChat | None]:
+        status = await self.repository.confirm_unscheduled_place(
+            user_id,
+            chat_id,
+            expected_revision=expected_revision,
+            name=name,
+            place_id=place_id,
+            candidate_id=candidate_id,
+            day=day,
+            item=item,
+            position=position,
+        )
+        chat = (
+            await retry_transient_database(lambda: self.repository.get_chat(user_id, chat_id))
+            if status == "updated"
+            else None
+        )
+        return status, chat
+
+    async def remove_unscheduled_place(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        name: str, place_id: str | None, candidate_id: str | None,
+    ) -> tuple[PlanItemMutationStatus, TripChat | None]:
+        status = await self.repository.remove_unscheduled_place(
+            user_id,
+            chat_id,
+            expected_revision=expected_revision,
+            name=name,
+            place_id=place_id,
+            candidate_id=candidate_id,
+        )
+        chat = (
+            await retry_transient_database(lambda: self.repository.get_chat(user_id, chat_id))
+            if status == "updated"
+            else None
+        )
+        return status, chat
+
     async def reorder_plan_items(
         self, user_id: int, chat_id: str, *, expected_revision: int,
         day: int, item_ids: list[str],

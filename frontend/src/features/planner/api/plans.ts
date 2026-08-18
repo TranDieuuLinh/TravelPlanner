@@ -783,6 +783,58 @@ export async function confirmTripChatCandidateResolution(input: {
   );
 }
 
+export async function confirmTripChatUnscheduledPlace(input: {
+  chatId: string;
+  expectedRevision: number;
+  place: Pick<
+    UnscheduledPlace,
+    | "name"
+    | "placeId"
+    | "candidateId"
+    | "sourceRefs"
+    | "sourceProvider"
+    | "sourceActivity"
+  >;
+  day: number;
+  match: {
+    placeId?: string | null;
+    name: string;
+    address?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    rating?: number | null;
+    reviewCount?: number | null;
+    imageUrl?: string | null;
+    placeType?: string | null;
+  };
+}): Promise<TripChat> {
+  const form = new FormData();
+  form.append("expectedRevision", String(input.expectedRevision));
+  form.append("name", input.place.name);
+  form.append("day", String(input.day));
+  if (input.place.placeId) form.append("placeId", input.place.placeId);
+  if (input.place.candidateId) form.append("candidateId", input.place.candidateId);
+  form.append("selectedName", input.match.name);
+  if (input.match.placeId) form.append("selectedPlaceId", input.match.placeId);
+  if (input.match.address) form.append("address", input.match.address);
+  if (input.match.placeType) form.append("placeType", input.match.placeType);
+  if (input.match.latitude != null) form.append("latitude", String(input.match.latitude));
+  if (input.match.longitude != null) form.append("longitude", String(input.match.longitude));
+  if (input.match.rating != null) form.append("rating", String(input.match.rating));
+  if (input.match.reviewCount != null) form.append("reviewCount", String(input.match.reviewCount));
+  if (input.match.imageUrl) form.append("imageUrl", input.match.imageUrl);
+  for (const sourceRef of input.place.sourceRefs ?? []) {
+    form.append("sourceRefs", sourceRef);
+  }
+  if (input.place.sourceProvider) form.append("sourceProvider", input.place.sourceProvider);
+  if (input.place.sourceActivity) form.append("sourceActivity", input.place.sourceActivity);
+
+  return apiFetch<TripChat>(
+    `/v1/trip-chats/${input.chatId}/plan/unscheduled-places/confirm`,
+    { method: "POST", body: form },
+  );
+}
+
 export async function enqueueTripChatUrls(input: {
   chatId: string;
   content: string;

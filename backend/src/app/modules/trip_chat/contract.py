@@ -64,7 +64,11 @@ TransportSelectionStatus = Literal[
 ]
 
 PlanItemMutationStatus = Literal[
-    "updated", "chat_not_found", "revision_conflict", "day_not_found"
+    "updated",
+    "chat_not_found",
+    "revision_conflict",
+    "day_not_found",
+    "unscheduled_not_found",
 ]
 
 

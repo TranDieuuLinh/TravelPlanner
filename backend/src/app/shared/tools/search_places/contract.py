@@ -114,6 +114,7 @@ class PlaceSearchMatch(ToolModel):
     provider: str
     provider_id: str | None = None
     name: str
+    aliases: list[str] = Field(default_factory=list)
     canonical_type: str | None = None
     address: str | None = None
     coordinates: Coordinates | None = None

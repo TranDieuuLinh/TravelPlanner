@@ -51,9 +51,9 @@ external adapter và downstream planning.
 30. Trả partial output sau provider timeout.
 31. Reject day/route field khỏi PlaceChecker output.
 32. Chỉ project planner-ready và conditional place xuống downstream.
-33. Travel pool phải có ít nhất 20 candidate mỗi ngày; food pool phải unique
-    match được mọi slot `day × breakfast/lunch/dinner`; thiếu hard slot phải
-    block trước Planner dù tổng số Restaurant đã bằng `days * 3`.
+33. Travel reserve là quota mềm; thiếu reserve không block nếu hard meal pool
+    vẫn unique match được mọi slot `day × breakfast/lunch/dinner`; thiếu hard
+    slot phải block trước Planner dù tổng số Restaurant đã bằng `days * 3`.
 33a. Travel reserve đủ dữ liệu phải giữ coverage mềm tối thiểu 6/20
      `Special_Experience` và 4/20 popular; thiếu bucket phải fallback đủ pool.
 34. TravelPlace thiếu Restaurant `special_near` không block nếu general food

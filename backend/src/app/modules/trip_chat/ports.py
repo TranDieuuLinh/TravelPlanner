@@ -66,6 +66,31 @@ class TripChatRepository(Protocol):
         day: int, item: dict[str, Any], position: int | None = None,
     ) -> PlanItemMutationStatus: ...
 
+    async def confirm_unscheduled_place(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        name: str,
+        place_id: str | None,
+        candidate_id: str | None,
+        day: int,
+        item: dict[str, Any],
+        position: int | None = None,
+    ) -> PlanItemMutationStatus: ...
+
+    async def remove_unscheduled_place(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        name: str,
+        place_id: str | None,
+        candidate_id: str | None,
+    ) -> PlanItemMutationStatus: ...
+
     async def reorder_plan_items(
         self, user_id: int, chat_id: str, *, expected_revision: int,
         day: int, item_ids: list[str],

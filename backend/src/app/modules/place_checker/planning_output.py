@@ -388,11 +388,6 @@ class PlaceCheckerPlannerOutputBuilder:
 
     @staticmethod
     def _limit_optional_pool(candidates: list, limit: int) -> list:
-        indexed = list(enumerate(candidates))
-        indexed.sort(
-            key=lambda entry: (
-                0 if entry[1].priority in {"user_input", "url"} else 1,
-                entry[0],
-            )
-        )
-        return [candidate for _, candidate in indexed[:limit]]
+        priority = [c for c in candidates if c.priority in {"user_input", "url"}]
+        optional = [c for c in candidates if c.priority not in {"user_input", "url"}]
+        return priority + optional[: max(0, limit - len(priority))]

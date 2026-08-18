@@ -156,9 +156,14 @@ For Instagram pages that require a logged-in session, export a Netscape-format
 cookie file outside source control and set `EXPLORER_YTDLP_COOKIE_FILE` to its
 absolute path. TikTok does not use the yt-dlp fallback. Cookie files are ignored
 by the backend `.gitignore`; never commit or log them.
-Docker Compose loads provider, Explorer, and cloud database settings from
-`backend/.env` when that file exists; copy `.env.example` and set the cloud
-`DATABASE_URL` before starting the stack.
+Docker Compose loads provider, Explorer, and local PostgreSQL/pgvector settings
+from `backend/.env` when that file exists. The single Compose file includes the
+`postgres` service and the backend connects to it through the Docker service
+name:
+
+```bash
+docker compose --env-file backend/.env up -d
+```
 
 Run tests:
 

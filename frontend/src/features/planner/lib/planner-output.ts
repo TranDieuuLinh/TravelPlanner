@@ -20,6 +20,9 @@ export type PlannerOutputStop = {
   mealType?: string | null;
   coordinates: { latitude: number; longitude: number };
   address?: string | null;
+  sourceRefs?: string[];
+  sourceProvider?: string | null;
+  sourceActivity?: string | null;
   notes?: PlanSourceNote | string | null;
   personalNotes?: string | null;
   tags?: string[];
@@ -34,9 +37,16 @@ export type PlannerOutputStop = {
 };
 
 function plannerStopSourceRefs(stop: PlannerOutputStop): string[] {
-  if (!stop.notes || typeof stop.notes === "string") return [];
-  const sourceUrl = stop.notes.sourceUrl?.trim();
-  return sourceUrl && /^https?:\/\//i.test(sourceUrl) ? [sourceUrl] : [];
+  const noteUrl =
+    stop.notes && typeof stop.notes !== "string"
+      ? stop.notes.sourceUrl
+      : null;
+  return [noteUrl, ...(stop.sourceRefs ?? [])]
+    .map((value) => value?.trim() ?? "")
+    .filter(
+      (value, index, values) =>
+        /^https?:\/\//i.test(value) && values.indexOf(value) === index,
+    );
 }
 
 export type PlannerOutputLeg = {
@@ -104,6 +114,7 @@ export type ItineraryPlannerOutput = {
     priority: string;
     reasonCode: string;
     message: string;
+    sourceRefs?: string[];
   }>;
   discardedOptionalCount: number;
   warnings: string[];
@@ -296,6 +307,8 @@ export function plannerOutputToTravelPlan(
               : "TravelPlace",
         source: "itinerary_planner",
         sourceRefs: plannerStopSourceRefs(stop),
+        sourceProvider: stop.sourceProvider ?? null,
+        sourceActivity: stop.sourceActivity ?? null,
         tags: stop.tags ?? [],
         imageUrls: stop.imageUrls ?? [],
         notes: stop.notes ?? null,
@@ -361,6 +374,7 @@ export function plannerOutputToTravelPlan(
       name: item.name,
       reasonCode: item.reasonCode,
       reason: item.message,
+      sourceRefs: item.sourceRefs ?? [],
     })),
     routeEnrichmentStatus: "completed",
   };

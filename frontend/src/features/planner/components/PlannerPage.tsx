@@ -30,7 +30,7 @@ import {
   addTripChatItem,
   calculateDayDirections,
   bootstrapTripChats,
-  confirmTripChatCandidateResolution,
+  confirmTripChatUnscheduledPlace,
   createTripChat,
   deleteAllTripChats,
   deleteTripChat,
@@ -1289,19 +1289,6 @@ function Planner() {
   const [editSearchCompleted, setEditSearchCompleted] = useState(false);
   const [editSearchFailed, setEditSearchFailed] = useState(false);
   const [mutatingItem, setMutatingItem] = useState(false);
-  const [candidateResolutionProgress, setCandidateResolutionProgress] =
-    useState<Record<string, { key: string; status: "queued" | "resolving" }>>(
-      {}
-    );
-  const candidateResolutionQueueRef = useRef<
-    Array<{
-      chatId: string;
-      matchRank: number;
-      place: UnscheduledPlace;
-    }>
-  >([]);
-  const candidateResolutionCandidateIdsRef = useRef(new Set<string>());
-  const candidateResolutionRunningRef = useRef(false);
   const [noteEditor, setNoteEditor] = useState<{
     target?: "item" | "accommodation";
     day: number;
@@ -4332,82 +4319,6 @@ function Planner() {
     );
   }
 
-  function handleConfirmCandidateResolution(
-    place: UnscheduledPlace,
-    matchRank: number
-  ) {
-    if (!activeChatId || !place.candidateId) return;
-    if (candidateResolutionCandidateIdsRef.current.has(place.candidateId))
-      return;
-
-    const key = `${place.candidateId}:${matchRank}`;
-    candidateResolutionCandidateIdsRef.current.add(place.candidateId);
-    candidateResolutionQueueRef.current.push({
-      chatId: activeChatId,
-      matchRank,
-      place,
-    });
-    setCandidateResolutionProgress((current) => ({
-      ...current,
-      [place.candidateId as string]: { key, status: "queued" },
-    }));
-    setError("");
-    void drainCandidateResolutionQueue(chatRevision);
-  }
-
-  async function drainCandidateResolutionQueue(initialRevision: number) {
-    if (candidateResolutionRunningRef.current) return;
-
-    candidateResolutionRunningRef.current = true;
-    setMutatingItem(true);
-    let expectedRevision = initialRevision;
-
-    try {
-      while (candidateResolutionQueueRef.current.length > 0) {
-        const choice = candidateResolutionQueueRef.current.shift();
-        if (!choice?.place.candidateId) continue;
-
-        const candidateId = choice.place.candidateId;
-        const key = `${candidateId}:${choice.matchRank}`;
-        setCandidateResolutionProgress((current) => ({
-          ...current,
-          [candidateId]: { key, status: "resolving" },
-        }));
-
-        try {
-          const updated = await confirmTripChatCandidateResolution({
-            chatId: choice.chatId,
-            expectedRevision,
-            candidateId,
-            matchRank: choice.matchRank,
-          });
-          expectedRevision = updated.revision;
-          if (activeChatIdRef.current === choice.chatId) {
-            applyTripChat(updated);
-          }
-        } catch (caught) {
-          if (activeChatIdRef.current === choice.chatId) {
-            setError(
-              caught instanceof Error
-                ? caught.message
-                : "Không thể xác nhận địa điểm này."
-            );
-          }
-        } finally {
-          candidateResolutionCandidateIdsRef.current.delete(candidateId);
-          setCandidateResolutionProgress((current) => {
-            const next = { ...current };
-            delete next[candidateId];
-            return next;
-          });
-        }
-      }
-    } finally {
-      candidateResolutionRunningRef.current = false;
-      setMutatingItem(false);
-    }
-  }
-
   async function handleDismissUnscheduledPlace(place: UnscheduledPlace) {
     if (!activeChatId || mutatingItem) return;
     if (
@@ -4431,6 +4342,55 @@ function Planner() {
         caught instanceof Error
           ? caught.message
           : "Không thể bỏ địa điểm khỏi kế hoạch."
+      );
+    } finally {
+      setMutatingItem(false);
+    }
+  }
+
+  async function handleSelectUnscheduledPlace(
+    place: UnscheduledPlace,
+    match: {
+      placeId?: string | null;
+      name: string;
+      address?: string | null;
+      latitude?: number | null;
+      longitude?: number | null;
+      rating?: number | null;
+      reviewCount?: number | null;
+      imageUrl?: string | null;
+      placeType?: string | null;
+    },
+    day: number,
+  ) {
+    if (!activeChatId || mutatingItem) return;
+    setMutatingItem(true);
+    setError("");
+    try {
+      const updated = await confirmTripChatUnscheduledPlace({
+        chatId: activeChatId,
+        expectedRevision: chatRevision,
+        place,
+        day,
+        match,
+      });
+      // Keep the last drawable plan on screen if an incomplete backend
+      // snapshot slips through. The mutation itself succeeded, so the user
+      // can retry after the server returns a complete projection instead of
+      // being dropped into a blank planner.
+      if (!updated.currentPlan) {
+        setChatRevision(updated.revision);
+        setError("Địa điểm đã được thêm nhưng bản kế hoạch chưa hoàn chỉnh. Vui lòng thử tải lại lịch trình.");
+        return;
+      }
+      applyTripChat(updated);
+      void refreshPlanDayRoutes(updated.currentPlan, day);
+      showPlannerToast(`Đã thêm ${itineraryDisplayName(match.name)} vào Ngày ${day}`);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Không thể thêm địa điểm vào lịch trình.",
       );
     } finally {
       setMutatingItem(false);
@@ -6578,14 +6538,11 @@ function Planner() {
                           (displayedPlan.unscheduledPlaces?.length ?? 0) >
                             0) ? (
                           <UnscheduledPlacesSection
-                            candidateResolutionProgress={
-                              candidateResolutionProgress
-                            }
+                            dayOptions={displayedPlan.days.map((day) => day.day)}
+                            destination={displayedPlan.destination}
                             disabled={mutatingItem}
-                            onConfirmCandidate={
-                              handleConfirmCandidateResolution
-                            }
                             onDismissPlace={handleDismissUnscheduledPlace}
+                            onSelectMatch={handleSelectUnscheduledPlace}
                             places={displayedPlan.unscheduledPlaces ?? []}
                           />
                         ) : null}

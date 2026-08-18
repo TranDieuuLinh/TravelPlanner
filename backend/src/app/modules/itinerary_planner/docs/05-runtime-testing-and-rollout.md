@@ -1,5 +1,7 @@
 # Phase 5: Runtime, route repair, testing và rollout
 
+Cập nhật lần cuối: 2026-08-18
+
 Trạng thái: đã triển khai route-detail enrichment cho selected arcs và
 accommodation transfers, fallback có warning khi thiếu geometry, fallback đường
 chim bay khi Valhalla không sẵn sàng, affected-day repair lặp đến khi route
@@ -66,6 +68,17 @@ khác và không xuất lịch sai.
 
 Node chỉ đọc/ghi state và gọi service. Retry, timeout và fallback policy nằm
 trong service/adapter.
+
+## Beam Search runtime
+
+Nhánh `build_beam_search_itinerary_planner_graph` dùng Beam Search với
+backtracking theo frontier ngày. Mỗi state giữ tập priority ID đã chọn; khi
+prune, số `user_input` được ưu tiên trước số `url`, sau đó mới đến meal,
+category, utility và cost. Diversity signature giữ riêng các nhánh có priority
+ID khác nhau dù cùng travel-place signature. Candidate `user_input` hoặc `url`
+đã qua preprocessing nhưng không được optimizer chọn vẫn được finalization đưa
+vào `unscheduled` với reason code `not_selected_by_optimizer`; candidate bị
+loại trước optimizer giữ reason code validation/feasibility ban đầu.
 
 ## State nội bộ
 

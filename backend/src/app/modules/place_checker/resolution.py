@@ -8,6 +8,7 @@ from app.modules.place_checker.contract import (
 from app.modules.place_checker.enums import (
     IdentityResolutionStatus,
     SimilarityMethod,
+    SourceTier,
 )
 from app.modules.place_checker.ports import NamedPlaceSearchTool
 from app.modules.place_checker.resolution_contract import (
@@ -281,6 +282,11 @@ class EntityResolutionService(EntityResolutionBatchMixin):
             relationships=match.relationship_evidence,
         )
         conflicts = list(match.rejection_reasons)
+        if (
+            candidate.source_tier == SourceTier.url
+            and not cls._has_explicit_name_match(candidate.name, match)
+        ):
+            conflicts.append("source_name_not_verified_by_catalog")
         if cls._has_address_conflict(address_hint, match.address):
             conflicts.append("address_conflict")
         return PlaceMatchOption(
@@ -314,6 +320,17 @@ class EntityResolutionService(EntityResolutionBatchMixin):
         if name_score == 1:
             return SimilarityMethod.alias, 1.0
         return SimilarityMethod.lexical_only, None
+
+    @staticmethod
+    def _has_explicit_name_match(
+        candidate_name: str,
+        match: PlaceSearchMatch,
+    ) -> bool:
+        normalized_candidate = normalize_text(candidate_name)
+        return normalized_candidate in {
+            normalize_text(name)
+            for name in (match.name, *match.aliases)
+        }
 
     @staticmethod
     def _address_hint(candidate: PlaceCandidateInput) -> str | None:

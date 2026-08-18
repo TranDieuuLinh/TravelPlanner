@@ -16,7 +16,9 @@ from app.modules.trip_chat.plan_snapshot import (
     delete_accommodation,
     select_transport_option,
     add_plan_item,
+    confirm_unscheduled_place,
     reorder_plan_items,
+    remove_unscheduled_place,
     update_accommodation,
     update_stop_personal_notes,
 )
@@ -221,6 +223,61 @@ class InMemoryTripChatRepository:
             "revision": chat.revision + 1,
             "current_planner_output": output,
             "has_itinerary": True,
+            "updated_at": datetime.now(timezone.utc),
+        })
+        return "updated"
+
+    async def confirm_unscheduled_place(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        name: str, place_id: str | None, candidate_id: str | None,
+        day: int, item: dict, position: int | None = None,
+    ) -> PlanItemMutationStatus:
+        chat = await self.get_chat(user_id, chat_id)
+        if chat is None:
+            return "chat_not_found"
+        if chat.revision != expected_revision:
+            return "revision_conflict"
+        output = deepcopy(chat.current_planner_output)
+        status = confirm_unscheduled_place(
+            output,
+            name=name,
+            place_id=place_id,
+            candidate_id=candidate_id,
+            day=day,
+            item=item,
+            position=position,
+        )
+        if status != "updated":
+            return status
+        self._chats[(user_id, chat_id)] = chat.model_copy(update={
+            "revision": chat.revision + 1,
+            "current_planner_output": output,
+            "has_itinerary": True,
+            "updated_at": datetime.now(timezone.utc),
+        })
+        return "updated"
+
+    async def remove_unscheduled_place(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        name: str, place_id: str | None, candidate_id: str | None,
+    ) -> PlanItemMutationStatus:
+        chat = await self.get_chat(user_id, chat_id)
+        if chat is None:
+            return "chat_not_found"
+        if chat.revision != expected_revision:
+            return "revision_conflict"
+        output = deepcopy(chat.current_planner_output)
+        status = remove_unscheduled_place(
+            output,
+            name=name,
+            place_id=place_id,
+            candidate_id=candidate_id,
+        )
+        if status != "updated":
+            return status
+        self._chats[(user_id, chat_id)] = chat.model_copy(update={
+            "revision": chat.revision + 1,
+            "current_planner_output": output,
             "updated_at": datetime.now(timezone.utc),
         })
         return "updated"

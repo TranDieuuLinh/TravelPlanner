@@ -5681,6 +5681,97 @@
   text-transform: uppercase;
 }
 
+.itinerary .unscheduledDayPicker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #6c7d78;
+  font-size: .58rem;
+  font-weight: 800;
+}
+
+.itinerary .unscheduledDayPicker select {
+  min-width: 92px;
+  border: 1px solid #d9b9a5;
+  border-radius: 7px;
+  background: #fffdfb;
+  color: #315a54;
+  padding: 5px 7px;
+  font: inherit;
+}
+
+.itinerary .unscheduledSearchControl {
+  display: flex;
+  gap: 5px;
+}
+
+.itinerary .unscheduledSearchControl input {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 1px solid #d9b9a5;
+  border-radius: 7px;
+  background: #fffdfb;
+  color: #2f3d39;
+  padding: 6px 8px;
+  font-size: .58rem;
+}
+
+.itinerary .unscheduledSearchControl input:focus-visible {
+  border-color: #2f7d6d;
+  outline: 2px solid rgba(47, 125, 109, .14);
+  outline-offset: 1px;
+}
+
+.itinerary .unscheduledSearchControl button {
+  border: 1px solid #2f7d6d;
+  border-radius: 7px;
+  background: #2f7d6d;
+  color: #fff;
+  padding: 5px 8px;
+  font-size: .58rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.itinerary .unscheduledSearchControl button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.itinerary .unscheduledSearchButton {
+  width: 100%;
+  border: 1px dashed #d9b9a5;
+  border-radius: 8px;
+  background: #fffdfb;
+  color: #934b2b;
+  padding: 9px;
+  font-size: .6rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.itinerary .unscheduledSearchButton:hover:not(:disabled),
+.itinerary .unscheduledSearchButton:focus-visible {
+  border-color: #2f7d6d;
+  color: #2f7d6d;
+  outline: none;
+}
+
+.itinerary .unscheduledSearchButton:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
+
+.itinerary .unscheduledSearchStatus {
+  color: #6c7d78;
+  font-size: .58rem;
+}
+
+.itinerary .unscheduledSearchStatus.isError {
+  color: #934b2b;
+}
+
 .itinerary .unscheduledMatchList {
   display: grid;
   gap: 6px;

@@ -25,9 +25,7 @@ from app.modules.place_checker.evidence import EvidenceEnrichmentService
 from app.modules.place_checker.graph import build_place_checker_pipeline_graph
 from app.modules.place_checker.input_projection import ExplorerInputProjector
 from app.modules.place_checker.item_resolution import InputItemResolutionService
-from app.modules.place_checker.planning_output import (
-    PlaceCheckerPlanningProjector,
-)
+from app.modules.place_checker.planning_output import PlaceCheckerPlanningProjector
 from app.modules.place_checker.output_contract import PlaceCheckerResult
 from app.modules.place_checker.pipeline import PlaceCheckerPipeline
 from app.modules.place_checker.resolution import EntityResolutionService
@@ -249,7 +247,7 @@ def test_pipeline_builds_rich_output_and_planning_projection() -> None:
     assert result.metadata.correlation_id == "correlation-1"
     assert metrics.records
     assert result.status.value == "blocked"
-    assert any("Planner candidate pools are incomplete" in item for item in result.warnings)
+    assert any("Planner meal candidate pool is incomplete" in item for item in result.warnings)
 
 
 def test_pipeline_graph_exposes_result_without_day_or_route_fields() -> None:
@@ -332,7 +330,7 @@ def test_orchestration_blocks_incomplete_candidate_pools_before_planner() -> Non
     assert isinstance(update["place_output"], PlaceCheckerResult)
     assert update["place_output"].status.value == "blocked"
     assert "planner_input" not in update
-    assert any("Planner candidate pools are incomplete" in item for item in update["warnings"])
+    assert any("Planner meal candidate pool is incomplete" in item for item in update["warnings"])
     assert update["place_output"].trip_context.destination.adm_id == ADM_ID
     assert update["place_output"].schema_version == "place_checker.v1"
 

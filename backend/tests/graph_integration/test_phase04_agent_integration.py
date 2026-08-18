@@ -127,3 +127,50 @@ def test_place_checker_fallback_receives_memory_candidates():
     )
 
     assert [place.name for place in calls[0]["places"]] == ["Hồ Tây", "Lăng Bác"]
+
+
+def test_new_url_input_does_not_inherit_stale_memory_duration():
+    nodes = RootNodes()
+
+    class ExplorerGraph:
+        async def ainvoke(self, payload):
+            return {"output": explorer_output()}
+
+    nodes.explorer = ExplorerGraph()
+    memory = memory_with_places().model_copy(update={"duration_days": 20})
+
+    update = asyncio.run(
+        nodes.run_explorer(
+            {
+                "message": "Lên plan Hà Nội",
+                "urls": ["https://example.test/hanoi"],
+                "conversation_memory": memory,
+                "warnings": [],
+            }
+        )
+    )
+
+    assert update["explorer_output"].days == 3
+
+
+def test_follow_up_without_new_input_inherits_memory_duration():
+    nodes = RootNodes()
+
+    class ExplorerGraph:
+        async def ainvoke(self, payload):
+            return {"output": explorer_output()}
+
+    nodes.explorer = ExplorerGraph()
+    memory = memory_with_places().model_copy(update={"duration_days": 20})
+
+    update = asyncio.run(
+        nodes.run_explorer(
+            {
+                "message": "Lên plan các điểm bên trên",
+                "conversation_memory": memory,
+                "warnings": [],
+            }
+        )
+    )
+
+    assert update["explorer_output"].days == 20

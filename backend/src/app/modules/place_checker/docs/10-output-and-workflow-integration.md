@@ -134,10 +134,12 @@ Contract gọn dùng camelCase và gồm `trip.timezone`, `startDate`, tách
 liên quan thay vì tên tag.
 
 Trước boundary Planner, builder đếm đúng candidate sau toàn bộ filter. Travel
-pool phải đạt target `days * 20` (tối đa 420 cho contract 30 ngày); food pool chỉ hard-require
+reserve target theo số ngày là quota mềm; thiếu reserve không làm
+`PlaceCheckerResult.status=blocked`. Builder không cắt candidate có priority
+`user_input`/`url` khi vượt reserve cap, để FinalItineraryPlanner tự chọn và
+đưa candidate không xếp được vào `unscheduled`. Food pool chỉ hard-require
 `days * 3` candidate meal-capable để tương ứng ba meal slot mỗi ngày. Thiếu
-hard minimum làm `PlaceCheckerResult.status=blocked`; orchestration không tạo
-hoặc chuyển `planner_input` xuống FinalItineraryPlanner.
+hard meal minimum hoặc candidate bắt buộc không hợp lệ mới block trước Planner.
 
 Scoring tạo TravelPlace reserve bằng coverage mềm: ưu tiên candidate có evidence
 `Special_Experience`, sau đó một phần popular theo Bayesian quality kết hợp

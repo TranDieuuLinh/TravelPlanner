@@ -2,6 +2,79 @@ from typing import Any
 from uuid import uuid4
 
 
+def _find_unscheduled_place(
+    output: dict[str, Any] | None,
+    *,
+    name: str,
+    place_id: str | None,
+    candidate_id: str | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]] | None:
+    if not isinstance(output, dict):
+        return None
+    unscheduled = output.get("unscheduled")
+    if not isinstance(unscheduled, list):
+        return None
+    normalized_name = name.strip().casefold()
+    for item in unscheduled:
+        if not isinstance(item, dict):
+            continue
+        if candidate_id and item.get("candidateId") == candidate_id:
+            return unscheduled, item
+        if place_id and item.get("placeId") == place_id:
+            return unscheduled, item
+        if str(item.get("name", "")).strip().casefold() == normalized_name:
+            return unscheduled, item
+    return None
+
+
+def remove_unscheduled_place(
+    output: dict[str, Any] | None,
+    *,
+    name: str,
+    place_id: str | None = None,
+    candidate_id: str | None = None,
+) -> str:
+    found = _find_unscheduled_place(
+        output,
+        name=name,
+        place_id=place_id,
+        candidate_id=candidate_id,
+    )
+    if found is None:
+        return "unscheduled_not_found"
+    unscheduled, item = found
+    unscheduled.remove(item)
+    return "updated"
+
+
+def confirm_unscheduled_place(
+    output: dict[str, Any] | None,
+    *,
+    name: str,
+    place_id: str | None,
+    candidate_id: str | None,
+    day: int,
+    item: dict[str, Any],
+    position: int | None = None,
+) -> str:
+    if _find_unscheduled_place(
+        output,
+        name=name,
+        place_id=place_id,
+        candidate_id=candidate_id,
+    ) is None:
+        return "unscheduled_not_found"
+    status = add_plan_item(output, day=day, item=item, position=position)
+    if status != "updated":
+        return status
+    return remove_unscheduled_place(
+        output,
+        name=name,
+        place_id=place_id,
+        candidate_id=candidate_id,
+    )
+
+
 def add_plan_item(
     output: dict[str, Any] | None,
     *,

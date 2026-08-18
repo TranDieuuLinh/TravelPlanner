@@ -11,7 +11,10 @@ from app.modules.itinerary_planner.beam_search.optimizer import (
     category_sort_key,
     optimize_beam_search,
 )
-from app.modules.itinerary_planner.beam_search.pruning import repetition_sort_key
+from app.modules.itinerary_planner.beam_search.pruning import (
+    prune_day_states,
+    repetition_sort_key,
+)
 from app.modules.itinerary_planner.beam_search.scoring import candidate_score
 from app.modules.itinerary_planner.beam_search.constraints import is_travelplace
 from app.modules.itinerary_planner.optimizer.result import ScheduledStop
@@ -175,6 +178,35 @@ def test_transition_window_keeps_waiting_and_visit_inside_window() -> None:
     )
 
     assert result == (570, 615)
+
+
+def test_beam_pruning_keeps_priority_state_before_higher_utility_state() -> None:
+    raw = payload(
+        places=[
+            candidate("requested", priority="user_input"),
+            candidate("optional"),
+        ]
+    )
+    prepared, _ = prepare_and_route(raw)
+    priority_state = _DayState(
+        stops=(ScheduledStop("requested", 1, 600, 660, None),),
+        selected_ids=frozenset({"requested"}),
+        priority_ids=frozenset({"requested"}),
+        score=1,
+    )
+    utility_state = _DayState(
+        stops=(ScheduledStop("optional", 1, 600, 660, None),),
+        selected_ids=frozenset({"optional"}),
+        score=10_000,
+    )
+
+    selected = prune_day_states(
+        [utility_state, priority_state],
+        width=1,
+        problem=prepared,
+    )
+
+    assert selected == (priority_state,)
 
 
 def test_beam_search_prefers_plan_with_three_distinct_restaurants() -> None:

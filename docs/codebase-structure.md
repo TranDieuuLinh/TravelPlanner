@@ -9,8 +9,8 @@ Cập nhật lần cuối: 2026-08-18.
 - `admin-frontend/`: giao diện Next.js riêng cho quản trị viên.
 - `packages/`: các package frontend dùng chung trong npm workspace; hiện có
   `api-client/` cho API error và request helper dùng chung.
-- `docker-compose.yml`: cấu hình backend và routing service; database dùng
-  `DATABASE_URL` bên ngoài, không tạo database local.
+- `docker-compose.yml`: cấu hình backend, PostgreSQL/pgvector local và routing
+  services; backend dùng database local qua service `postgres`.
 
 ## Cấu trúc backend
 
@@ -176,6 +176,10 @@ Frontend chỉ hiển thị đi bộ cho chặng ngắn hơn 1,5 km. Với chặ
 phương án hợp lệ, thao tác chọn option gọi Trip Chat mutation; backend lưu
 `selectedTransport` vào đúng leg trong `currentPlannerOutput` với optimistic
 revision để lựa chọn còn nguyên sau khi tải lại.
+Địa điểm trong `currentPlannerOutput.unscheduled` có thể tìm tối đa 5 kết quả
+từ search địa điểm ở frontend. Người dùng chọn ngày và kết quả phù hợp; Trip
+Chat mutation kiểm tra revision, thêm stop và xóa entry chưa xếp nguyên tử.
+Menu ba chấm của card chưa xếp có thao tác tìm lại và xóa entry.
 Danh sách TripChat chỉ map contract summary và giữ `hasItinerary`; sau một
 message, frontend áp dụng trực tiếp full chat snapshot vừa nhận để chuyển sang
 itinerary mà không phụ thuộc vào một lượt GET đồng bộ thứ hai. Output không có
@@ -283,6 +287,9 @@ vẫn dừng an toàn.
 Explorer output mang `days`, `startDate` và `timezone`; mặc định duration là 3
 ngày và ngày bắt đầu là ngày mai khi prompt không chỉ định. Shared `TripIntent`
 cũng dùng mặc định 3 ngày để các luồng legacy không âm thầm quay về plan 1 ngày.
+Khi turn mới có URL/ảnh/địa điểm hoặc item mới mà không ghi số ngày, root giữ
+default 3 ngày thay vì kế thừa duration cũ; chỉ follow-up thuần tham chiếu lịch
+cũ mới dùng duration từ Conversation Memory.
 Khi một nguồn có destination chính cùng một điểm day-trip, Explorer ưu tiên
 `input_adm` nếu evidence của destination chính mạnh hơn; chỉ yêu cầu làm rõ khi
 nhiều destination mạnh ngang nhau hoặc không xác định được destination chính.
@@ -488,10 +495,12 @@ Food hard minimum vẫn là unique matching cho từng slot
 `day × breakfast/lunch/dinner`, tối đa 60 candidate. PlaceChecker còn thử một
 reserve matching rời hard set và gửi cả feasibility qua `foodCoverage`.
 Core query over-fetch có giới hạn để bù candidate thiếu metadata; scoring chốt
-quota sau dedupe và quality gate. PlaceChecker đếm lại đúng candidate đủ điều
-kiện compact output; thiếu một trong hai quota thì status là `blocked` và root
-không tạo `planner_input`. Thiếu pairing gần chỉ tạo warning; Restaurant được
-đưa vào `food`, không trộn thành activity place.
+quota sau dedupe và quality gate. Travel reserve là quota mềm để tăng chất
+lượng lựa chọn, không phải điều kiện chặn. PlaceChecker chỉ block khi hard meal
+coverage hoặc candidate bắt buộc không hợp lệ; candidate `user_input`/`url`
+được giữ nguyên qua compact boundary để FinalItineraryPlanner tự xếp lịch và
+đưa phần không xếp được vào `unscheduled`. Thiếu pairing gần chỉ tạo warning;
+Restaurant được đưa vào `food`, không trộn thành activity place.
 Compatibility graph không database vẫn dùng `DevelopmentCatalog`. Khi có
 `DATABASE_URL` và `GOOGLE_MAPS_SCRAPER_ENABLED=true`, gap retrieval chỉ gọi
 `GoogleMapsPlaywrightSearch` sau khi Knowledge Graph không đủ candidate đã

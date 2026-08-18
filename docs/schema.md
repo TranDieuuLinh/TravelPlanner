@@ -26,6 +26,8 @@ quan hệ graph. Hint `entertainment` hoặc `wellness` chỉ truy vấn
 | `POST /v1/plans/day-directions` | `DayDirectionsRequest` | Danh sách `TransportLeg` nối origin với các điểm theo thứ tự |
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
 | `GET /v1/plans/places/search?query=&destination=&topK=` | Session cookie, query text and optional destination | Danh sách địa điểm chuẩn hóa để thêm thủ công vào lịch trình |
+| `POST /v1/trip-chats/{chatId}/plan/unscheduled-places/confirm` | Multipart địa điểm gốc, match đã chọn, ngày đích và `expectedRevision` | `TripChat` sau khi thêm stop và xóa entry chưa xếp nguyên tử |
+| `DELETE /v1/trip-chats/{chatId}/plan/unscheduled-places` | Multipart địa điểm gốc và `expectedRevision` | `TripChat` sau khi xóa entry chưa xếp |
 | `POST /v1/trip-chats/{chatId}/plan/items` | Multipart item fields và `expectedRevision` | `TripChat` sau khi thêm địa điểm vào ngày đã chọn |
 | `PUT /v1/trip-chats/{chatId}/plan/days/{day}/items/reorder` | Multipart `itemIds` (lặp lại) và `expectedRevision` | `TripChat` với thứ tự địa điểm đã cập nhật; các item không có trong payload vẫn được giữ lại |
 | `PATCH /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/personal-notes` | `expectedRevision`, `personalNotes` | `TripChat` với planner snapshot đã cập nhật |
@@ -139,7 +141,9 @@ không có `schemaVersion` và gồm:
 - `status`: `ready`, `clarification` hoặc `error`;
 - `intakeId`, `input_ADM`;
 - `days`, `startDate`, `timezone`; nếu prompt không có ngày thì ngày bắt đầu là
-  ngày mai, nếu không có duration thì `days=3`;
+  ngày mai, nếu không có duration thì `days=3`. Turn mới có URL/ảnh/địa điểm
+  hoặc item mới cũng giữ default này; chỉ follow-up thuần tham chiếu lịch cũ
+  mới kế thừa duration từ Conversation Memory;
 - `places`, trong đó mỗi place có `sourcePlaces`, `sourceTimeHint` và
   `addressHint`; `sourcePlaces` phân biệt nguồn `input` (người dùng chọn trực tiếp),
   `url` (nguồn URL do người dùng cung cấp) và `system` (gợi ý từ assistant/information-finder
@@ -242,13 +246,19 @@ mặc định; Style food/drink khác chỉ active khi request resolve tới Sty
 Mỗi Style active có target mềm `2 × days`; PlaceChecker chọn Item trước, reverse
 `Offer_Item` sang Restaurant/DrinkDessert và cân bằng
 Item/quán theo anchor region. Food hard minimum vẫn là `days * 3` venue duy nhất.
+Nếu pool từ URL/direct input hoặc special-near food chưa đủ, PlaceChecker vẫn
+chạy targeted retrieval theo cùng cơ chế gap/pool của special experience để bù
+độc lập các nhóm `TravelPlace`, `Restaurant` và `Entertainment` trước khi qua
+Planner; food coverage không bị tắt chỉ vì food-selection adapter đã được bật.
 Compact boundary chỉ đưa Restaurant vào `food`; DrinkDessert/Entertainment được
 chuyển sang pool nullable `entertainment` và không chiếm meal slot hay quota Place.
 PlaceChecker dựng slot cho từng
 `day × breakfast/lunch/dinner` và chạy bipartite matching capacity một; vì vậy
 đủ số lượng nhưng sai meal window vẫn không qua hard gate. Một matching thứ hai
 dùng tập Restaurant rời nhau làm soft reserve, tối đa 60 candidate. Thiếu hard
-matching làm PlaceChecker `blocked`;
+matching làm PlaceChecker `blocked`; thiếu travel reserve không block và
+candidate `user_input`/`url` không bị cắt trước khi Planner trả phần không xếp
+được vào `unscheduled`;
 thiếu relationship gần chỉ tạo warning và general food vẫn được phép. Một pool
 Accommodation riêng chỉ nhận khách sạn đã xác minh có giá dương. Low/medium/high
 chọn tối đa ba phương án quanh P25/P50/P80, sau đó xếp lại theo khoảng cách tới
@@ -258,6 +268,10 @@ anchor khi có budget target, nếu không mới dùng candidate đầu tiên; c
 Rich PlaceChecker result trả `foodStyleCoverage[]` gồm Style ID/tên, target,
 số quán đã chọn, số Item phân biệt và trạng thái complete. Compact Planner
 contract vẫn nhận food venue cùng `foodCoverage` meal feasibility.
+Output planner giữ các entry không xếp được trong `unscheduled`; frontend có thể
+search tối đa 5 địa điểm thay thế, chọn ngày, rồi gọi mutation xác nhận để đưa
+match đã chọn vào `days[].stops` và loại entry khỏi `unscheduled` cùng một
+revision.
 Rich result còn trả `styleCandidateSelections[]` với place/entity type,
 Style/Item ID và tên, `relationshipSource`, cùng
 `styleCandidateCoverage[]` và các input Style/Item không resolve được. Selector

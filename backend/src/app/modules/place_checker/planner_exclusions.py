@@ -39,10 +39,21 @@ def build_excluded_candidate(checked: CheckedPlace) -> PlannerExcludedCandidate:
         code = "place_checker_excluded"
         message = "The requested place was excluded before itinerary optimization."
     name = checked.canonical_name or next(iter(checked.original_names), "Requested place")
+    source_refs = list(dict.fromkeys(
+        source.source_url
+        for source in checked.provenance.source_places
+        if source.source_url
+    ))
+    source_refs.extend(
+        note.source_url
+        for note in checked.provenance.url_notes
+        if note.source_url and note.source_url not in source_refs
+    )
     return PlannerExcludedCandidate(
         place_id=checked.place_id or f"unresolved:{name}",
         name=name,
         priority="url" if checked.source_tier == SourceTier.url else "user_input",
         reason_code=code,
         message=message,
+        source_refs=source_refs[:20],
     )

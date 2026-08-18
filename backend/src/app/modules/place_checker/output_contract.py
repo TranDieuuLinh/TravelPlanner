@@ -289,6 +289,7 @@ class PlannerExcludedCandidate(ContractModel):
     priority: Literal["user_input", "url"]
     reason_code: str
     message: str
+    source_refs: list[str] = Field(default_factory=list, max_length=20)
 
 
 class PlannerParty(ContractModel):

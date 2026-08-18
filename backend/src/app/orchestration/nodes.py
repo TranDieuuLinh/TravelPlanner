@@ -1,3 +1,5 @@
+import re
+
 from app.modules.explorer.public import build_explorer_graph
 from app.modules.information_finder.public import (
     InformationFinderService,
@@ -117,7 +119,21 @@ class RootNodes:
             dur = getattr(memory, "duration_days", None) or (memory.get("duration_days") or memory.get("durationDays") if isinstance(memory, dict) else None)
             if dest:
                 output.input_adm = dest
-            if dur:
+            raw_prompt = state.get("message") or ""
+            explicit_days = re.search(
+                r"\b\d{1,2}\s*(?:ngày|days?)\b", raw_prompt, re.IGNORECASE
+            )
+            has_new_input = bool(
+                state.get("urls")
+                or state.get("images")
+                or output.places
+                or output.input_items
+            )
+            # A new source/place intake starts from Explorer's default unless
+            # this turn explicitly states a duration. Pure follow-ups such as
+            # "lên plan các điểm bên trên" still inherit the remembered trip
+            # duration.
+            if dur and not explicit_days and not has_new_input:
                 output.days = dur
             if memory:
                 output.places = merge_memory_places(

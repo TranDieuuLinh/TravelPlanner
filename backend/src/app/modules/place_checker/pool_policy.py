@@ -40,7 +40,11 @@ def planner_pool_shortfall(
     food_count: int,
     food_meal_counts: dict[str, int] | None = None,
 ) -> tuple[int, int, int, int]:
-    """Return minimum Planner handoff and hard meal-coverage shortfalls."""
+    """Return reserve counts and hard meal-coverage shortfalls.
+
+    The travel count is a soft reserve measurement. Only the food count and
+    meal matching shortfalls are hard requirements for the Planner handoff.
+    """
     travel_target = max(
         PLANNER_HANDOFF_ACTIVITY_CANDIDATES_PER_DAY,
         days * PLANNER_HANDOFF_ACTIVITY_CANDIDATES_PER_DAY,

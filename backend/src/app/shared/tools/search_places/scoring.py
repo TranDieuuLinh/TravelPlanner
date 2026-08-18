@@ -160,6 +160,7 @@ def score_candidate(
         provider=candidate.provider,
         providerId=candidate.provider_id,
         name=candidate.name,
+        aliases=candidate.aliases,
         canonicalType=candidate.canonical_type,
         address=candidate.address,
         coordinates=candidate.coordinates,

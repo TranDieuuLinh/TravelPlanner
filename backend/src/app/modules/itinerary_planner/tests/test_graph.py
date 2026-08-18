@@ -1,5 +1,6 @@
 import asyncio
 
+from app.modules.itinerary_planner.beam_search.config import BeamSearchConfig
 from app.modules.itinerary_planner.contract import ItineraryPlannerInput
 from app.modules.itinerary_planner.public import (
     build_beam_search_itinerary_planner_graph,
@@ -133,6 +134,40 @@ def test_beam_graph_returns_evaluation_without_using_cp_sat_graph() -> None:
     assert result["optimization_result"].passes[0].name == "beam_search"
     assert result["output"].evaluation.count_restaurant == 3
     assert result["output"].evaluation.count_travelplace == 2
+
+
+def test_beam_graph_reports_unscheduled_priority_candidate() -> None:
+    graph = build_beam_search_itinerary_planner_graph(
+        GeneratedMatrixProvider(),
+        FixedCostEstimator(),
+        beam_config=BeamSearchConfig(time_limit_seconds=0.2),
+    )
+    planner_input = ItineraryPlannerInput.model_validate(
+        payload(
+            places=[
+                candidate(
+                    "requested",
+                    priority="user_input",
+                    opening_hours={"1": []},
+                ),
+                candidate("optional_a"),
+                candidate("optional_b"),
+            ],
+            foods=[
+                food("breakfast", supported_meals=["breakfast"]),
+                food("lunch", supported_meals=["lunch"]),
+                food("dinner", supported_meals=["dinner"]),
+            ],
+        )
+    )
+
+    result = asyncio.run(graph.ainvoke({"input": planner_input}))
+
+    assert result.get("error") is None
+    assert [item.place_id for item in result["output"].unscheduled] == [
+        "requested"
+    ]
+    assert result["output"].unscheduled[0].reason_code == "closed_for_entire_trip"
 
 
 def test_beam_graph_merges_places_food_and_entertainment_pools() -> None:

@@ -27,6 +27,7 @@ class CandidateExclusion:
     priority: CandidatePriority
     reason_code: str
     message: str
+    source_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

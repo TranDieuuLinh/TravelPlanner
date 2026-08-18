@@ -24,18 +24,20 @@ def limit_food_pool(
 ) -> list[PlannerOutputFood]:
     if len(food) <= limit:
         return food
-    indexed = list(enumerate(food))
-    indexed.sort(
-        key=lambda entry: (
-            0
-            if entry[1].place_id in required_ids
-            else 1
-            if entry[1].place_id in paired_ids
-            else 2,
-            entry[0],
-        )
-    )
-    return [candidate for _, candidate in indexed[:limit]]
+    required = [candidate for candidate in food if candidate.place_id in required_ids]
+    paired = [
+        candidate
+        for candidate in food
+        if candidate.place_id in paired_ids and candidate.place_id not in required_ids
+    ]
+    optional = [
+        candidate
+        for candidate in food
+        if candidate.place_id not in required_ids
+        and candidate.place_id not in paired_ids
+    ]
+    remaining = max(0, limit - len(required))
+    return [*required, *paired[:remaining], *optional[: max(0, remaining - len(paired))]]
 
 
 class SelectedFoodPlanningProjector:

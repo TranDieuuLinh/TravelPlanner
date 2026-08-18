@@ -18,11 +18,7 @@ from app.modules.place_checker.output_contract import (
     ToolCallSummary,
 )
 from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
-from app.modules.place_checker.enums import (
-    GapType,
-    PlaceCheckerStatus,
-    VerificationStatus,
-)
+from app.modules.place_checker.enums import PlaceCheckerStatus, VerificationStatus
 from app.modules.place_checker.ports import PlaceCheckerMetricsSink
 from app.modules.place_checker.resolution import EntityResolutionService
 from app.modules.place_checker.retrieval import TargetedRetrievalService
@@ -146,11 +142,12 @@ class PlaceCheckerPipeline:
                     for place in enriched.places
                     if place.place_id
                 ],
-                excluded_gap_types=(
-                    {GapType.food_coverage}
-                    if self.food_selection is not None
-                    else set()
-                ),
+                # Food selection searches special-near restaurants first, but
+                # it is not a replacement for the generic pool recovery. Keep
+                # food coverage open so the same targeted retrieval used for
+                # special-experience/travel gaps can fill missing restaurants
+                # from the ADM pool before the Planner handoff gate.
+                excluded_gap_types=set(),
                 coverage=analysis.coverage,
             )
             ranking = self.scoring.rank(retrieval, context, evaluated)
@@ -239,7 +236,7 @@ class PlaceCheckerPipeline:
             style_selection=style_selection,
         )
         planner_output_builder = PlaceCheckerPlannerOutputBuilder()
-        travel_target, food_target, missing_places, missing_food = (
+        _travel_target, food_target, missing_places, missing_food = (
             planner_output_builder.pool_shortfall(result)
         )
         unpaired_place_ids = planner_output_builder.unpaired_travel_place_ids(result)
@@ -249,12 +246,20 @@ class PlaceCheckerPipeline:
                 f"Special-near coverage is partial: {len(unpaired_place_ids)} travel "
                 "places will use the eligible general food pool as fallback."
             )
-        if missing_places or missing_food:
+        if missing_places:
+            pool_warnings.append(
+                "Planner travel reserve is partial: "
+                f"missing {missing_places} optional travel candidates for the "
+                f"requested {result.trip_context.days}-day duration; direct "
+                "URL/user candidates remain eligible "
+                "and will be reported as unscheduled when no feasible slot exists."
+            )
+        if missing_food:
             warning = (
-                "Planner candidate pools are incomplete: "
-                f"require {travel_target} travel places and {food_target} meal-capable "
-                f"food candidates; missing {missing_places} travel places and "
-                f"{missing_food} food candidates."
+                "Planner meal candidate pool is incomplete: "
+                f"require {food_target} meal-capable food candidates for "
+                f"{result.trip_context.days} days; missing {missing_food} "
+                "food candidates. Travel reserve shortfall is non-blocking."
             )
             result = result.model_copy(
                 update={

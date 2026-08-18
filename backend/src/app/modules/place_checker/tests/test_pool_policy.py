@@ -224,6 +224,29 @@ def test_adaptive_pool_skips_reserve_queries_when_existing_pool_is_sufficient() 
     assert source.queries == []
 
 
+def test_adaptive_pool_recovers_food_when_special_near_pool_is_empty() -> None:
+    coverage = CoverageAnalysis(
+        level=CoverageLevel.partial,
+        planner_eligible_place_count=24,
+        mandatory_place_count=0,
+        category_distribution={"landmark": 24},
+        resolved_item_count=0,
+        unresolved_item_count=0,
+        food_covered=False,
+        experience_covered=True,
+    )
+
+    selected = select_adaptive_pool_specs(
+        {**CORE_POOL_QUERY_SPECS, **POOL_QUERY_SPECS},
+        GapAnalysis().gaps,
+        coverage,
+        days=3,
+        excluded_gap_types=set(),
+    )
+
+    assert "pool:food_alternatives" in selected
+
+
 def test_adaptive_pool_only_adds_queries_needed_for_shortfall() -> None:
     source = RecordingSource()
     service = TargetedRetrievalService(

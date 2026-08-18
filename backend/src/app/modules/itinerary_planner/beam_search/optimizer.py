@@ -26,7 +26,11 @@ from app.modules.itinerary_planner.beam_search.pruning import (
 )
 from app.modules.itinerary_planner.beam_search.result_builder import build_day_result
 from app.modules.itinerary_planner.beam_search.scoring import candidate_score
-from app.modules.itinerary_planner.contract import MealType, PlannerFoodCandidate
+from app.modules.itinerary_planner.contract import (
+    CandidatePriority,
+    MealType,
+    PlannerFoodCandidate,
+)
 from app.modules.itinerary_planner.hybrid.assembly import assemble_hybrid_result
 from app.modules.itinerary_planner.optimizer.result import (
     OptimizationResult,
@@ -42,12 +46,16 @@ from app.modules.itinerary_planner.policies import MEAL_POLICIES, MINIMUM_MEAL_S
 
 
 MEAL_ORDER = (MealType.breakfast, MealType.lunch, MealType.dinner)
+PRIORITY_VALUES = frozenset(
+    {CandidatePriority.user_input, CandidatePriority.url}
+)
 
 
 @dataclass(frozen=True, slots=True)
 class _DayState:
     stops: tuple[ScheduledStop, ...] = ()
     selected_ids: frozenset[str] = frozenset()
+    priority_ids: frozenset[str] = frozenset()
     last_id: str | None = None
     end_minute: int = 480
     meal_starts: tuple[tuple[MealType, int], ...] = ()
@@ -59,6 +67,7 @@ class _DayState:
 class _PlanState:
     days: tuple[tuple[ScheduledStop, ...], ...] = ()
     selected_ids: frozenset[str] = frozenset()
+    priority_ids: frozenset[str] = frozenset()
     score: float = 0.0
     cost: int = 0
     restaurant_count: int = 0
@@ -188,6 +197,7 @@ def _extend_plan(problem, plan: _PlanState, state: _DayState, config) -> _PlanSt
     return _PlanState(
         days=(*plan.days, state.stops),
         selected_ids=plan.selected_ids | state.selected_ids,
+        priority_ids=plan.priority_ids | state.priority_ids,
         score=(
             plan.score
             + state.score
@@ -372,6 +382,11 @@ def _expand_state(
                 _DayState(
                     stops=(*state.stops, stop),
                     selected_ids=state.selected_ids | {candidate_id},
+                    priority_ids=(
+                        state.priority_ids | {candidate_id}
+                        if candidate.priority in PRIORITY_VALUES
+                        else state.priority_ids
+                    ),
                     last_id=candidate_id,
                     end_minute=end,
                     meal_starts=(

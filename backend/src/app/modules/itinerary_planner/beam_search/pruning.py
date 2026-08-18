@@ -6,6 +6,12 @@ from app.modules.itinerary_planner.beam_search.constraints import (
     is_restaurant,
     is_travelplace,
 )
+from app.modules.itinerary_planner.contract import CandidatePriority
+
+
+PRIORITY_VALUES = frozenset(
+    {CandidatePriority.user_input, CandidatePriority.url}
+)
 
 
 def prune_day_states(states, width, problem):
@@ -13,7 +19,7 @@ def prune_day_states(states, width, problem):
     return _diverse_top(
         ordered,
         width,
-        lambda state: _travel_signature(problem, state.stops),
+        lambda state: _state_signature(problem, state.stops, state.priority_ids),
     )
 
 
@@ -22,8 +28,10 @@ def prune_plans(states, width, problem):
     return _diverse_top(
         ordered,
         width,
-        lambda state: _travel_signature(
-            problem, tuple(stop for day in state.days for stop in day)
+        lambda state: _state_signature(
+            problem,
+            tuple(stop for day in state.days for stop in day),
+            state.priority_ids,
         ),
     )
 
@@ -52,12 +60,43 @@ def _travel_signature(problem, stops):
     ))
 
 
+def _state_signature(problem, stops, priority_ids):
+    return (
+        _travel_signature(problem, stops),
+        tuple(sorted(_priority_ids(problem, stops, priority_ids))),
+    )
+
+
+def _priority_ids(problem, stops, explicit_ids):
+    return frozenset(explicit_ids) | frozenset(
+        stop.place_id
+        for stop in stops
+        if problem.candidate_by_id[stop.place_id].priority in PRIORITY_VALUES
+    )
+
+
+def _priority_sort_key(problem, stops, explicit_ids):
+    priority_ids = _priority_ids(problem, stops, explicit_ids)
+    return (
+        sum(
+            problem.candidate_by_id[place_id].priority
+            == CandidatePriority.user_input
+            for place_id in priority_ids
+        ),
+        sum(
+            problem.candidate_by_id[place_id].priority == CandidatePriority.url
+            for place_id in priority_ids
+        ),
+    )
+
+
 def day_sort_key(state, problem):
     # Preserve meal feasibility before applying the restaurant/category
     # preference; optional restaurant branches must not crowd out a branch
     # that still needs lunch or dinner.
     return (
-        (len({meal for meal, _ in state.meal_starts}),)
+        _priority_sort_key(problem, state.stops, state.priority_ids)
+        + (len({meal for meal, _ in state.meal_starts}),)
         + repetition_sort_key(problem, state.stops)
         + category_sort_key(
             count_stops(problem, state.stops, is_restaurant),
@@ -74,17 +113,21 @@ def day_sort_key(state, problem):
 
 def plan_sort_key(state, problem):
     stops = tuple(stop for day in state.days for stop in day)
-    return distinct_coverage_sort_key(problem, stops) + repetition_sort_key(
-        problem, stops
-    ) + category_sort_key(
-        state.restaurant_count,
-        state.travelplace_count,
-        state.drink_dessert_count,
-        state.entertainment_count,
-        state.diversity_count,
-        state.score,
-        state.cost,
-    ) + (tuple(stop.place_id for stop in stops),)
+    return (
+        _priority_sort_key(problem, stops, state.priority_ids)
+        + distinct_coverage_sort_key(problem, stops)
+        + repetition_sort_key(problem, stops)
+        + category_sort_key(
+            state.restaurant_count,
+            state.travelplace_count,
+            state.drink_dessert_count,
+            state.entertainment_count,
+            state.diversity_count,
+            state.score,
+            state.cost,
+        )
+        + (tuple(stop.place_id for stop in stops),)
+    )
 
 
 def distinct_coverage_sort_key(problem, stops):

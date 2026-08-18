@@ -4,11 +4,17 @@ Cập nhật lần cuối: 2026-08-18.
 
 ## Phạm vi và trạng thái
 
-Tài liệu này mô tả schema PostgreSQL cloud được backend truy cập qua
-`DATABASE_URL`. Không có PostgreSQL container hoặc volume local nào là runtime
-dependency của backend.
+Tài liệu này mô tả schema PostgreSQL local có pgvector được backend truy cập qua
+`DATABASE_URL` theo cấu hình mặc định. PostgreSQL local chạy trong service
+`postgres` của Compose duy nhất và dùng volume `travelplanner-postgres18`.
 
-Database runtime hiện có 52 table trong schema `public`, gồm các bảng cache, planner,
+Khởi tạo local database:
+
+```bash
+docker compose --env-file backend/.env up -d
+```
+
+Database runtime hiện có 59 table trong schema `public`, gồm các bảng cache, planner,
 Knowledge Graph, profile, social và marketplace được
 khôi phục từ export ngày 2026-08-11 và 6 table cache của Information Finder.
 Bốn table tag legacy (`knowledge_tags`, `knowledge_tag_runs`,
@@ -23,7 +29,8 @@ và migration 002/003. Vì vậy
 cần phân biệt:
 
 - **Database runtime:** các table được liệt kê bên dưới tồn tại trong database
-  PostgreSQL cloud sau khi migration tương ứng đã được áp dụng.
+  PostgreSQL cloud sau khi migration tương ứng đã được áp dụng; local Docker
+  có thể được khởi tạo từ backup archive tương ứng.
 - **Backend mới:** không sử dụng các table legacy khác; khi có `DATABASE_URL`,
   root graph dùng PostgreSQL checkpointer và fail fast nếu runtime psycopg không
   khả dụng. Chỉ môi trường không cấu hình database mới dùng `InMemorySaver`.
@@ -205,6 +212,10 @@ hoặc migration và chỉ lưu option routing đã chuẩn hóa, không lưu ra
 payload.
 Quy mô nhóm được lưu tại `current_planner_output.people`; đây là field trong
 JSONB hiện hữu nên thay đổi không cần migration hoặc cột mới.
+Entry `current_planner_output.unscheduled` cũng thuộc snapshot JSONB hiện hữu.
+Mutation xác nhận một match khóa row, thêm stop vào ngày đích, xóa entry tương
+ứng và tăng revision trong cùng transaction; mutation xóa chỉ xóa entry đó.
+Hai thao tác không tạo bảng hoặc migration mới.
 
 ### `agent_trip_chat_messages`
 
