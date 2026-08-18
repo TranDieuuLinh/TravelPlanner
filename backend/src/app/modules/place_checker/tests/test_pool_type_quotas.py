@@ -313,6 +313,14 @@ def test_obvious_leisure_name_cannot_masquerade_as_travel_place() -> None:
     )
     assert (
         planner_category_for_candidate(
+            "restaurant",
+            name="Phố đi bộ trung tâm",
+            tags=["public space"],
+        )
+        == "travel_place"
+    )
+    assert (
+        planner_category_for_candidate(
             "travel_place",
             name="Hanoi Creative Space",
             tags=["culture"],
@@ -327,6 +335,7 @@ def test_obvious_leisure_name_cannot_masquerade_as_travel_place() -> None:
         ("NOTH Garden", "thuộc danh mục Garden center"),
         ("Vườn của mẹ", "thuộc danh mục Interior plant service"),
         ("Trang Phục Biểu Diễn", "thuộc danh mục Costume rental service"),
+        ("Music Talent Linh Đàm", "music school for private lessons"),
     ):
         assert (
             planner_category_for_candidate(

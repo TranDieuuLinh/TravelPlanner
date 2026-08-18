@@ -107,8 +107,9 @@ hybrid planner gồm geographic day-domain, greedy shortlist, 2-opt/swap và
 CP-SAT hai pass theo từng ngày: pass priority exact giữ thứ tự
 `user_input > URL`, sau đó pass utility tối ưu chất lượng lịch.
 PlaceChecker xếp tối đa ba accommodation quanh percentile ngân sách theo khoảng
-cách tới tâm compact TravelPlace pool. Hybrid cố định candidate đầu tiên làm
-anchor trước daily solve; endpoint ngày phải nối được anchor và giữ đủ 7 giờ
+cách tới tâm compact TravelPlace pool. Hybrid dùng candidate rẻ nhất làm anchor
+khi có budget target, nếu không dùng candidate đầu tiên; endpoint ngày phải nối
+được anchor và giữ đủ 7 giờ
 nghỉ. Assembly không fallback sang global CP-SAT để đổi khách sạn và trả
 diagnostic gồm top `placeId`/ngày/constraint khi anchor không khả thi.
 Geographic day-domain không dùng solver phụ: heuristic chọn tâm theo normalized
@@ -228,6 +229,18 @@ HTML, fallback Playwright Chromium khi bị chặn hoặc nội dung rỗng, r�
 chặn, source thất bại cục bộ mà không làm hỏng source khác. Instagram có thể yêu
 cầu cookie Netscape qua `EXPLORER_YTDLP_COOKIE_FILE`.
 
+Mỗi source có wall-clock budget toàn extraction (mặc định 90 giây), không chỉ
+socket timeout. Source synthesis có budget 105 giây và từng batch chunk có
+budget 60 giây; chunk đã hoàn thành được giữ lại, chunk còn treo bị hủy. Hàng
+đợi chunk chạy round-robin theo source để video dài không làm website hoặc clip
+ngắn bị starvation. Khi semantic provider chậm hoặc partial, adapter
+deterministic chỉ bổ sung các place nằm trong tiêu đề Markdown cấp hai được đánh
+số; body prose, transcript và danh sách cấp thấp như khách sạn/món ăn không được
+tự động nâng thành TravelPlace. Các budget cấu hình qua
+`EXPLORER_SOURCE_EXTRACTION_TIMEOUT_SECONDS`,
+`EXPLORER_SOURCE_SYNTHESIS_TIMEOUT_SECONDS` và
+`EXPLORER_SOURCE_CHUNK_TIMEOUT_SECONDS`.
+
 Trước khi tải URL, Explorer tra cache PostgreSQL do module sở hữu trong bảng
 `source_documents`, theo canonical URL, extractor version và TTL
 `EXPLORER_URL_CACHE_TTL_SECONDS` (mặc định 7 ngày). Cache đọc được artifact
@@ -264,7 +277,9 @@ snapshot kết quả tương ứng. Source-import chỉ gọi synthesis nếu ba
 còn evidence dùng được; mỗi source chỉ retry tối đa một lần.
 
 Explorer chỉ trích xuất và giữ provenance, không resolve place. Root
-orchestration chỉ chuyển output `ready` sang public input của PlaceChecker.
+orchestration chuyển output `ready`, hoặc `partial` vẫn xác định được
+`input_ADM`, sang public input của PlaceChecker; partial không có destination
+vẫn dừng an toàn.
 Explorer output mang `days`, `startDate` và `timezone`; mặc định duration là 3
 ngày và ngày bắt đầu là ngày mai khi prompt không chỉ định. Shared `TripIntent`
 cũng dùng mặc định 3 ngày để các luồng legacy không âm thầm quay về plan 1 ngày.
@@ -283,6 +298,11 @@ Compact builder giữ TravelPlace thiếu giá và gửi `0 VND`; food, entertai
 và accommodation vẫn cần giá dùng được. `typical_cost` được lấy từ trung bình
 khoảng min/max, một đầu mút có sẵn, `0` cho tier `free`, hoặc `0` theo mặc định
 TravelPlace tại boundary sang Planner.
+Khi policy đa tín hiệu đã xếp một candidate vào food pool, projector luôn phát
+`venueType=restaurant`; category provider tổng quát như `travel_place` không
+được phép rò sang contract food hẹp và gây lỗi validation.
+Ngược lại, restaurant label sai cho public-space có marker tổng quát như
+`phố đi bộ`/`walking street` được trả về TravelPlace trước khi dựng meal pool.
 `places[].sourcePlaces` phân biệt nguồn `input` (người dùng chọn trực tiếp),
 `url` (nguồn URL do người dùng cung cấp) và `system` (gợi ý từ assistant,
 Information Finder hoặc transcript cũ, mang tính tùy chọn). Chỉ current-turn
@@ -399,6 +419,13 @@ nổi tiếng trong objective sau các hard feasibility constraints.
 Planner cấm food-to-food arc để mỗi cặp bữa liên tiếp có ít nhất một activity,
 giới hạn tối đa hai `drink_dessert` mỗi ngày kể cả khi loại này nằm trong
 `places`, và không cho hai meal slot legacy liền nhau cùng dùng loại venue này.
+Hybrid projection áp biên mềm 5%, trừ tổng chi phí accommodation anchor khỏi
+cả budget `explicit` và `estimated_daily_cost` rồi chia phần còn lại theo ngày,
+nên budget penalty tác
+động ngay lúc chọn food/place thay vì chỉ cảnh báo sau khi ghép lịch.
+Budget-aware shortlist mở toàn bộ candidate khả thi trong ngày, trừ access cost
+hai chiều từ accommodation và rank food theo `price + corridor transport cost`;
+geographic preferred day không còn ép chuyến tiết kiệm vào cụm xa.
 Nightlife/night-market bắt đầu từ 18:00; Weekend Night Market chỉ nhận
 Thứ Sáu-Chủ Nhật. Hybrid shortlist giữ history nhóm trải nghiệm của các ngày đã
 chọn, ưu tiên nhóm mới nhưng cho chọn lại nhóm cũ khi alternative cạn. Food
@@ -423,10 +450,13 @@ user input và URL.
 Retrieval ngoài gap phân tích còn mở core pool famous/must-see, core pool
 historic landmark/museum/temple/old quarter, core pool authentic local cultural
 special experience và thematic pool theo chuyến.
+Entertainment reserve ưu tiên water puppet, theater, cultural performance và
+live music buổi tối thay cho truy vấn entertainment chung.
 TravelPlace dùng target `22/ngày`, Restaurant `16/ngày`, và pool optional
 DrinkDessert/Entertainment `6/ngày`; Entertainment tự gợi ý phải có Bayesian
-rating điều chỉnh từ 4,2/5. Compact selection giữ tối đa
-`max(1, ceil(days / 3))` Entertainment tùy chọn có thể xếp 08:00-18:00. Target
+rating điều chỉnh từ 4,2/5. Compact selection chỉ giới hạn Entertainment chỉ
+mở buổi sáng ở tối đa một candidate/ngày; candidate có thể xếp chiều/tối được
+giữ làm reserve. Target
 TravelPlace là retrieval reserve; hard handoff sang
 Planner chỉ cần `8/ngày`, tránh chặn chuyến đi đã có đủ phương án tối ưu.
 Direct-user/URL bypass cap, còn lựa chọn chỉ mở buổi tối không chịu daytime cap
@@ -437,8 +467,11 @@ review và popularity score từ 0,70; Planner giữ popular candidate khả thi
 geographic preferred day và phạt mạnh suất landmark thiếu trên từng ngày.
 Reserve target Special Experience là 8/14. Planner thưởng 4.000 mỗi Special,
 đặt target mềm hai/ngày với shortfall 10.000; landmark popular cũng có target
-mềm hai/ngày. Entertainment giới hạn tối đa một/ngày và bị phạt nếu số điểm
-trước 18:00 vượt 10% baseline ban ngày.
+mềm hai/ngày. Entertainment giới hạn tối đa hai/ngày, tối đa một trước 12:00 và
+một từ 18:00. Buổi tối chỉ dùng làm fallback khi không có Special Experience
+hoặc múa rối nước; fallback có thể là Entertainment hoặc DrinkDessert chất
+lượng cao. Optional leisure đã chọn phải có một stop từ 18:00 cùng ngày.
+Breakfast phải kết thúc trước mọi activity trong ngày.
 Semantic guard chuyển music box, karaoke, golf, billiard/bi-a, bowling, studio,
 game center, massage/trị liệu, spa và retail store/souvenir bị gắn TravelPlace
 sai sang Entertainment trước scoring/quota/compact output. Food dùng reserve `16/ngày`:

@@ -14,6 +14,7 @@ class PlannerGraph:
             "output": {
                 "destination": "Hanoi",
                 "timezone": "Asia/Ho_Chi_Minh",
+                "people": graph_input["input"].trip.people,
                 "days": self.days,
                 "totalCostPerPerson": 0,
                 "budgetPerPerson": 5000000,

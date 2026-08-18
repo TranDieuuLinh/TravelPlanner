@@ -18,6 +18,9 @@ from app.modules.explorer.models import (
     ExplorerDraft,
     SourceExtractionResult,
 )
+from app.modules.explorer.adapters.structured_web import (
+    places_from_numbered_web_headings,
+)
 
 
 _DESTINATION = re.compile(
@@ -136,6 +139,11 @@ class RuleBasedExplorerDraftGenerator:
         for source in sources:
             draft.adm_candidates.extend(source.adm_candidates)
             draft.places.extend(source.places)
+            structured_places = places_from_numbered_web_headings(source)
+            draft.places.extend(structured_places)
+            if structured_places and not source.places:
+                source.extracted_place_count = len(structured_places)
+                source.deduplicated_place_count = len(structured_places)
             draft.url_notes.extend(source.notes)
             draft.short_preferences.extend(source.short_preferences)
             draft.short_avoids.extend(source.short_avoids)

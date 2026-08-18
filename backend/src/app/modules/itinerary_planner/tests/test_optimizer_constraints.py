@@ -1,5 +1,6 @@
 import pytest
 
+from app.modules.itinerary_planner.contract import MealType
 from app.modules.itinerary_planner.optimizer.solver import OptimizationError
 from app.modules.itinerary_planner.policies import MAX_INTER_STOP_WAIT_MINUTES
 from app.modules.itinerary_planner.routing_models import MatrixCell, TravelMatrix
@@ -88,7 +89,7 @@ def test_schedule_is_infeasible_without_activity_between_meals() -> None:
         solve_payload(raw)
 
 
-def test_requires_two_places_and_limits_entertainment_to_one_per_day() -> None:
+def test_requires_two_places_and_caps_entertainment_by_period() -> None:
     entertainment_items = [
         entertainment(
             f"entertainment_{index}",
@@ -106,7 +107,32 @@ def test_requires_two_places_and_limits_entertainment_to_one_per_day() -> None:
     place_ids = {item.place_id for item in prepared.valid_places}
     entertainment_ids = {item.place_id for item in prepared.valid_entertainment}
     assert len(selected & place_ids) >= 2
-    assert len(selected & entertainment_ids) == 1
+    selected_entertainment = selected & entertainment_ids
+    assert len(selected_entertainment) == 2
+    stops = {
+        stop.place_id: stop
+        for stop in result.scheduled_stops
+        if stop.place_id in selected_entertainment
+    }
+    assert sum(stop.start_minute < 12 * 60 for stop in stops.values()) <= 1
+    assert sum(stop.start_minute >= 18 * 60 for stop in stops.values()) <= 1
+
+
+def test_breakfast_finishes_before_every_activity() -> None:
+    result, prepared, _ = solve_payload(base_payload())
+
+    breakfast = next(
+        stop
+        for stop in result.scheduled_stops
+        if stop.meal_type == MealType.breakfast
+    )
+    food_ids = {item.place_id for item in prepared.valid_food}
+    activities = [
+        stop for stop in result.scheduled_stops if stop.place_id not in food_ids
+    ]
+
+    assert activities
+    assert all(stop.start_minute >= breakfast.end_minute for stop in activities)
 
 
 def test_flexible_entertainment_is_scheduled_outside_the_daytime() -> None:

@@ -13,7 +13,12 @@ def route_after_explorer(
     state: RootState,
 ) -> Literal["place_checker", "finish"]:
     output = state["explorer_output"]
-    return "place_checker" if output.status == "ready" else "finish"
+    return "place_checker" if explorer_can_plan(output) else "finish"
+
+
+def explorer_can_plan(output) -> bool:
+    """A partial source import may continue when trip identity is complete."""
+    return output.status in {"ready", "partial"} and bool(output.input_adm)
 
 
 def route_after_place_checker(

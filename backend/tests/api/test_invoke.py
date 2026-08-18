@@ -120,6 +120,7 @@ def test_invoke_returns_planner_output_in_camel_case():
                     {
                         "destination": "Hà Nội",
                         "timezone": "Asia/Ho_Chi_Minh",
+                        "people": 2,
                         "days": [],
                         "totalCostPerPerson": 0,
                         "currency": "VND",

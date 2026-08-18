@@ -4,6 +4,10 @@ from dataclasses import replace
 from datetime import timedelta
 from types import MappingProxyType
 
+from app.modules.itinerary_planner.accommodation_selection import (
+    BUDGET_AWARE_SOURCES,
+    select_accommodation_anchor_id,
+)
 from app.modules.itinerary_planner.optimizer.result import (
     OptimizationResult,
     ScheduledStop,
@@ -16,6 +20,8 @@ from app.modules.itinerary_planner.routing_models import (
     SafeTravel,
     SparseArc,
 )
+
+BUDGET_GRACE_RATIO = 0.05
 
 
 def project_problem_day(
@@ -57,11 +63,13 @@ def project_problem_day(
         for candidate_id, unknown_days in problem.unknown_opening_days.items()
         if candidate_id in candidates and day in unknown_days
     }
+    projected_budget = _projected_daily_budget(problem)
     return PreparedPlanningProblem(
         trip=problem.trip.model_copy(
             update={
                 "days": 1,
                 "start_date": problem.trip.start_date + timedelta(days=day - 1),
+                "budget": projected_budget,
             }
         ),
         accommodations=(),
@@ -103,6 +111,29 @@ def project_problem_day(
             }
         ),
     )
+
+
+def _projected_daily_budget(problem: PreparedPlanningProblem):
+    """Allocate a trip-level budget across hybrid day solves."""
+    budget = problem.trip.budget
+    if budget.source not in BUDGET_AWARE_SOURCES or budget.amount is None:
+        return budget
+    accommodation_total = 0
+    accommodation_id = select_accommodation_anchor_id(problem)
+    if accommodation_id is not None:
+        accommodation_total = (
+            problem.accommodation_cost_per_person_by_id[accommodation_id]
+            * problem.accommodation_nights
+        )
+    daily_amount = max(
+        0.0,
+        (
+            budget.amount * (1 + BUDGET_GRACE_RATIO)
+            - accommodation_total
+        )
+        / problem.trip.days,
+    )
+    return budget.model_copy(update={"amount": daily_amount})
 
 
 def project_routing_day(

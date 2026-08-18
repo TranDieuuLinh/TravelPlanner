@@ -51,6 +51,9 @@ _ENTERTAINMENT_NAME_MARKERS = (
     "miniwood design",
     "mood on",
     "music box",
+    "music academy",
+    "music school",
+    "music talent",
     "musicbox",
     "noraebang",
     "pilates",
@@ -70,6 +73,7 @@ _ENTERTAINMENT_NAME_MARKERS = (
     "tiredcity",
     "tri lieu",
     "truong dh",
+    "trung tam am nhac",
     "vong hoa",
     "nha tang le",
     "cong ty",
@@ -91,6 +95,10 @@ _RESTAURANT_NAME_MARKERS = (
     "pho",
     "quan mi",
     "sui cao",
+)
+_PUBLIC_PLACE_NAME_MARKERS = (
+    "pho di bo",
+    "walking street",
 )
 
 
@@ -119,6 +127,10 @@ def planner_category_for_candidate(
     """Correct obvious leisure venues mislabeled as TravelPlace upstream."""
     category = planner_category(value)
     padded_name = f" {normalize_text(name)} "
+    if category == "restaurant" and any(
+        f" {marker} " in padded_name for marker in _PUBLIC_PLACE_NAME_MARKERS
+    ):
+        return "travel_place"
     if category == "restaurant" and any(
         f" {marker} " in padded_name for marker in _DRINK_NAME_MARKERS
     ):

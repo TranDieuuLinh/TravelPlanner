@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.core.config import Settings
+from app.api.dependencies import get_explorer_graph
 from app.main import create_app
 from app.modules.explorer.public import ExplorerOutput
 from app.shared.observability.langfuse_adapter import LangfuseObservabilityAdapter
@@ -53,11 +54,12 @@ def test_api_with_langfuse_enabled_traces_request_correlation() -> None:
         "output": ExplorerOutput(
             status="ready",
             intake_id="intake-123",
+            input_ADM="Huế",
             places=[],
             warnings=[],
         )
     }
-    app.dependency_overrides[app.router.routes[0].endpoint] = lambda: mock_graph
+    app.dependency_overrides[get_explorer_graph] = lambda: mock_graph
 
     client = TestClient(app)
     headers = {"x-trace-id": "trace-corr-12345"}

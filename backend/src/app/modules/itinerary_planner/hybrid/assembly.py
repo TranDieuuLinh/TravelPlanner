@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Sequence
-from math import ceil
+from math import ceil, floor
 
+from app.modules.itinerary_planner.accommodation_selection import (
+    select_accommodation_anchor_id,
+)
 from app.modules.itinerary_planner.optimizer.result import (
     OptimizationResult,
     ScheduledStop,
@@ -19,6 +22,7 @@ from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import RoutingProblem
 
 LATE_NIGHT_START_MINUTE = 22 * 60
+BUDGET_GRACE_RATIO = 0.05
 StopsByDay = dict[int, list[ScheduledStop]]
 
 
@@ -36,7 +40,7 @@ def assemble_hybrid_result(
     if (
         budget.amount is not None
         and budget.source != "estimated_daily_cost"
-        and total_cost > budget.amount
+        and total_cost > floor(budget.amount * (1 + BUDGET_GRACE_RATIO))
     ):
         raise OptimizationError("INFEASIBLE", "hybrid_budget")
 
@@ -70,7 +74,7 @@ def assemble_hybrid_result(
         ),
         objective_value=sum(result.objective_value for result in day_results),
         objective_components=dict(components),
-        objective_policy_version="hybrid-activity-corridor-v8-first-visitor-landmarks",
+        objective_policy_version="hybrid-activity-corridor-v15-evening-special-first",
         passes=tuple(item for result in day_results for item in result.passes),
         source_mix=_combine_source_mix(day_results),
     )
@@ -98,7 +102,10 @@ def _select_accommodation(
     if not problem.accommodations or not problem.accommodation_nights:
         _validate_plain_overnight_rest(stops_by_day)
         return None, (), 0
-    accommodation = problem.accommodations[0]
+    accommodation_id = select_accommodation_anchor_id(problem)
+    if accommodation_id is None:
+        return None, (), 0
+    accommodation = problem.accommodation_by_id[accommodation_id]
     reasons: list[str] = []
     transfers: list[SelectedAccommodationTransfer] = []
     transfer_cost = 0

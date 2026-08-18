@@ -7,10 +7,15 @@ from typing import Mapping
 from app.modules.itinerary_planner.contract import (
     CandidatePriority,
     CandidateSourceKind,
-    FoodVenueType,
     MealType,
     PlannerCandidate,
-    PlannerFoodCandidate,
+)
+from app.modules.itinerary_planner.hybrid.budget_selection import (
+    budget_access_penalty,
+    expand_budget_reserve,
+    food_corridor_cost,
+    is_budget_aware,
+    select_food_options,
 )
 from app.modules.itinerary_planner.hybrid.popular_place_reservation import (
     available_candidate_ids,
@@ -27,7 +32,6 @@ from app.modules.itinerary_planner.quality import (
 from app.modules.itinerary_planner.routing_models import RoutingProblem
 
 MAX_ACTIVITY_CANDIDATES = 16
-FOOD_OPTIONS_PER_MEAL = 3
 DEFAULT_QUALITY_MAX = 300
 SPECIAL_EXPERIENCE_SCORE = 8_000
 PREFERENCE_MATCH_SCORE = 2_000
@@ -51,6 +55,7 @@ def build_day_shortlist(
     day: int,
     used_ids: frozenset[str],
     quality_max: int = DEFAULT_QUALITY_MAX,
+    budget_overage_10k: int = 0,
     trip_tag_counts: Mapping[str, int] | None = None,
 ) -> DayShortlist:
     quality_by_id = bayesian_quality_by_id(problem.candidate_by_id.values())
@@ -70,6 +75,12 @@ def build_day_shortlist(
         popular_ids=popular_places,
         special_ids=special_places,
     )
+    expand_budget_reserve(
+        problem,
+        day=day,
+        used_ids=used_ids,
+        available=available,
+    )
     activities = [
         problem.candidate_by_id[candidate_id]
         for candidate_id in sorted(available - food_ids)
@@ -87,6 +98,7 @@ def build_day_shortlist(
         popular_places,
         quality_max,
         trip_tag_counts or {},
+        budget_overage_10k,
     )
     improved_activities = _improve_activity_order(
         tuple(item.place_id for item in selected_activities), routing
@@ -94,6 +106,7 @@ def build_day_shortlist(
     food_options: dict[MealType, tuple[str, ...]] = {}
     selected_food: dict[MealType, str] = {}
     corridors = _meal_corridors(improved_activities)
+    budget_aware = is_budget_aware(problem)
     for meal in MealType:
         eligible = [
             item
@@ -103,6 +116,9 @@ def build_day_shortlist(
         ranked = sorted(
             eligible,
             key=lambda item: (
+                food_corridor_cost(item, corridors[meal], routing)
+                if budget_aware
+                else 0,
                 _corridor_travel_minutes(
                     item.place_id,
                     corridors[meal],
@@ -119,7 +135,7 @@ def build_day_shortlist(
                 item.place_id,
             ),
         )
-        options = _food_options(ranked)
+        options = select_food_options(ranked)
         food_options[meal] = options
         if options:
             selected_food[meal] = options[0]
@@ -135,25 +151,6 @@ def build_day_shortlist(
         candidate_ids=candidate_ids,
         hinted_order=order,
     )
-
-
-def _food_options(ranked: list[PlannerFoodCandidate]) -> tuple[str, ...]:
-    selected = list(ranked[:FOOD_OPTIONS_PER_MEAL])
-    if selected and all(
-        item.venue_type == FoodVenueType.drink_dessert
-        for item in selected
-    ):
-        restaurant = next(
-            (
-                item
-                for item in ranked[FOOD_OPTIONS_PER_MEAL:]
-                if item.venue_type == FoodVenueType.restaurant
-            ),
-            None,
-        )
-        if restaurant is not None:
-            selected[-1] = restaurant
-    return tuple(item.place_id for item in selected)
 
 
 def full_day_candidate_ids(
@@ -178,6 +175,7 @@ def _select_activities(
     popular_places: frozenset[str],
     quality_max: int,
     trip_tag_counts: Mapping[str, int],
+    budget_overage_10k: int,
 ) -> tuple[PlannerCandidate, ...]:
     priority = [item for item in candidates if item.priority in PRIORITY_VALUES]
     optional = [item for item in candidates if item.priority not in PRIORITY_VALUES]
@@ -196,7 +194,13 @@ def _select_activities(
                     quality_max,
                 )
                 - 25 * _cluster_travel_minutes(item.place_id, selected, routing)
-                - _trip_tag_repeat_penalty(item, trip_tag_counts),
+                - _trip_tag_repeat_penalty(item, trip_tag_counts)
+                - budget_access_penalty(
+                    problem,
+                    item.place_id,
+                    routing,
+                    budget_overage_10k,
+                ),
                 item.place_id,
             ),
         )

@@ -114,9 +114,14 @@ ItineraryPlannerInput(trip, places, food, foodCoverage, accommodations, excluded
 ```
 
 `PlannerBudget` còn nhận `source`, `dailyEstimate` và `profileVersion`.
-`explicit`/legacy `unspecified` amount là hard cap. Amount có
+`explicit` là target có biên ghép lịch 5%; legacy `unspecified` amount là hard
+cap không tham gia budget-aware hybrid. Amount có
 `source=estimated_daily_cost` là approximate soft target; optimizer phạt phần
 vượt theo block 10.000 VND nhưng không làm lịch vô nghiệm chỉ vì estimate thấp.
+Hybrid day solve áp dụng cho cả `explicit` và `estimated_daily_cost`: cộng biên
+5%, trừ chi phí lưu trú của accommodation anchor khỏi tổng ngân sách chuyến rồi
+chia phần còn lại theo số ngày. Mỗi ngày không còn nhận nhầm toàn bộ ngân sách
+chuyến.
 
 Enum bắt buộc:
 

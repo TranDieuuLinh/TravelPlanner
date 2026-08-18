@@ -3,6 +3,7 @@ import asyncio
 from app.modules.place_checker.enums import CostTier
 from app.modules.place_checker.food_selection_contract import SelectedFoodRestaurant
 from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
+from app.modules.place_checker.planning_place_projection import PlannerPlaceProjector
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 from app.modules.place_checker.tests.test_pipeline_output import (
     metadata,
@@ -118,6 +119,18 @@ def test_compact_output_matches_planner_json_shape_and_relationship_ids() -> Non
     }
 
 
+def test_food_projection_accepts_provider_generic_travel_place_category() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-generic-food"))
+    checked = result.checked_places[0].model_copy(
+        update={"category": "travel_place", "pool_category": "restaurant"}
+    )
+
+    food = PlannerPlaceProjector.food(checked, result.trip_context.days, ["lunch"])
+
+    assert food.venue_type == "restaurant"
+    assert food.supported_meals == ["lunch"]
+
+
 def test_compact_output_adds_selected_special_food_near_anchor() -> None:
     result = asyncio.run(pipeline().check(payload(), request_id="request-special-food"))
     anchor = result.checked_places[0]
@@ -174,7 +187,7 @@ def test_compact_output_projects_drink_dessert_as_entertainment_not_meal() -> No
         category="drink_dessert",
         cost_tier=CostTier.low,
         latitude=21.031,
-    )
+    ).model_copy(update={"rating": 4.5, "review_count": 100})
     selection = SelectedFoodRestaurant(
         anchor_place_id=anchor.place_id,
         anchor_name=anchor.canonical_name,

@@ -26,6 +26,7 @@ from app.modules.explorer.ports import (
 )
 from app.modules.explorer.retry import run_with_one_retry
 from app.modules.explorer.source_warnings import source_warnings
+from app.modules.explorer.source_execution import mark_synthesis_timeout, safe_source
 from app.modules.explorer.tools import normalize_budget_per_person
 from app.modules.explorer.trip_defaults import (
     prompt_start_date,
@@ -52,6 +53,9 @@ class ExplorerService:
         draft_cache: ExplorerDraftCache | None = None,
         draft_cache_namespace: str = "explorer-draft-v1",
         minimum_synthesis_coverage: float = 0.8,
+        source_extraction_timeout_seconds: float = 90,
+        source_synthesis_timeout_seconds: float = 60,
+        fallback_drafts: ExplorerDraftGenerator | None = None,
     ) -> None:
         self.drafts = drafts
         self.url_extractor = url_extractor
@@ -61,6 +65,9 @@ class ExplorerService:
         self.draft_cache = draft_cache
         self.draft_cache_namespace = draft_cache_namespace
         self.minimum_synthesis_coverage = minimum_synthesis_coverage
+        self.source_extraction_timeout_seconds = source_extraction_timeout_seconds
+        self.source_synthesis_timeout_seconds = source_synthesis_timeout_seconds
+        self.fallback_drafts = fallback_drafts or drafts
 
     def prepare(self, payload: ExplorerInput | dict) -> dict:
         if not isinstance(payload, ExplorerInput):
@@ -85,21 +92,23 @@ class ExplorerService:
     async def extract_sources(self, payload: ExplorerInput) -> list[SourceExtractionResult]:
         jobs = []
         for index, url in enumerate(payload.urls):
-            jobs.append(self._safe_source(
-                "url", index, url,
-                lambda url=url, index=index: self._extract_url(
+            jobs.append(safe_source(
+                kind="url", index=index, reference=url,
+                operation=lambda url=url, index=index: self._extract_url(
                     payload, url=url, source_index=index
                 ),
+                timeout_seconds=self.source_extraction_timeout_seconds,
             ))
         offset = len(payload.urls)
         for local_index, image in enumerate(payload.images):
             index = offset + local_index
-            jobs.append(self._safe_source(
-                "image", index, image.file_name,
-                lambda image=image, index=index: self.image_extractor.extract(
+            jobs.append(safe_source(
+                kind="image", index=index, reference=image.file_name,
+                operation=lambda image=image, index=index: self.image_extractor.extract(
                     image, source_index=index, raw_prompt=payload.raw_prompt,
                     force_refresh=payload.force_refresh,
                 ),
+                timeout_seconds=self.source_extraction_timeout_seconds,
             ))
         return list(await asyncio.gather(*jobs))
 
@@ -142,29 +151,6 @@ class ExplorerService:
                 logger.warning("Explorer URL cache write failed", exc_info=True)
         return result
 
-    async def _safe_source(self, kind, index, reference, operation):
-        try:
-            return await run_with_one_retry(operation)
-        except ExplorerOperationError as exc:
-            return SourceExtractionResult(
-                sourceIndex=index,
-                sourceKind=kind,
-                sourceRef=reference,
-                status="failed_retryable" if exc.retryable else "failed_permanent",
-                error=AgentError(code=exc.code, message=str(exc), retryable=exc.retryable),
-            )
-        except Exception:
-            return SourceExtractionResult(
-                sourceIndex=index,
-                sourceKind=kind,
-                sourceRef=reference,
-                status="failed_permanent",
-                error=AgentError(
-                    code="SOURCE_EXTRACTION_FAILED",
-                    message="Không thể trích xuất nguồn đầu vào.",
-                ),
-            )
-
     @staticmethod
     def coverage(results: list[SourceExtractionResult]) -> BatchCoverage:
         usable = sum(result.status in {"succeeded", "partial"} for result in results)
@@ -204,27 +190,60 @@ class ExplorerService:
                 if cached is not None:
                     logger.info("Explorer draft cache hit")
                     return cached
+        timed_out = False
+        try:
+            draft = await asyncio.wait_for(
+                self._source_and_prompt_draft(payload, usable),
+                timeout=self.source_synthesis_timeout_seconds,
+            )
+        except TimeoutError:
+            timed_out = True
+            mark_synthesis_timeout(usable)
+            draft = await self.fallback_drafts.from_sources(
+                raw_prompt=payload.raw_prompt, sources=usable
+            )
+        if self.draft_cache is not None and not timed_out:
+            try:
+                await self.draft_cache.save(cache_key, draft)
+            except Exception:
+                logger.warning("Explorer draft cache write failed", exc_info=True)
+        return draft
+
+    async def _source_and_prompt_draft(self, payload, usable):
         source_job = run_with_one_retry(
             lambda: self.drafts.from_sources(
                 raw_prompt=payload.raw_prompt, sources=usable
             )
         )
         if not payload.raw_prompt:
-            draft = await source_job
-        else:
-            source_draft, prompt_draft = await asyncio.gather(
-                source_job,
-                run_with_one_retry(
-                    lambda: self.drafts.from_prompt(payload.raw_prompt or "")
-                ),
+            source_draft = await source_job
+            if self.fallback_drafts is self.drafts:
+                return source_draft
+            structured_draft = await self.fallback_drafts.from_sources(
+                raw_prompt=None, sources=usable
             )
-            draft = self._merge_prompt_draft(source_draft, prompt_draft)
-        if self.draft_cache is not None:
-            try:
-                await self.draft_cache.save(cache_key, draft)
-            except Exception:
-                logger.warning("Explorer draft cache write failed", exc_info=True)
-        return draft
+            return self._merge_structured_places(source_draft, structured_draft)
+        source_draft, prompt_draft = await asyncio.gather(
+            source_job,
+            run_with_one_retry(lambda: self.drafts.from_prompt(payload.raw_prompt or "")),
+        )
+        if self.fallback_drafts is self.drafts:
+            return self._merge_prompt_draft(source_draft, prompt_draft)
+        structured_draft = await self.fallback_drafts.from_sources(
+            raw_prompt=None, sources=usable
+        )
+        source_draft = self._merge_structured_places(
+            source_draft, structured_draft
+        )
+        return self._merge_prompt_draft(source_draft, prompt_draft)
+
+    @staticmethod
+    def _merge_structured_places(
+        source_draft: ExplorerDraft, structured_draft: ExplorerDraft
+    ) -> ExplorerDraft:
+        return source_draft.model_copy(
+            update={"places": [*source_draft.places, *structured_draft.places]}
+        )
 
     def normalize(self, draft: ExplorerDraft, raw_prompt: str | None) -> ExplorerDraft:
         places = []

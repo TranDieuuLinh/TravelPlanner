@@ -5,8 +5,12 @@ import pytest
 from app.modules.itinerary_planner.adapters.transport_cost import (
     XanhSmTransportCostEstimator,
 )
+from app.modules.itinerary_planner.accommodation_selection import (
+    select_accommodation_anchor_id,
+)
 from app.modules.itinerary_planner.contract import ItineraryPlannerInput
 from app.modules.itinerary_planner.hybrid import optimize_hybrid_itinerary
+from app.modules.itinerary_planner.hybrid.projection import project_problem_day
 from app.modules.itinerary_planner.optimizer.solver import OptimizationError
 from app.modules.itinerary_planner.preprocessing import prepare_planning_problem
 from app.modules.itinerary_planner.routing import build_routing_problem
@@ -29,6 +33,101 @@ def _problem_with_accommodations(accommodations: list[dict]):
         )
     )
     return problem, routing
+
+
+def test_estimated_trip_budget_is_allocated_after_accommodation() -> None:
+    raw = base_payload(days=2)
+    raw["trip"]["budget"] = {
+        "amount": 2_000_000,
+        "currency": "VND",
+        "source": "estimated_daily_cost",
+        "dailyEstimate": {
+            "accommodation": 300_000,
+            "food": 150_000,
+            "localTransport": 150_000,
+            "activities": 100_000,
+            "total": 700_000,
+        },
+        "profileVersion": "test-v1",
+    }
+    raw["accommodations"] = [
+        {
+            "placeId": "hotel:top",
+            "name": "Top Hotel",
+            "coordinates": {"latitude": 21.02, "longitude": 105.84},
+            "pricePerNight": {"cost": 600_000, "currency": "VND"},
+        }
+    ]
+    problem = prepare_planning_problem(ItineraryPlannerInput.model_validate(raw))
+
+    projected = project_problem_day(
+        problem,
+        day=1,
+        candidate_ids=frozenset(problem.candidate_by_id),
+    )
+
+    # Two people share one room: 300k/person for the one-night stay.
+    assert projected.trip.budget.amount == 900_000
+
+
+def test_explicit_trip_budget_is_allocated_after_accommodation() -> None:
+    raw = base_payload(days=2)
+    raw["trip"]["budget"] = {
+        "amount": 2_000_000,
+        "currency": "VND",
+        "source": "explicit",
+    }
+    raw["accommodations"] = [
+        {
+            "placeId": "hotel:top",
+            "name": "Top Hotel",
+            "coordinates": {"latitude": 21.02, "longitude": 105.84},
+            "pricePerNight": {"cost": 600_000, "currency": "VND"},
+        }
+    ]
+    problem = prepare_planning_problem(ItineraryPlannerInput.model_validate(raw))
+
+    projected = project_problem_day(
+        problem,
+        day=1,
+        candidate_ids=frozenset(problem.candidate_by_id),
+    )
+
+    assert projected.trip.budget.amount == 900_000
+
+
+def test_estimated_budget_prefers_cheapest_accommodation_anchor() -> None:
+    raw = base_payload(days=2)
+    raw["trip"]["budget"] = {
+        "amount": 2_000_000,
+        "currency": "VND",
+        "source": "estimated_daily_cost",
+        "dailyEstimate": {
+            "accommodation": 100_000,
+            "food": 150_000,
+            "localTransport": 150_000,
+            "activities": 100_000,
+            "total": 500_000,
+        },
+        "profileVersion": "test-v1",
+    }
+    raw["accommodations"] = [
+        {
+            "placeId": "hotel:near-expensive",
+            "name": "Near Expensive Hotel",
+            "coordinates": {"latitude": 21.02, "longitude": 105.84},
+            "pricePerNight": {"cost": 900_000, "currency": "VND"},
+        },
+        {
+            "placeId": "hotel:budget",
+            "name": "Budget Hotel",
+            "coordinates": {"latitude": 21.021, "longitude": 105.841},
+            "pricePerNight": {"cost": 200_000, "currency": "VND"},
+        },
+    ]
+    problem = prepare_planning_problem(ItineraryPlannerInput.model_validate(raw))
+
+    assert select_accommodation_anchor_id(problem) == "hotel:budget"
 
 
 def test_hybrid_anchors_every_day_to_the_top_accommodation() -> None:

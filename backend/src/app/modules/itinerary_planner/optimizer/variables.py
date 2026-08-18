@@ -21,7 +21,11 @@ CandidateDay = tuple[str, int]
 MealKey = tuple[str, int, MealType]
 SourceMixKey = tuple[str, int, str]
 MIN_PLACES_PER_DAY = 2
-MAX_ENTERTAINMENT_PER_DAY = 1
+MAX_ENTERTAINMENT_PER_DAY = 2
+MAX_MORNING_ENTERTAINMENT_PER_DAY = 1
+MAX_EVENING_ENTERTAINMENT_PER_DAY = 1
+MORNING_END_MINUTE = 12 * 60
+EVENING_START_MINUTE = 18 * 60
 
 
 @dataclass(slots=True)
@@ -123,6 +127,12 @@ def create_schedule_variables(
         ]
         if entertainment_assignments:
             model.Add(sum(entertainment_assignments) <= MAX_ENTERTAINMENT_PER_DAY)
+            _add_entertainment_period_caps(
+                model,
+                problem,
+                variables,
+                day,
+            )
         for meal_type, policy in MEAL_POLICIES.items():
             choices = [
                 variable
@@ -149,7 +159,62 @@ def create_schedule_variables(
                 >= variables.meal_start[(day, earlier)] + minimum_gap
             )
         _add_drink_dessert_constraints(model, problem, variables, day)
+        _require_breakfast_before_activities(model, problem, variables, day)
     return variables
+
+
+def _add_entertainment_period_caps(
+    model: cp_model.CpModel,
+    problem: PreparedPlanningProblem,
+    variables: PlannerVariables,
+    day: int,
+) -> None:
+    morning = []
+    evening = []
+    for candidate in problem.valid_entertainment:
+        assigned = variables.assigned.get((candidate.place_id, day))
+        if assigned is None:
+            continue
+        start = variables.start[(candidate.place_id, day)]
+        morning_indicator = variables.remember(
+            model.NewBoolVar(f"morning_entertainment:{candidate.place_id}:{day}")
+        )
+        model.Add(morning_indicator <= assigned)
+        model.Add(start < MORNING_END_MINUTE).OnlyEnforceIf(morning_indicator)
+        model.Add(start >= MORNING_END_MINUTE).OnlyEnforceIf(
+            [assigned, morning_indicator.Not()]
+        )
+        morning.append(morning_indicator)
+        evening_indicator = variables.remember(
+            model.NewBoolVar(f"evening_entertainment:{candidate.place_id}:{day}")
+        )
+        model.Add(evening_indicator <= assigned)
+        model.Add(start >= EVENING_START_MINUTE).OnlyEnforceIf(evening_indicator)
+        model.Add(start < EVENING_START_MINUTE).OnlyEnforceIf(
+            [assigned, evening_indicator.Not()]
+        )
+        evening.append(evening_indicator)
+    model.Add(sum(morning) <= MAX_MORNING_ENTERTAINMENT_PER_DAY)
+    model.Add(sum(evening) <= MAX_EVENING_ENTERTAINMENT_PER_DAY)
+
+
+def _require_breakfast_before_activities(
+    model: cp_model.CpModel,
+    problem: PreparedPlanningProblem,
+    variables: PlannerVariables,
+    day: int,
+) -> None:
+    breakfast_end = (
+        variables.meal_start[(day, MealType.breakfast)]
+        + MEAL_POLICIES[MealType.breakfast].duration_minutes
+    )
+    food_ids = {item.place_id for item in problem.valid_food}
+    for candidate_id in problem.candidate_by_id.keys() - food_ids:
+        assigned = variables.assigned.get((candidate_id, day))
+        if assigned is not None:
+            model.Add(
+                variables.start[(candidate_id, day)] >= breakfast_end
+            ).OnlyEnforceIf(assigned)
 
 
 def _exclude_dominated_accommodations(

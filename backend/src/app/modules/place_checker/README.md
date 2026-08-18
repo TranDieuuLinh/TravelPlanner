@@ -47,9 +47,14 @@ Knowledge Graph làm Google/KG fallback. Output là object
 Candidate pool gửi sang Planner có quota độc lập: 22 TravelPlace/ngày,
 16 Restaurant/ngày và 6 DrinkDessert/Entertainment/ngày. Entertainment do hệ
 thống gợi ý phải đạt Bayesian-adjusted rating tối thiểu 4,2/5; input trực tiếp
-và URL luôn được giữ. Compact pool chỉ giữ tối đa
-`max(1, ceil(days / 3))` Entertainment tùy chọn có thể xếp trong khung
-08:00-18:00; candidate chỉ mở buổi tối và DrinkDessert không chịu giới hạn này.
+và URL luôn được giữ. Candidate cửa hàng/dịch vụ thương mại như clothing,
+souvenir, ceramic shop hoặc event planner không được dùng làm Entertainment du
+lịch chỉ vì rating cao. DrinkDessert cũng phải có tín hiệu cafe/tea/bakery/
+dessert/bar/lounge thật; quán ăn có note món đặc trưng không được đi nhầm nhánh.
+Compact pool chỉ giới hạn Entertainment **chỉ mở buổi
+sáng** ở mức tối đa một candidate/ngày; candidate có thể xếp chiều hoặc tối và
+DrinkDessert vẫn cạnh tranh trong quota chung. Nhờ vậy Planner có reserve để
+dùng Entertainment vào buổi tối khi không có Special Experience phù hợp.
 `22 TravelPlace/ngày` là target retrieval
 để tạo nhiều phương án, không phải hard gate: compact handoff chỉ cần tối thiểu
 8 TravelPlace/ngày trước khi gọi Planner. Food reserve

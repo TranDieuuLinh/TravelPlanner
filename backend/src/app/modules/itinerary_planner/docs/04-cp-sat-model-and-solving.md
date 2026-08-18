@@ -21,7 +21,7 @@ prepared candidates
 -> tạo placeholder breakfast/lunch/dinner quanh activity skeleton
 -> chọn food theo corridor activity trước/sau meal
 -> 2-opt + swap cải thiện thứ tự activity
--> chọn top-1 accommodation anchor từ compact pool đã xếp hạng
+-> chọn accommodation anchor: rẻ nhất khi có budget, top-1 khi không có target
 -> CP-SAT repair hai pass trên từng ngày với endpoint gắn vào anchor
 -> nếu ngày chưa đạt ba activity, mở reserve khả thi và solve refill
 -> ghép ngày, kiểm tra lại budget/rest/transfers của anchor
@@ -50,10 +50,15 @@ TravelPlace có Bayesian rating từ 4,2 và ít nhất 500 review nhận thêm 
 điểm shortlist để không bị một `Special_Experience` ít review lấn át. CP-SAT
 đặt target mềm một popular TravelPlace/ngày; mỗi suất thiếu bị phạt 6.000 utility
 để landmark không bị dồn vào một ngày chỉ vì route ngắn hơn.
-Skeleton mặc định đặt breakfast trước activity buổi sáng, lunch giữa hai cụm và
-dinner sau activity cuối ngày. Không chủ động hint thêm activity sau dinner để
-giữ biên nghỉ đêm/transfer accommodation khả thi; CP-SAT vẫn có quyền sửa nếu
-opening window hoặc user-input bắt buộc yêu cầu lịch tối.
+Breakfast là hard precedence: bữa sáng phải kết thúc trước mọi activity trong
+ngày. Skeleton đặt lunch giữa hai cụm và dinner sau activity cuối ngày.
+Entertainment được giới hạn tối đa hai/ngày, đồng thời tối đa một trước 12:00
+và một từ 18:00. Ở buổi tối, model ưu tiên Special Experience hoặc múa rối
+nước; Entertainment đúng loại chỉ nhận fallback reward khi không chọn được hai
+nhóm này. Entertainment tùy chọn đã được chọn phải có ít nhất một stop từ
+18:00 cùng ngày; nếu có Special Experience/múa rối nước buổi tối thì
+Entertainment thường bị loại khỏi ngày đó. Candidate user/URL không chịu rule
+fallback này để giữ yêu cầu trực tiếp.
 
 CP-SAT theo ngày quyết định:
 
@@ -206,10 +211,10 @@ coverage đến ba `places`, và cho phép tối đa một candidate từ pool o
 
 ### Accommodation
 
-Với chuyến nhiều ngày, hybrid cố định candidate đầu tiên trong pool tối đa ba
-accommodation; runtime không gọi lại global CP-SAT để đổi khách sạn sau khi ghép
-ngày. PlaceChecker đã xếp candidate này gần tâm cụm TravelPlace nhất trong tập
-phù hợp mốc ngân sách. Chi phí phòng dùng `days - 1` đêm. Ngày `1..days-1` phải
+Với chuyến nhiều ngày và budget explicit/estimated, hybrid cố định candidate có
+chi phí mỗi người thấp nhất trong pool tối đa ba accommodation; không có budget
+target thì giữ candidate đầu tiên. Runtime không gọi lại global CP-SAT để đổi
+khách sạn sau khi ghép ngày. Chi phí phòng dùng `days - 1` đêm. Ngày `1..days-1` phải
 có endpoint route về anchor và ngày `2..days` phải có endpoint route rời anchor.
 Daily CP-SAT giữ giờ về trước 03:00 và đưa travel hai chiều vào lower bound của
 giờ bắt đầu hôm sau để còn tối thiểu 7 giờ nghỉ. Assembly tạo transfer/cost thật
@@ -239,8 +244,12 @@ totalCostPerPerson =
   + sum(selectedMeal * foodCost)
   + sum(selectedArc * transportCostPerPerson)
 
-totalCostPerPerson <= trip.budget.amount  # explicit budget only
+totalCostPerPerson <= trip.budget.amount  # daily CP allocation
 ```
+
+Khi ghép các ngày, hybrid assembly cho phép tổng cuối vượt tối đa 5% ngân sách
+explicit để hấp thụ sai số transfer/làm tròn giữa các ngày; vượt hơn mức này
+vẫn trả `hybrid_budget INFEASIBLE`.
 
 Không nhân với `trip.people`. Price không bị trừ thêm trong objective trừ
 khi sản phẩm sau này có yêu cầu "càng rẻ càng tốt".
@@ -273,7 +282,7 @@ ngày sau trước khi kiểm tra minimum 7 giờ.
 
 Dựng model/hard constraints cho từng ngày, solve hai lượt. Vì priority được khóa
 trong từng daily repair, metadata không tuyên bố optimality global cho cả chuyến;
-`objectivePolicyVersion=hybrid-activity-corridor-v6-balanced-popular-place` và
+`objectivePolicyVersion=hybrid-activity-corridor-v15-evening-special-first` và
 `optimalityProven=false`.
 Mỗi lượt mặc định giữ một CP-SAT search worker. Benchmark local cho thấy hai và
 bốn workers đều làm fixture graph nhỏ vượt 90 giây, trong khi single-worker
@@ -282,14 +291,15 @@ pool. Các hard constraint và thứ tự ưu tiên lexicographic không đổi.
 Hai pass mặc định không đặt `max_time_in_seconds`. Mỗi utility round chạy ba
 solver instance song song, mỗi instance giữ một CP-SAT worker và dùng
 `random_seed` khác nhau. Utility giữ incumbent có điểm cao nhất; khi một round
-tốt hơn, bộ đếm stagnation được reset. Sau 10 round liên tiếp không cải thiện,
-solver trả incumbent tốt nhất. Nếu một attempt chứng minh exact optimum thì
-dừng ngay. `SolverConfig` vẫn nhận timeout riêng cho từng attempt.
-Objective dùng baseline bốn activity ban ngày/ngày và phạt mềm số Entertainment
-bắt đầu trước 18:00 vượt target 10% của baseline đó. TravelPlace vì vậy được ưu
-tiên cho cả sáng và chiều; mỗi suất vượt bị phạt 6.000 utility. Tuy vậy,
-Entertainment bắt buộc hoặc chỉ khả thi ban ngày vẫn được xếp với cost thay vì
-làm model `INFEASIBLE`; preflight và hard minimum Place không đổi.
+tốt hơn, bộ đếm stagnation được reset. Mặc định trả incumbent sau một round
+liên tiếp không cải thiện để tránh lặp solver không cần thiết; nếu một attempt
+chứng minh exact optimum thì dừng ngay. `SolverConfig` vẫn nhận timeout và số
+round riêng cho từng môi trường.
+Entertainment có hard cap tối đa hai/ngày, tối đa một trước 12:00 và một từ
+18:00. Objective vẫn phạt mềm mật độ Entertainment ban ngày, đồng thời cộng
+9.000 utility cho Special Experience/múa rối nước bắt đầu từ 18:00. Nếu không
+có lựa chọn đó, Entertainment hoặc DrinkDessert chất lượng cao ở buổi tối nhận
+7.000 utility fallback.
 
 Mỗi Special Experience được cộng 4.000 utility. Objective đặt target mềm hai
 Special TravelPlace/ngày và phạt 10.000 cho mỗi suất thiếu khả thi; hybrid
@@ -298,6 +308,20 @@ nghiệm đặc sắc. Generic TravelPlace dưới 500 review và food chất l�
 cost riêng; stop vượt nhịp mục tiêu chịu 800 utility để giảm lịch quá dày.
 Popular TravelPlace có target mềm hai/ngày và shortfall cost 6.000 mỗi suất để
 lịch khách lần đầu có nhiều landmark dễ nhận biết hơn.
+
+Với `estimated_daily_cost`, hybrid cho phép biên mềm 5%, trừ tổng tiền lưu trú
+của anchor khỏi budget chuyến rồi chia phần còn lại cho từng daily CP-SAT. Mỗi
+10.000 VND vượt daily target chịu 500 utility; shortlist mở tối đa sáu phương
+án cho mỗi bữa để solver có đủ quán rẻ thay thế. Estimate vẫn mềm để không phá ba
+bữa bắt buộc.
+Khi có accommodation anchor và budget, hybrid shortlist còn trừ utility theo
+chi phí vận chuyển khứ hồi anchor-candidate; cụm xa không được ưu tiên chỉ vì
+Special/popular score cao.
+Budget-aware shortlist mở lại mọi candidate khả thi trong ngày trước khi rank,
+không để geographic preferred-day biến một cụm xa thành lựa chọn bắt buộc.
+Food shortlist xếp theo `food price + corridor transport cost` khi có budget,
+rồi mới xét travel time và quality; quán gần nhưng quá đắt không chiếm hết sáu
+phương án meal.
 
 Pass priority yêu cầu exact optimum để khóa số `user_input` và URL. Pass utility
 dùng `relative_gap_limit=0.05`, nên có thể dừng khi utility nằm trong 5% bound;
@@ -434,7 +458,7 @@ priority_timeout_seconds = None
 utility_timeout_seconds = None
 utility_relative_gap_limit = 0.05
 utility_parallel_workers = 3
-max_utility_no_improvement_rounds = 3
+max_utility_no_improvement_rounds = 1
 random_seed
 log_search_progress
 max_inter_stop_wait_minutes = 150  # None chỉ dùng cho relaxed fallback
