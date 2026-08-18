@@ -79,7 +79,9 @@ function Citations({ sourceIds, sources }: { sourceIds: unknown; sources: TripCh
 }
 
 function BlockTitle({ title }: { title: unknown }) {
-  return typeof title === "string" && title.trim() ? <h3>{title}</h3> : null;
+  if (typeof title !== "string" || !title.trim()) return null;
+  const normalized = title.trim();
+  return <h3>{normalized === "Thông tin nổi bật" ? "✦ Điểm nổi bật" : normalized}</h3>;
 }
 
 function renderBlock(block: BlockRecord, sources: TripChatSource[]): ReactNode {
@@ -95,9 +97,13 @@ function renderBlock(block: BlockRecord, sources: TripChatSource[]): ReactNode {
             {Array.isArray(block.items) ? block.items.map((rawItem, index) => {
               const item = record(rawItem);
               if (!item) return null;
+              const label = typeof item.label === "string" ? item.label.trim() : "";
+              const isGenericLabel = !label || label === "Thông tin";
               return (
                 <li key={`${String(item.label)}-${index}`}>
-                  <strong>{String(item.label ?? "Thông tin")}:</strong>{" "}
+                  {isGenericLabel ? (
+                    <span className="answerFactIcon" aria-label="Thông tin" title="Thông tin">✦</span>
+                  ) : <strong>{label}:</strong>}{" "}
                   <InlineText text={String(item.text ?? "")} spans={item.inlineSpans} highlights={item.highlights} />
                   <Citations sourceIds={item.sourceIds} sources={sources} />
                 </li>
@@ -121,11 +127,11 @@ function renderBlock(block: BlockRecord, sources: TripChatSource[]): ReactNode {
     case "quote":
       return <blockquote><InlineText text={String(block.text ?? "")} spans={block.inlineSpans} />{block.attribution ? <cite>— {String(block.attribution)}</cite> : null}<Citations sourceIds={sourceIds} sources={sources} /></blockquote>;
     case "recommendations":
-      return <section className="answerRecommendations"><BlockTitle title={block.title} /><ul>{Array.isArray(block.items) ? block.items.map((rawItem, index) => { const item = record(rawItem); const text = `${String(item?.name ?? "Gợi ý")}: ${String(item?.reason ?? "")}`; return item ? <li key={`${String(item.name)}-${index}`}><InlineText text={text} spans={item.inlineSpans} /><Citations sourceIds={item.sourceIds} sources={sources} /></li> : null; }) : null}</ul></section>;
+      return <section className="answerRecommendations"><BlockTitle title={block.title} /><ul>{Array.isArray(block.items) ? block.items.map((rawItem, index) => { const item = record(rawItem); if (!item) return null; const name = typeof item.name === "string" ? item.name : ""; const reason = typeof item.reason === "string" ? item.reason : ""; return <li key={`${name}-${index}`}>{name ? <strong>{name}</strong> : null}{reason ? <><span className="answerItemDetail">{reason}</span></> : null}<Citations sourceIds={item.sourceIds} sources={sources} /></li>; }) : null}</ul></section>;
     case "steps":
       return <section className="answerSteps"><BlockTitle title={block.title} /><ol>{Array.isArray(block.items) ? block.items.map((rawItem, index) => { const item = record(rawItem); return item ? <li key={index}><InlineText text={String(item.text ?? "")} spans={item.inlineSpans} /><Citations sourceIds={item.sourceIds} sources={sources} /></li> : null; }) : null}</ol></section>;
     case "comparison":
-      return <section className="answerComparison"><BlockTitle title={block.title} /><div className="answerComparisonGrid">{Array.isArray(block.options) ? block.options.map((rawOption, index) => { const option = record(rawOption); if (!option) return null; const pros = Array.isArray(option.pros) ? option.pros.map(String).join(", ") : "—"; const cons = Array.isArray(option.cons) ? option.cons.map(String).join(", ") : "—"; const text = `${String(option.name ?? "Lựa chọn")}: Ưu: ${pros}; Lưu ý: ${cons}`; return <article key={`${String(option.name)}-${index}`}><InlineText text={text} spans={option.inlineSpans} /><Citations sourceIds={option.sourceIds} sources={sources} /></article>; }) : null}</div></section>;
+      return <section className="answerComparison"><BlockTitle title={block.title} /><div className="answerComparisonGrid">{Array.isArray(block.options) ? block.options.map((rawOption, index) => { const option = record(rawOption); if (!option) return null; const name = typeof option.name === "string" ? option.name : ""; const pros = Array.isArray(option.pros) ? option.pros.map(String).filter(Boolean) : []; const cons = Array.isArray(option.cons) ? option.cons.map(String).filter(Boolean) : []; return <article key={`${name}-${index}`}><strong>{name}</strong>{pros.length ? <p className="answerComparisonPros"><span aria-hidden="true">✦</span> {pros.join(", ")}</p> : null}{cons.length ? <p className="answerComparisonCons"><span aria-hidden="true">ⓘ</span> {cons.join(", ")}</p> : null}<Citations sourceIds={option.sourceIds} sources={sources} /></article>; }) : null}</div></section>;
     case "notice":
       return <aside className={`answerNotice ${String(block.severity ?? "info")}`}><InlineText text={String(block.text ?? "")} spans={block.inlineSpans} /><Citations sourceIds={sourceIds} sources={sources} /></aside>;
     default:

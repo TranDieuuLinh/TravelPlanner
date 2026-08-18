@@ -66,3 +66,4 @@ trung-plans/
 
 /old_one/
 *.sql
+*.local*

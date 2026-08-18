@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     information_finder_chunking_max_output_tokens: int = 8000
     information_finder_relevance_threshold: float = 0.5
     information_finder_blocked_domains: str = ""
-    information_finder_answer_provider: Literal["extractive", "gemini"] = "extractive"
+    information_finder_answer_provider: Literal["extractive", "gemini"] = "gemini"
     information_finder_llm_max_output_tokens: int = 800
     information_finder_llm_max_chars_per_source: int = 4000
     information_finder_llm_max_total_source_chars: int = 12000

@@ -39,6 +39,30 @@ def test_clean_source_sentences_removes_navigation_footer_and_company_copy():
     assert sentences == ["Di tích được xếp hạng năm 2013."]
 
 
+def test_clean_source_sentences_removes_unavailable_url_notice():
+    text = (
+        "Thông tin về việc truy cập nội dung từ URL được cung cấp hiện không "
+        "khả dụng do hạn chế kỹ thuật. Hà Nội có nhiều di tích lịch sử."
+    )
+
+    assert clean_source_sentences(text, "Hà Nội", "Hà Nội") == [
+        "Hà Nội có nhiều di tích lịch sử."
+    ]
+
+
+def test_clean_source_sentences_drops_navigation_and_source_title_snippets():
+    text = (
+        "Toàn Cảnh Núi Bà Đen - Tây Ninh 2025 | Hướng Dẫn Chi Tiết. "
+        "Bách khoa toàn thư mở. Bỏ qua nội dung."
+    )
+
+    assert clean_source_sentences(
+        text,
+        "giới thiệu Núi Bà Đen",
+        "Toàn Cảnh Núi Bà Đen - Tây Ninh 2025 | Hướng Dẫn Chi Tiết",
+    ) == []
+
+
 def test_clean_source_sentences_cuts_at_word_boundary_and_keeps_relevant_fact():
     text = "Hồ Hoàn Kiếm có cảnh quan đẹp và là điểm dạo bộ nổi tiếng ở Hà Nội."
 

@@ -358,7 +358,7 @@ local có điểm semantic cao nhất rồi truyền cho `LlmSearchQueryPlanner`
 đặt `shouldSearch=true` và tạo tối đa ba truy vấn Tavily khi các nguồn này thiếu
 dữ kiện cần thiết. Nếu planner lỗi, service chỉ dùng truy vấn deterministic khi
 không có nguồn local hoặc cần refresh.
-Structured answer prompt yêu cầu các block semantic như `paragraph`, `factList`,
+Structured answer prompt (mặc định dùng provider Gemini; có thể chọn `extractive` cho development/test) yêu cầu các block semantic như `paragraph`, `factList`,
 `verse`, `quote`, `recommendations`, `steps`, `comparison` và `notice`, chỉ tạo
 block khi có đủ dữ kiện. Extractive fallback không tổng hợp bằng LLM; nó trả
 structured facts ngắn, tối đa ba đến năm item có citation và loại các segment

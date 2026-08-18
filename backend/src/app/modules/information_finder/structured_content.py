@@ -39,6 +39,10 @@ _NOISE_MARKERS = (
     "copyright",
     "discover flight",
     "@shutterstock",
+    "bách khoa toàn thư mở",
+    "bỏ qua nội dung",
+    "truy cập nội dung từ url được cung cấp hiện không khả dụng",
+    "hạn chế kỹ thuật",
     "tour du lịch hấp dẫn",
     "qua bài viết này",
 )
@@ -57,11 +61,13 @@ def clean_source_sentences(
     max_chars: int | None = None,
 ) -> list[str]:
     """Return short, useful source sentences without generic site chrome."""
-    del query, title
+    del query
     sentences: list[str] = []
     for raw in _SEGMENT_BOUNDARY.split(content.replace("\u00a0", " ")):
         sentence = re.sub(r"\s+", " ", raw).strip(" -•\t")
         if not sentence or _is_noise(sentence):
+            continue
+        if title and _same_as_source_title(sentence, title):
             continue
         if max_chars is not None and len(sentence) > max_chars:
             sentence = sentence[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:")
@@ -150,6 +156,11 @@ def _is_noise(sentence: str) -> bool:
     if any(_fold(marker) in folded for marker in _NOISE_MARKERS):
         return True
     return bool(_COMPANY_MARKER.search(sentence))
+
+
+def _same_as_source_title(sentence: str, title: str) -> bool:
+    """Drop provider snippets that contain only the page/video title."""
+    return _fold(sentence).strip(" .") == _fold(title).strip(" .")
 
 
 def _fold(value: str) -> str:

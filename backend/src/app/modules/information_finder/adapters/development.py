@@ -160,10 +160,9 @@ class ExtractiveAnswerGenerator:
             snippet = _limit_words(snippet, self.max_words_per_fact)
             if not snippet:
                 continue
-            prefix = "## Thông tin nổi bật\n\n" if not claims else ""
             claims.append(
                 AnswerClaim(
-                    text=f"{prefix}- {snippet}",
+                    text=f"- {snippet}",
                     source_ids=[source.source_id],
                 )
             )

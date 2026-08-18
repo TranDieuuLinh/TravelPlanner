@@ -38,7 +38,8 @@ class GeminiLlmClient:
         model: str = "gemini-2.5-flash",
         timeout_seconds: float = 30.0,
         key_cooldown_seconds: float = 60.0,
-        key_attempt_limit: int = 3,
+        # Use the full configured key pool before reporting quota exhaustion.
+        key_attempt_limit: int = 20,
         key_pool: GeminiKeyPool | None = None,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:

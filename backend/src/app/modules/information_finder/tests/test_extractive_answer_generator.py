@@ -32,7 +32,7 @@ def test_extractive_answer_is_bounded_and_uses_markdown_bullets():
     generated = asyncio.run(generator.generate("Vũng Tàu có gì?", sources))
 
     assert len(generated.claims) == 3
-    assert generated.claims[0].text.startswith("## Thông tin nổi bật\n\n- ")
+    assert generated.claims[0].text.startswith("- ")
     assert generated.claims[1].text.startswith("- ")
     assert all(len(claim.text.rsplit("- ", 1)[-1]) <= 280 for claim in generated.claims)
 

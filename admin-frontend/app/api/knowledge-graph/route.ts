@@ -20,7 +20,9 @@ const DATASET_DIRECTORY = path.resolve(
 );
 
 const BACKEND_API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+  process.env.API_BASE_URL ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  "http://localhost:8000";
 
 function isAllowedFile(value: unknown): value is AllowedFile {
   return typeof value === "string" && ALLOWED_FILES.includes(value as AllowedFile);
@@ -29,13 +31,15 @@ function isAllowedFile(value: unknown): value is AllowedFile {
 async function hasAdminSession(request: NextRequest): Promise<boolean> {
   try {
     const response = await fetch(
-      `${BACKEND_API_BASE}/admin/planning-runs?limit=1`,
+      `${BACKEND_API_BASE}/me`,
       {
         cache: "no-store",
         headers: { cookie: request.headers.get("cookie") ?? "" }
       }
     );
-    return response.ok;
+    if (!response.ok) return false;
+    const user = await response.json() as { role?: string };
+    return user.role === "admin";
   } catch {
     return false;
   }
