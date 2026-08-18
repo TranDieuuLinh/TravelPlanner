@@ -1876,29 +1876,70 @@ function Planner() {
   ): Promise<boolean> {
     const day = nextPlan.days.find((candidate) => candidate.day === dayNumber);
     if (!day || day.items.length < 2) return false;
-    const accommodation = nextPlan.accommodation;
-    const first = day.items[0];
-    if (
-      !accommodation &&
-      (!Number.isFinite(first.latitude) || !Number.isFinite(first.longitude))
-    ) {
+    type CoordinatePoint = { latitude: number; longitude: number };
+    const hasCoordinates = (point: {
+      latitude?: number | null;
+      longitude?: number | null;
+    }): point is CoordinatePoint =>
+      Number.isFinite(point.latitude) && Number.isFinite(point.longitude);
+    // Some planner/catalog records have a valid name but no coordinates.
+    // Resolve those names before routing so one incomplete item does not make
+    // every leg in the day appear unavailable.
+    const resolvePoint = async <T extends {
+      name: string;
+      latitude?: number | null;
+      longitude?: number | null;
+    }>(point: T): Promise<T> => {
+      if (hasCoordinates(point)) return point;
+      try {
+        const matches = await searchPlaces(point.name, nextPlan.destination, 3);
+        const match = matches.find((candidate) => hasCoordinates(candidate));
+        if (match) {
+          return {
+            ...point,
+            latitude: match.latitude,
+            longitude: match.longitude,
+          } as T;
+        }
+      } catch {
+        // Routing fallback below remains available when search is unavailable.
+      }
+      return point;
+    };
+    const resolvedItems = await Promise.all(day.items.map(resolvePoint));
+    const resolvedAccommodation = nextPlan.accommodation
+      ? await resolvePoint(nextPlan.accommodation)
+      : null;
+    const accommodation = resolvedAccommodation;
+    const first = resolvedItems[0];
+    const routableAccommodation = accommodation && hasCoordinates(accommodation)
+      ? accommodation
+      : null;
+    const routableFirst = hasCoordinates(first) ? first : null;
+    if (!routableAccommodation && !routableFirst) {
       return false;
     }
-    const origin = accommodation
+    const firstOrigin = routableFirst as CoordinatePoint;
+    const origin = routableAccommodation
       ? {
-          latitude: accommodation.latitude,
-          longitude: accommodation.longitude,
-          name: accommodation.name,
+          latitude: routableAccommodation.latitude,
+          longitude: routableAccommodation.longitude,
+          name: routableAccommodation.name,
         }
       : {
-          latitude: first.latitude ?? 0,
-          longitude: first.longitude ?? 0,
+          latitude: firstOrigin.latitude,
+          longitude: firstOrigin.longitude,
           name: first.name,
         };
-    const destinations = (accommodation ? day.items : day.items.slice(1))
+    const destinations = (routableAccommodation ? resolvedItems : resolvedItems.slice(1))
+      .filter(
+        (item): item is typeof item & CoordinatePoint =>
+          hasCoordinates(item),
+      )
       .filter(
         (item) =>
-          Number.isFinite(item.latitude) && Number.isFinite(item.longitude),
+          item.latitude >= -90 && item.latitude <= 90
+          && item.longitude >= -180 && item.longitude <= 180,
       )
       .map((item) => ({
         itemId: item.itemId ?? null,
@@ -1908,27 +1949,92 @@ function Planner() {
         longitude: item.longitude as number,
       }));
     if (destinations.length === 0) return false;
+    const routeOrigin = routableAccommodation
+      ? { itemId: routableAccommodation.placeId, name: routableAccommodation.name }
+      : { itemId: null, name: first.name };
+    const distanceMeters = (from: { latitude: number; longitude: number }, to: { latitude: number; longitude: number }) => {
+      const earthRadius = 6_371_000;
+      const radians = (value: number) => (value * Math.PI) / 180;
+      const dLat = radians(to.latitude - from.latitude);
+      const dLon = radians(to.longitude - from.longitude);
+      const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(radians(from.latitude)) * Math.cos(radians(to.latitude))
+        * Math.sin(dLon / 2) ** 2;
+      return Math.max(0, Math.round(2 * earthRadius * Math.asin(Math.sqrt(a))));
+    };
+    const fallbackLegs = () => {
+      const points = [
+        { ...origin, ...routeOrigin },
+        ...destinations,
+      ];
+      return points.slice(0, -1).map((from, index) => {
+        const to = points[index + 1];
+        const distance = distanceMeters(from, to);
+        return {
+          mode: "car",
+          distanceMeters: distance,
+          estimatedDurationMinutes: Math.max(1, Math.ceil(distance / 350)),
+          geometryCoordinates: [
+            [from.latitude, from.longitude],
+            [to.latitude, to.longitude],
+          ] as [number, number][],
+          source: "geodesic_estimate",
+          verified: false,
+          fromItemId: from.itemId,
+          toItemId: to.itemId,
+          fromPlace: from.name,
+          toPlace: to.name,
+        };
+      });
+    };
     try {
       const legs = await calculateDayDirections({
         origin,
         destinations,
         departureTime: new Date().toISOString(),
       });
+      const mappedLegs = legs.map((leg, index) => ({
+        ...leg,
+        fromItemId: index === 0 ? routeOrigin.itemId : destinations[index - 1]?.itemId ?? null,
+        toItemId: destinations[index]?.itemId ?? leg.toItemId,
+        fromPlace: index === 0 ? routeOrigin.name : destinations[index - 1]?.name ?? leg.fromPlace,
+        toPlace: destinations[index]?.name ?? leg.toPlace,
+      }));
+      const usableLegs = mappedLegs.length === destinations.length
+        && mappedLegs.every((leg) =>
+          leg.geometryCoordinates.length >= 2
+          && leg.geometryCoordinates.every((point) =>
+            Number.isFinite(point[0]) && Number.isFinite(point[1])
+          )
+        );
+      if (!usableLegs) throw new Error("Route response thiếu geometry hợp lệ.");
       setPlan((current) => {
         if (!current) return current;
         return {
           ...current,
           days: current.days.map((candidate) =>
             candidate.day === dayNumber
-              ? { ...candidate, transportLegs: legs }
+              ? { ...candidate, transportLegs: mappedLegs }
               : candidate,
           ),
         };
       });
       return true;
     } catch {
-      // Keep the planner output when routing is temporarily unavailable.
-      return false;
+      // Keep a drawable, clearly marked estimate when Valhalla is unavailable.
+      const estimatedLegs = fallbackLegs();
+      setPlan((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          days: current.days.map((candidate) =>
+            candidate.day === dayNumber
+              ? { ...candidate, transportLegs: estimatedLegs }
+              : candidate,
+          ),
+        };
+      });
+      return estimatedLegs.length > 0;
     }
   }
 

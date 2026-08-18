@@ -1,6 +1,9 @@
+import asyncio
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
+
+import asyncpg
 
 from app.modules.auth.contract import AuthUser
 from app.modules.auth.errors import AuthError
@@ -124,11 +127,20 @@ class AuthService:
         return self._to_user(record), token, csrf_token
 
     async def _session(self, token: str | None) -> SessionRecord | None:
-        return (
-            await self.repository.session_by_token(token_digest(token))
-            if token
-            else None
-        )
+        if not token:
+            return None
+
+        # Aiven/cloud PostgreSQL may close an idle connection between requests.
+        # Retry only connection-level failures; authentication/SQL errors must
+        # still surface normally instead of being hidden.
+        for attempt in range(2):
+            try:
+                return await self.repository.session_by_token(token_digest(token))
+            except (asyncpg.PostgresConnectionError, ConnectionError):
+                if attempt == 1:
+                    raise
+                await asyncio.sleep(0.2)
+        return None
 
     async def _require_session(self, token: str | None) -> SessionRecord:
         session = await self._session(token)

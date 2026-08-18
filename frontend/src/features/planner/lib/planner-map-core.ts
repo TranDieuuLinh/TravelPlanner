@@ -7,7 +7,11 @@ import {
 } from "@/features/planner/lib/transport-options";
 
 export const VIETNAM_CENTER: [number, number] = [106.2, 16.2];
-export const DEFAULT_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright";
+// The bright style contains numeric vector-tile filters that are evaluated
+// against nullable OpenMapTiles properties and produce noisy MapLibre worker
+// errors ("Expected value to be of type number, but found null"). Positron
+// uses the same OpenFreeMap source without those unsafe filters.
+export const DEFAULT_MAP_STYLE = "https://tiles.openfreemap.org/styles/positron";
 export const MAP_STYLE_URL =
   process.env.NEXT_PUBLIC_PLANNER_MAP_STYLE_URL ?? DEFAULT_MAP_STYLE;
 export const MAP_LAND_COLOR = "#f6f5f5";

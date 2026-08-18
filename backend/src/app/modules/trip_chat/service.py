@@ -153,18 +153,38 @@ class TripChatService:
             user_id, chat_id, expected_revision=expected_revision,
             day=day, item=item, position=position,
         )
-        chat = await self.repository.get_chat(user_id, chat_id) if status == "updated" else None
+        chat = (
+            await retry_transient_database(
+                lambda: self.repository.get_chat(user_id, chat_id)
+            )
+            if status == "updated"
+            else None
+        )
         return status, chat
 
     async def reorder_plan_items(
         self, user_id: int, chat_id: str, *, expected_revision: int,
         day: int, item_ids: list[str],
     ) -> tuple[PlanItemMutationStatus, TripChat | None]:
-        status = await self.repository.reorder_plan_items(
-            user_id, chat_id, expected_revision=expected_revision,
-            day=day, item_ids=item_ids,
+        # The cloud connection can be dropped before the transaction starts.
+        # Reorder is safe to retry: the expected revision makes a post-commit
+        # retry return a conflict instead of applying the move twice.
+        status = await retry_transient_database(
+            lambda: self.repository.reorder_plan_items(
+                user_id,
+                chat_id,
+                expected_revision=expected_revision,
+                day=day,
+                item_ids=item_ids,
+            )
         )
-        chat = await self.repository.get_chat(user_id, chat_id) if status == "updated" else None
+        chat = (
+            await retry_transient_database(
+                lambda: self.repository.get_chat(user_id, chat_id)
+            )
+            if status == "updated"
+            else None
+        )
         return status, chat
 
     async def send(

@@ -12,15 +12,17 @@ T = TypeVar("T")
 def is_transient_database_error(error: BaseException) -> bool:
     return isinstance(error, (
         asyncpg.PostgresConnectionError,
+        asyncpg.InterfaceError,
         asyncpg.TooManyConnectionsError,
         ConnectionError,
+        TimeoutError,
     ))
 
 
 async def retry_transient_database(
     operation: Callable[[], Awaitable[T]],
     *,
-    attempts: int = 2,
+    attempts: int = 3,
 ) -> T:
     for attempt in range(attempts):
         try:
