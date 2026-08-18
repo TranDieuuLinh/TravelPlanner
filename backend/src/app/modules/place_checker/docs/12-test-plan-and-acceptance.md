@@ -55,8 +55,7 @@ external adapter và downstream planning.
     match được mọi slot `day × breakfast/lunch/dinner`; thiếu hard slot phải
     block trước Planner dù tổng số Restaurant đã bằng `days * 3`.
 33a. Travel reserve đủ dữ liệu phải giữ coverage mềm tối thiểu 6/20
-     `Special_Experience` và 4/14 popular; popular phải đạt ngưỡng Bayesian,
-     ít nhất 500 review; thiếu bucket phải fallback đủ pool.
+     `Special_Experience` và 4/20 popular; thiếu bucket phải fallback đủ pool.
 34. TravelPlace thiếu Restaurant `special_near` không block nếu general food
     pool đã qua eligibility filter vẫn đủ hard minimum.
 35. Restaurant đã có trong food pool vẫn được tính paired theo anchor

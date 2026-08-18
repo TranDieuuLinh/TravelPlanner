@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import log1p
 
+from app.modules.place_checker.planner_category import planner_category
 from app.modules.place_checker.planner_category import planner_category_for_candidate
 from app.modules.place_checker.retrieval_contract import RetrievedCandidate
 from app.shared.tools.bayesian_rating import (

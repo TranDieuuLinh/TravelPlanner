@@ -13,6 +13,7 @@ from app.modules.place_checker.pool_policy import (
     food_pool_target_for_days,
     pool_query_limit_for_days,
 )
+from app.modules.place_checker.planner_category import planner_category
 from app.modules.place_checker.planner_category import planner_category_for_candidate
 from app.modules.place_checker.price_policy import planner_cost
 from app.modules.place_checker.reranking import CandidateDiversityReranker
