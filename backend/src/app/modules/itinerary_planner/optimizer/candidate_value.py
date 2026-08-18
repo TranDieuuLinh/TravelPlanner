@@ -1,4 +1,4 @@
-from app.modules.itinerary_planner.contract import CandidateSourceKind
+from app.modules.itinerary_planner.contract import CandidatePriority, CandidateSourceKind
 
 
 def build_special_value(problem, variables, weights):
@@ -33,4 +33,26 @@ def build_style_value(problem, variables, weights):
         variables.selected[candidate_id]
         * round(len(styles & set(candidate.styles)) / len(styles) * weights.style_max)
         for candidate_id, candidate in problem.candidate_by_id.items()
+    )
+
+
+def build_low_confidence_generic_place_cost(problem, variables, weight):
+    return sum(
+        variables.selected[candidate.place_id] * weight
+        for candidate in problem.valid_places
+        if candidate.source_kind == CandidateSourceKind.generic
+        and candidate.priority
+        not in {CandidatePriority.user_input, CandidatePriority.url}
+        and (candidate.review_count or 0) < 500
+    )
+
+
+def build_low_quality_food_cost(problem, variables, weight):
+    return sum(
+        variables.selected[candidate.place_id]
+        * (
+            weight * int((candidate.rating or 0) < 4.0)
+            + weight // 3 * int((candidate.review_count or 0) < 100)
+        )
+        for candidate in problem.valid_food
     )

@@ -201,7 +201,7 @@ full-day strict solve đều vô nghiệm, hybrid retry full-day một lần kh�
 wait cap; progressive penalty bên dưới vẫn tối thiểu hóa khoảng trống.
 
 Mỗi ngày solver bắt buộc đúng ba bữa, ít nhất hai candidate từ `places`, thưởng
-coverage đến ba `places`, và cho phép tối đa ba candidate từ pool optional
+coverage đến ba `places`, và cho phép tối đa một candidate từ pool optional
 `entertainment`. Entertainment không được tính thay cho minimum Place.
 
 ### Accommodation
@@ -285,11 +285,19 @@ solver instance song song, mỗi instance giữ một CP-SAT worker và dùng
 tốt hơn, bộ đếm stagnation được reset. Sau 10 round liên tiếp không cải thiện,
 solver trả incumbent tốt nhất. Nếu một attempt chứng minh exact optimum thì
 dừng ngay. `SolverConfig` vẫn nhận timeout riêng cho từng attempt.
-Objective dùng baseline hai activity buổi sáng/ngày và phạt mềm số Entertainment
-bắt đầu trước 12:00 vượt target 10% của baseline đó. TravelPlace vì vậy được ưu
-tiên cho buổi sáng; mỗi suất vượt bị phạt 6.000 utility. Tuy vậy,
-Entertainment bắt buộc hoặc chỉ khả thi buổi sáng vẫn được xếp với cost thay vì
+Objective dùng baseline bốn activity ban ngày/ngày và phạt mềm số Entertainment
+bắt đầu trước 18:00 vượt target 10% của baseline đó. TravelPlace vì vậy được ưu
+tiên cho cả sáng và chiều; mỗi suất vượt bị phạt 6.000 utility. Tuy vậy,
+Entertainment bắt buộc hoặc chỉ khả thi ban ngày vẫn được xếp với cost thay vì
 làm model `INFEASIBLE`; preflight và hard minimum Place không đổi.
+
+Mỗi Special Experience được cộng 4.000 utility. Objective đặt target mềm hai
+Special TravelPlace/ngày và phạt 10.000 cho mỗi suất thiếu khả thi; hybrid
+shortlist cũng reserve loại này theo ngày để route ngắn không loại hết trải
+nghiệm đặc sắc. Generic TravelPlace dưới 500 review và food chất lượng thấp chịu
+cost riêng; stop vượt nhịp mục tiêu chịu 800 utility để giảm lịch quá dày.
+Popular TravelPlace có target mềm hai/ngày và shortfall cost 6.000 mỗi suất để
+lịch khách lần đầu có nhiều landmark dễ nhận biết hơn.
 
 Pass priority yêu cầu exact optimum để khóa số `user_input` và URL. Pass utility
 dùng `relative_gap_limit=0.05`, nên có thể dừng khi utility nằm trong 5% bound;

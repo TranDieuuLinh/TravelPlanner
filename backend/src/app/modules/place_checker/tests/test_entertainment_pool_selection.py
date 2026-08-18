@@ -43,7 +43,7 @@ def test_keeps_only_high_bayesian_optional_entertainment() -> None:
     assert [candidate.place_id for candidate in selected] == ["high"]
 
 
-def test_caps_optional_morning_entertainment_but_preserves_other_times() -> None:
+def test_caps_optional_entertainment_across_morning_and_afternoon() -> None:
     selected = select_entertainment_pool(
         [
             _candidate("morning-best", rating=4.9, reviews=2_000),
@@ -54,10 +54,7 @@ def test_caps_optional_morning_entertainment_but_preserves_other_times() -> None
         limit=4,
     )
 
-    assert {candidate.place_id for candidate in selected} == {
-        "afternoon",
-        "morning-best",
-    }
+    assert [candidate.place_id for candidate in selected] == ["morning-best"]
 
 
 def test_required_entertainment_bypasses_quality_and_morning_caps() -> None:

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from ortools.sat.python import cp_model
 
 from app.modules.itinerary_planner.optimizer.entertainment_mix import (
-    build_morning_entertainment_excess_cost,
+    build_daytime_entertainment_excess_cost,
 )
 from app.modules.itinerary_planner.optimizer.variables import PlannerVariables
 
@@ -13,8 +13,8 @@ def _solve(*, force_entertainment_morning: bool) -> tuple[int, int]:
     variables = PlannerVariables()
     for candidate_id in ("museum", "arcade"):
         assigned = variables.remember(model.NewBoolVar(f"assigned:{candidate_id}:1"))
-        start = variables.remember(model.NewIntVar(0, 1_000, f"start:{candidate_id}:1"))
-        end = variables.remember(model.NewIntVar(0, 1_000, f"end:{candidate_id}:1"))
+        start = variables.remember(model.NewIntVar(0, 1_440, f"start:{candidate_id}:1"))
+        end = variables.remember(model.NewIntVar(0, 1_440, f"end:{candidate_id}:1"))
         variables.assigned[(candidate_id, 1)] = assigned
         variables.start[(candidate_id, 1)] = start
         variables.end[(candidate_id, 1)] = end
@@ -23,7 +23,7 @@ def _solve(*, force_entertainment_morning: bool) -> tuple[int, int]:
     model.Add(variables.end[("museum", 1)] == 600)
     model.AddAllowedAssignments(
         [variables.start[("arcade", 1)], variables.end[("arcade", 1)]],
-        [(540, 600), (840, 900)],
+        [(540, 600), (1140, 1200)],
     )
     if force_entertainment_morning:
         model.Add(variables.start[("arcade", 1)] == 540)
@@ -35,7 +35,7 @@ def _solve(*, force_entertainment_morning: bool) -> tuple[int, int]:
             SimpleNamespace(place_id="arcade", entity_type="entertainment"),
         ),
     )
-    cost = build_morning_entertainment_excess_cost(
+    cost = build_daytime_entertainment_excess_cost(
         model,
         problem,
         variables,
@@ -49,10 +49,10 @@ def _solve(*, force_entertainment_morning: bool) -> tuple[int, int]:
     return solver.Value(variables.end[("arcade", 1)]), solver.Value(cost)
 
 
-def test_soft_ten_percent_target_moves_flexible_entertainment_out_of_morning() -> None:
+def test_soft_ten_percent_target_moves_flexible_entertainment_out_of_daytime() -> None:
     entertainment_end, cost = _solve(force_entertainment_morning=False)
 
-    assert entertainment_end == 900
+    assert entertainment_end == 1200
     assert cost == 0
 
 

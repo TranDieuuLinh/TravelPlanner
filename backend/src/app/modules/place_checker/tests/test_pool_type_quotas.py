@@ -251,6 +251,16 @@ def test_obvious_leisure_name_cannot_masquerade_as_travel_place() -> None:
         "Kính Mắt Việt Tín - Tasco Mall Long Biên",
         "Miniwood Design",
         "Hanoi Mood:ON Tây Sơn",
+        "FOURT PILATES VINHOMES RIVERSIDE",
+        "Gpt Guitar School",
+        "Tẩm Quất Người Mù Khiếm Thị Dương Minh",
+        "Khoa Cầu Đường, Trường ĐHXD Hà Nội - Faculty of Bridges and Roads",
+        "TiredCity 05 Nhà Thờ",
+        "TLT PICKLEBALL HOUSE",
+        "Cửa hàng The Rare Rium- Plant & Moss Art",
+        "Guitar Ba Đờn - Showroom Chính Hãng Hà Nội",
+        "Vòng Hoa Nhà Tang Lễ Cầu Giấy Trần Vĩ",
+        "Công Ty Tnhh Tinh Dầu Và Chất Thơm Ht",
     ):
         assert (
             planner_category_for_candidate(
@@ -288,11 +298,45 @@ def test_obvious_leisure_name_cannot_masquerade_as_travel_place() -> None:
     assert (
         planner_category_for_candidate(
             "travel_place",
+            name="Quán Mì Vằn Thắn, Sủi Cảo Gia Truyền",
+            tags=["travel_place"],
+        )
+        == "restaurant"
+    )
+    assert (
+        planner_category_for_candidate(
+            "restaurant",
+            name="Trà sữa Dee Thai",
+            tags=["đồ_uống"],
+        )
+        == "drink_dessert"
+    )
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
             name="Hanoi Creative Space",
             tags=["culture"],
         )
         == "travel_place"
     )
+    for name, context in (
+        ("Empty Wall Gallery", "thuộc danh mục Art supply store"),
+        ("Thien y art gallery", "thuộc danh mục Artistic handicrafts"),
+        ("Kính Hoa Đồng Gia Việt", "thuộc danh mục Stained glass studio"),
+        ("Photosona", "thuộc danh mục Photo booth"),
+        ("NOTH Garden", "thuộc danh mục Garden center"),
+        ("Vườn của mẹ", "thuộc danh mục Interior plant service"),
+        ("Trang Phục Biểu Diễn", "thuộc danh mục Costume rental service"),
+    ):
+        assert (
+            planner_category_for_candidate(
+                "travel_place",
+                name=name,
+                tags=["travel_place"],
+                context=context,
+            )
+            == "entertainment"
+        )
 
 
 def test_activity_pool_soft_caps_repeated_broad_tags_when_alternatives_exist() -> None:

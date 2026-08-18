@@ -8,13 +8,15 @@ from app.modules.itinerary_planner.optimizer.activity_coverage import (
     build_activity_coverage_value,
 )
 from app.modules.itinerary_planner.optimizer.candidate_value import (
+    build_low_confidence_generic_place_cost,
+    build_low_quality_food_cost,
     build_preference_value,
     build_special_value,
     build_style_value,
 )
 from app.modules.itinerary_planner.optimizer.config import ObjectiveWeights
 from app.modules.itinerary_planner.optimizer.entertainment_mix import (
-    build_morning_entertainment_excess_cost,
+    build_daytime_entertainment_excess_cost,
 )
 from app.modules.itinerary_planner.optimizer.popular_place_coverage import (
     build_popular_place_shortfall_cost,
@@ -24,6 +26,9 @@ from app.modules.itinerary_planner.optimizer.review_value import (
     build_quality_value,
 )
 from app.modules.itinerary_planner.optimizer.source_mix import build_source_mix_cost
+from app.modules.itinerary_planner.optimizer.special_place_coverage import (
+    build_special_place_shortfall_cost,
+)
 from app.modules.itinerary_planner.optimizer.tag_diversity import (
     build_consecutive_tag_repetition_cost,
     build_same_day_tag_repetition_cost,
@@ -75,6 +80,12 @@ def build_objective(
             problem, variables, weights.consecutive_diversity_max
         ),
         "foodDiversityCost": _food_diversity(model, problem, variables, weights),
+        "lowQualityFoodCost": build_low_quality_food_cost(
+            problem, variables, weights.low_quality_food
+        ),
+        "lowConfidenceGenericPlaceCost": build_low_confidence_generic_place_cost(
+            problem, variables, weights.low_confidence_generic_place
+        ),
         "travelTimeCost": _travel_cost(routing, variables, weights),
         "accommodationRelocationCost": _accommodation_relocation_cost(
             routing, variables, weights
@@ -89,13 +100,19 @@ def build_objective(
         "sourceMixDeviationCost": build_source_mix_cost(
             model, problem, variables, weights.source_mix_deviation
         ),
-        "morningEntertainmentExcessCost": (
-            build_morning_entertainment_excess_cost(
+        "daytimeEntertainmentExcessCost": (
+            build_daytime_entertainment_excess_cost(
                 model,
                 problem,
                 variables,
-                weights.morning_entertainment_excess,
+                weights.daytime_entertainment_excess,
             )
+        ),
+        "specialPlaceShortfallCost": build_special_place_shortfall_cost(
+            model,
+            problem,
+            variables,
+            weights.special_place_shortfall,
         ),
         "popularPlaceShortfallCost": build_popular_place_shortfall_cost(
             model,

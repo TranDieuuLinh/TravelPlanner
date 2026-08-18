@@ -11,7 +11,7 @@ from app.shared.tools.bayesian_rating import (
 )
 
 COMPOSITION_BASE = 14
-SPECIAL_SLOTS = 6
+SPECIAL_SLOTS = 8
 POPULAR_SLOTS = 4
 MAX_DIVERSITY_TAG_OCCURRENCES = 3
 MIN_POPULAR_REVIEW_COUNT = 500
@@ -209,7 +209,11 @@ def _is_special(item: ScoredCandidate) -> bool:
         item.candidate.metadata.relationships if item.candidate.metadata else []
     )
     source_kind, _ = source_metadata(
-        [*item.candidate.relationships, *metadata_relationships]
+        [*item.candidate.relationships, *metadata_relationships],
+        [
+            *item.candidate.tags,
+            f"pool_category:{item.candidate.pool_category or ''}",
+        ],
     )
     return source_kind in {"special_experience", "both"}
 

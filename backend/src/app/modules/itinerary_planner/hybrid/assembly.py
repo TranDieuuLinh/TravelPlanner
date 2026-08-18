@@ -70,7 +70,7 @@ def assemble_hybrid_result(
         ),
         objective_value=sum(result.objective_value for result in day_results),
         objective_components=dict(components),
-        objective_policy_version="hybrid-activity-corridor-v6-balanced-popular-place",
+        objective_policy_version="hybrid-activity-corridor-v8-first-visitor-landmarks",
         passes=tuple(item for result in day_results for item in result.passes),
         source_mix=_combine_source_mix(day_results),
     )

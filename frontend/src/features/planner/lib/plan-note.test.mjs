@@ -106,6 +106,21 @@ test("hides internal Bayesian rating details from source notes", () => {
   assert.equal(formatSourceNoteForDisplay("Bayesian rating 4.20/5."), null);
 });
 
+test("turns generated Google category metadata into a useful description", () => {
+  assert.equal(
+    formatSourceNoteForDisplay(
+      "Tẩm Quất Người Mù Khiếm Thị Dương Minh thuộc danh mục Reflexologist; mô tả tối thiểu được tạo từ dữ liệu nguồn."
+    ),
+    "Tẩm Quất Người Mù Khiếm Thị Dương Minh là cơ sở bấm huyệt và chăm sóc sức khỏe."
+  );
+  assert.equal(
+    formatSourceNoteForDisplay(
+      "Địa điểm mẫu thuộc danh mục Art_center; mô tả tối thiểu được tạo từ dữ liệu nguồn."
+    ),
+    "Địa điểm mẫu là địa điểm thuộc nhóm Art center."
+  );
+});
+
 test("presents source and personal notes without merging their ownership", () => {
   assert.deepEqual(
     planItemNotePresentation({

@@ -29,7 +29,7 @@ from app.modules.itinerary_planner.routing_models import RoutingProblem
 MAX_ACTIVITY_CANDIDATES = 16
 FOOD_OPTIONS_PER_MEAL = 3
 DEFAULT_QUALITY_MAX = 300
-SPECIAL_EXPERIENCE_SCORE = 4_000
+SPECIAL_EXPERIENCE_SCORE = 8_000
 PREFERENCE_MATCH_SCORE = 2_000
 POPULARITY_SCORE_MAX = 1_500
 POPULAR_PLACE_SCORE = 6_000
@@ -56,12 +56,19 @@ def build_day_shortlist(
     quality_by_id = bayesian_quality_by_id(problem.candidate_by_id.values())
     popularity = popularity_by_id(problem.candidate_by_id.values())
     popular_places = popular_place_ids(problem)
+    special_places = frozenset(
+        candidate.place_id
+        for candidate in problem.valid_places
+        if candidate.source_kind
+        in {CandidateSourceKind.special_experience, CandidateSourceKind.both}
+    )
     food_ids = {item.place_id for item in problem.valid_food}
     available = available_candidate_ids(
         problem,
         day=day,
         used_ids=used_ids,
         popular_ids=popular_places,
+        special_ids=special_places,
     )
     activities = [
         problem.candidate_by_id[candidate_id]

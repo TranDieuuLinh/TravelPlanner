@@ -5,6 +5,9 @@ from math import ceil
 from app.modules.itinerary_planner.optimizer.popular_place_coverage import (
     POPULAR_PLACES_PER_DAY,
 )
+from app.modules.itinerary_planner.optimizer.special_place_coverage import (
+    SPECIAL_PLACES_PER_DAY,
+)
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 
 
@@ -14,36 +17,48 @@ def available_candidate_ids(
     day: int,
     used_ids: frozenset[str],
     popular_ids: frozenset[str],
+    special_ids: frozenset[str],
 ) -> set[str]:
-    daily_popular = popular_places_for_day(
+    daily_popular = _group_candidates_for_day(
         problem,
         day=day,
         used_ids=used_ids,
-        popular_ids=popular_ids,
+        candidate_ids=popular_ids,
+        per_day=POPULAR_PLACES_PER_DAY,
     )
+    daily_special = _group_candidates_for_day(
+        problem,
+        day=day,
+        used_ids=used_ids,
+        candidate_ids=special_ids,
+        per_day=SPECIAL_PLACES_PER_DAY,
+    )
+    controlled = popular_ids | special_ids
+    daily_controlled = daily_popular | daily_special
     available = {
         candidate_id
         for candidate_id, preferred in problem.preferred_days.items()
         if day in preferred
         and candidate_id not in used_ids
-        and (candidate_id not in popular_ids or candidate_id in daily_popular)
+        and (candidate_id not in controlled or candidate_id in daily_controlled)
     }
-    available.update(daily_popular)
+    available.update(daily_controlled)
     return available
 
 
-def popular_places_for_day(
+def _group_candidates_for_day(
     problem: PreparedPlanningProblem,
     *,
     day: int,
     used_ids: frozenset[str],
-    popular_ids: frozenset[str],
+    candidate_ids: frozenset[str],
+    per_day: int,
 ) -> frozenset[str]:
-    """Expose a fair daily share while reserving landmarks for later days."""
-    remaining = popular_ids - used_ids
+    """Expose a fair daily share while reserving valued places for later days."""
+    remaining = candidate_ids - used_ids
     days_left = problem.trip.days - day + 1
     daily_share = min(
-        POPULAR_PLACES_PER_DAY,
+        per_day,
         ceil(len(remaining) / days_left),
     )
     feasible_now = [

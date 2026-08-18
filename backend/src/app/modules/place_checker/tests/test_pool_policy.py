@@ -137,6 +137,8 @@ def test_core_pool_retrieval_leaves_restaurants_to_food_pool_service() -> None:
     assert set(queries) == {
         "pool:travel_place_candidates",
         "pool:popular_landmark_candidates",
+        "pool:heritage_landmark_candidates",
+        "pool:special_experience_candidates",
         "pool:accommodation_candidates",
         "pool:travel_place_reserve",
     }
@@ -144,6 +146,10 @@ def test_core_pool_retrieval_leaves_restaurants_to_food_pool_service() -> None:
     assert (
         queries["pool:popular_landmark_candidates"].query_text
         == "famous landmark must see top attraction"
+    )
+    assert (
+        queries["pool:heritage_landmark_candidates"].query_text
+        == "iconic historic landmark museum temple old quarter"
     )
     assert queries["pool:accommodation_candidates"].category_hint == "accommodation"
     assert all(query.limit == 60 for query in queries.values())
@@ -237,10 +243,10 @@ def test_adaptive_pool_only_adds_queries_needed_for_shortfall() -> None:
     assert [query.gap_id for query in source.queries] == [
         "pool:travel_place_candidates",
         "pool:popular_landmark_candidates",
+        "pool:heritage_landmark_candidates",
+        "pool:special_experience_candidates",
         "pool:culture_alternatives",
         "pool:nature_alternatives",
-        "pool:shopping_alternatives",
-        "pool:nightlife_alternatives",
         "pool:entertainment_alternatives",
     ]
 

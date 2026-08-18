@@ -221,12 +221,15 @@ Rich `PlaceCheckerResult` giữ evaluation, provenance và diagnostic. Sau đó
 validate payload này bằng `ItineraryPlannerInput` và giữ tại `planner_input`.
 Retrieval/ranking dùng target `22 TravelPlace/ngày`, `16 Restaurant/ngày` và
 `6 DrinkDessert/Entertainment/ngày`. Core TravelPlace retrieval có query riêng
-cho famous/must-see landmark. Entertainment tự gợi ý phải đạt Bayesian rating
+cho famous/must-see, historic landmark/museum/temple/old quarter và authentic
+local cultural special experience.
+Entertainment tự gợi ý phải đạt Bayesian rating
 điều chỉnh tối thiểu 4,2/5; direct-user/URL được giữ. Compact selector
 chỉ dùng `8 TravelPlace/ngày` làm hard handoff minimum; phần thiếu so với target
-22/ngày là reserve shortfall, không tự chặn Planner. Selector giảm riêng
-Entertainment có thể xếp 08:00-12:00; candidate chỉ khả thi buổi
-chiều/tối không chịu morning cap nhưng vẫn nằm trong quota toàn ngày. Ba Style breakfast/lunch/dinner active
+22/ngày là reserve shortfall, không tự chặn Planner. Selector giữ tối đa
+`max(1, ceil(days / 3))` Entertainment tùy chọn có thể xếp 08:00-18:00;
+candidate chỉ khả thi buổi tối không chịu cap này nhưng vẫn nằm trong quota toàn
+ngày. Ba Style breakfast/lunch/dinner active
 mặc định; Style food/drink khác chỉ active khi request resolve tới Style đó.
 Mỗi Style active có target mềm `2 × days`; PlaceChecker chọn Item trước, reverse
 `Offer_Item` sang Restaurant/DrinkDessert và cân bằng
@@ -263,7 +266,8 @@ qua relationship evidence, còn `Has_Style` là fallback khi thiếu timing cụ
 và được giữ thành tag `style:*` cho diversity coverage. Travel reserve chạy
 thematic query cho culture, nature, shopping, nightlife, workshop, performance,
 outdoor, family và local activity, giữ một candidate mỗi theme/style khả dụng
-trước khi bù theo 6/14 Special Experience đã duyệt và 4/14 popular;
+trước khi bù theo 8/14 Special Experience có evidence/provenance đã duyệt và
+4/14 popular;
 popular kết hợp Bayesian quality với log review count, bucket thiếu được ranking
 diversity bù và không làm PlaceChecker phân ngày thay Planner. Popular bucket
 chỉ tính candidate có ít nhất 500 review và popularity score từ 0,70. Semantic
@@ -271,6 +275,9 @@ category guard chuyển music box, karaoke, golf, billiard/bi-a, bowling, studio
 game center, massage/trị liệu, spa và retail store/souvenir bị gắn `TravelPlace`
 sai sang `Entertainment` trước khi chia pool.
 Candidate có `pool_category=shopping` cũng không được tính là landmark.
+Compact boundary dùng thêm provider note làm semantic context để chuyển source
+category thương mại như art supply store, photo booth, garden center và plant
+service khỏi TravelPlace; đây không thay đổi ontology lưu trữ.
 Compact output giữ TravelPlace thiếu giá và mặc định `price.cost=0 VND`; food,
 entertainment và accommodation vẫn phải có giá dùng được. User input bị loại vì
 lý do khác được giữ trong `excludedCandidates` để Planner trả `unscheduled` cùng
@@ -333,12 +340,12 @@ request. Nếu replan chọn arc mới dài hơn matrix, correction/repair tiế
 có correction mới đến lúc timeline ổn định; không có wall-clock timeout mặc
 định cho chuỗi này. Route detail gây overlap luôn kích hoạt repair, kể cả lệch
 1-2 phút; tolerance không nới lỏng hard timeline validity.
-Entertainment bắt đầu trước 12:00 có target mềm 10% trên baseline hai activity
-buổi sáng/ngày; phần vượt target bị trừ utility thay vì hard-fail để candidate
+Entertainment bắt đầu trước 18:00 có target mềm 10% trên baseline bốn activity
+ban ngày/ngày; phần vượt target bị trừ utility thay vì hard-fail để candidate
 bắt buộc và
 preflight vẫn khả thi. Mỗi ngày bắt buộc có activity xen giữa breakfast/lunch và lunch/dinner bằng
 hard constraint cấm food-to-food arc. Planner bắt buộc ít nhất hai Place và
-thưởng đến ba Place/ngày; Entertainment optional, tối đa ba/ngày,
+thưởng đến ba Place/ngày; Entertainment optional, tối đa một/ngày,
 được dịch meal trong policy window để chèn activity; nếu shortlist chưa đạt ba
 activity thì mở reserve khả thi và solve refill. Waiting giữa hai stop liên tiếp bị giới hạn tối đa 150 phút ngoài
 `safeTravel` đã gồm routing buffer; khi pool/opening
@@ -346,8 +353,13 @@ window không dựng được chuỗi liên tục, solver trả `INFEASIBLE` tha
 ngày chỉ có ba bữa ăn.
 Trong số TravelPlace, candidate có ít nhất 500 review và Bayesian rating điều
 chỉnh từ 4,2 được xem là popular. Shortlist cộng 6.000 điểm và objective đặt
-target mềm một popular TravelPlace/ngày, phạt 6.000 cho mỗi suất thiếu khả thi
+target mềm hai popular TravelPlace/ngày, phạt 6.000 cho mỗi suất thiếu khả thi
 để không dồn toàn bộ landmark vào một ngày chỉ nhằm giảm route ngắn hạn.
+Planner còn cộng 4.000 utility cho mỗi TravelPlace thuộc Special Experience và
+đặt target mềm hai điểm loại này/ngày, phạt 10.000 cho mỗi suất thiếu khả thi.
+Candidate TravelPlace generic dưới 500 review và quán rating dưới 4,0/review
+quá ít chịu cost chất lượng; stop vượt nhịp ngày hợp lý chịu cost 800 để tránh
+lịch dày máy móc.
 Nightlife và night-market bị clamp start từ 18:00; `Weekend Night Market` chỉ
 khả thi vào Thứ Sáu-Chủ Nhật theo `trip.startDate`. Candidate place được đánh
 dấu `drink_dessert` bị giới hạn tối đa hai điểm mỗi ngày.

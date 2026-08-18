@@ -168,7 +168,9 @@ người dùng không nêu số khách, Explorer mặc định hai người, cò
 luôn ghi đè mặc định này.
 Thẻ ngân sách cộng `days[].costBreakdown` và hiển thị bốn nhóm riêng:
 TravelPlace, Restaurant/ăn uống, Accommodation và transportation; trên màn
-hình hẹp bốn nhóm tự xuống lưới hai cột.
+hình hẹp bốn nhóm tự xuống lưới hai cột. Tổng dự kiến và từng nhóm đều hiển thị
+theo người; thẻ đồng thời hiển thị `budgetPerPerson` đã được PlaceChecker chuẩn
+hóa hoặc ước tính để người dùng so sánh với chi phí của itinerary.
 Frontend chỉ hiển thị đi bộ cho chặng ngắn hơn 1,5 km. Với chặng có nhiều
 phương án hợp lệ, thao tác chọn option gọi Trip Chat mutation; backend lưu
 `selectedTransport` vào đúng leg trong `currentPlannerOutput` với optimistic
@@ -418,21 +420,30 @@ cho phép lặp venue, còn finalization trả `placeId` thật, `itemId` riêng
 và warning fallback. Pass utility dùng relative gap 5%, còn pass priority vẫn
 tối ưu exact trước khi khóa riêng count
 user input và URL.
-Retrieval ngoài gap phân tích còn mở core pool và thematic pool theo chuyến.
+Retrieval ngoài gap phân tích còn mở core pool famous/must-see, core pool
+historic landmark/museum/temple/old quarter, core pool authentic local cultural
+special experience và thematic pool theo chuyến.
 TravelPlace dùng target `22/ngày`, Restaurant `16/ngày`, và pool optional
 DrinkDessert/Entertainment `6/ngày`; Entertainment tự gợi ý phải có Bayesian
-rating điều chỉnh từ 4,2/5. Compact selection giảm riêng candidate Entertainment
-có thể xếp buổi sáng. Target TravelPlace là retrieval reserve; hard handoff sang
+rating điều chỉnh từ 4,2/5. Compact selection giữ tối đa
+`max(1, ceil(days / 3))` Entertainment tùy chọn có thể xếp 08:00-18:00. Target
+TravelPlace là retrieval reserve; hard handoff sang
 Planner chỉ cần `8/ngày`, tránh chặn chuyến đi đã có đủ phương án tối ưu.
-Direct-user/URL bypass cap, còn lựa chọn chỉ mở chiều/tối
-không chịu morning cap nhưng vẫn nằm trong quota toàn ngày.
+Direct-user/URL bypass cap, còn lựa chọn chỉ mở buổi tối không chịu daytime cap
+nhưng vẫn nằm trong quota toàn ngày.
 TravelPlace vẫn giữ một đại diện cho mỗi theme/style khả dụng
 trước khi bù theo Special Experience/popular. Popular phải có ít nhất 500
 review và popularity score từ 0,70; Planner giữ popular candidate khả thi ngoài
 geographic preferred day và phạt mạnh suất landmark thiếu trên từng ngày.
+Reserve target Special Experience là 8/14. Planner thưởng 4.000 mỗi Special,
+đặt target mềm hai/ngày với shortfall 10.000; landmark popular cũng có target
+mềm hai/ngày. Entertainment giới hạn tối đa một/ngày và bị phạt nếu số điểm
+trước 18:00 vượt 10% baseline ban ngày.
 Semantic guard chuyển music box, karaoke, golf, billiard/bi-a, bowling, studio,
 game center, massage/trị liệu, spa và retail store/souvenir bị gắn TravelPlace
 sai sang Entertainment trước scoring/quota/compact output. Food dùng reserve `16/ngày`:
+Compact boundary còn dùng provider note làm semantic context để nhận art supply
+store, photo booth, garden center và plant service bị gắn sai TravelPlace.
 ba Style bữa chính được active mặc định; Style food/drink khác chỉ active khi
 được resolve từ preference hoặc input Item. Mỗi Style active có target mềm
 `2 × days`, chọn Item trước rồi reverse `Offer_Item` sang quán theo anchor region.

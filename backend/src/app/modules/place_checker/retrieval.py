@@ -153,6 +153,16 @@ CORE_POOL_QUERY_SPECS = {
         "famous landmark must see top attraction",
         "travel place",
     ),
+    "pool:heritage_landmark_candidates": (
+        GapType.experience_coverage,
+        "iconic historic landmark museum temple old quarter",
+        "travel place",
+    ),
+    "pool:special_experience_candidates": (
+        GapType.experience_coverage,
+        "authentic local cultural special experience",
+        "travel place",
+    ),
     "pool:accommodation_candidates": (
         GapType.budget,
         "hotel",
@@ -166,6 +176,24 @@ CORE_POOL_QUERY_SPECS = {
 }
 
 POOL_RELATION_TERMS = {
+    "pool:heritage_landmark_candidates": [
+        "di tích",
+        "lịch sử",
+        "bảo tàng",
+        "đền chùa",
+        "phố cổ",
+        "historic landmark",
+        "museum",
+        "temple",
+    ],
+    "pool:special_experience_candidates": [
+        "di sản",
+        "lịch sử",
+        "văn hóa địa phương",
+        "nghề thủ công truyền thống",
+        "heritage",
+        "local culture",
+    ],
     "pool:culture_alternatives": ["văn hóa", "tham quan", "heritage", "museum"],
     "pool:nature_alternatives": [
         "ngoài trời",

@@ -269,7 +269,9 @@
 .plannerBudgetItem--accommodation .plannerBudgetItemIcon { color: #8b45d6; background: #f2eafb; }
 .plannerBudgetItem--transportation .plannerBudgetItemIcon { color: #2588db; background: #e9f3fd; }
 .plannerBudgetItemHeading > span:last-child { overflow: hidden; color: #4f6661; font-size: .8rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
-.plannerBudgetItem > strong { color: #173b36; font-size: 1.12rem; line-height: 1.2; white-space: nowrap; }
+.plannerBudgetItemAmount { display: flex; min-width: 0; align-items: baseline; gap: 5px; }
+.plannerBudgetItemAmount > strong { overflow: hidden; color: #173b36; font-size: 1.12rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.plannerBudgetItemAmount > small { flex: 0 0 auto; color: #60736d; font-size: .62rem; font-weight: 750; white-space: nowrap; }
 .plannerBudgetMeter { height: 8px; overflow: hidden; border-radius: 999px; background: #edf1f0; }
 .plannerBudgetMeter > span { display: block; height: 100%; min-width: 4px; border-radius: inherit; }
 .plannerBudgetItem--travelPlaces .plannerBudgetMeter > span { background: #26b35f; }
@@ -290,7 +292,7 @@
   .plannerBudgetItems { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .plannerBudgetItem { padding: 12px; }
   .plannerBudgetItemIcon { width: 36px; height: 36px; }
-  .plannerBudgetItem > strong { font-size: .92rem; }
+  .plannerBudgetItemAmount > strong { font-size: .92rem; }
 }
 .interestGroup { display: grid; gap: 7px; padding: 0 16px 16px; }
 .interestGroup .sectionMicroTitle { margin: 0; }

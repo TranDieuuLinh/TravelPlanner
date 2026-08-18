@@ -14,8 +14,8 @@ PlaceChecker không gán ngày hoặc buổi. Module chỉ trả pool đã xác 
 
 Pool có ba quota độc lập: reserve 22 `TravelPlace`/ngày, 16 `Restaurant`/ngày
 và 6 `DrinkDessert`/`Entertainment` mỗi ngày. TravelPlace tăng để bảo vệ
-preflight; quota Entertainment toàn ngày không giảm vì chính sách chỉ giảm
-candidate có thể rơi vào buổi sáng.
+preflight; trong compact pool, Entertainment tùy chọn có thể rơi vào ban ngày
+08:00-18:00 có cap riêng nhỏ hơn quota toàn ngày.
 Target 22 TravelPlace/ngày điều khiển retrieval và ranking. Hard handoff gate
 riêng chỉ yêu cầu 8 TravelPlace/ngày; vì vậy pool đủ lớn để Planner tối ưu sẽ
 không bị chặn chỉ vì nguồn live không lấp đầy toàn bộ reserve mong muốn.
@@ -35,10 +35,12 @@ quán user-requested rồi quán đã ghép và vẫn chặn tổng Restaurant t
 
 TravelPlace selector dùng coverage mềm trên phần candidate retrieval cần thêm:
 
-Core retrieval luôn có query `famous landmark must see top attraction` riêng,
-không phụ thuộc query chung `travel place` hay theme query.
+Core retrieval luôn có query `famous landmark must see top attraction`, query
+`iconic historic landmark museum temple old quarter` và query `authentic local
+cultural special experience` riêng, không phụ thuộc query chung `travel place`
+hay theme query.
 
-- khoảng 6/14 có evidence `Special_Experience` thật;
+- khoảng 8/14 có evidence hoặc provenance tag `Special_Experience` đã duyệt;
 - khoảng 4/14 có popularity signal từ Bayesian quality và `log(reviewCount)`;
 - phần còn lại theo ranking diversity/preference/geography đã có.
 
@@ -50,6 +52,9 @@ bowling, studio, game center, massage/trị liệu, spa hoặc retail store/souv
 từ `TravelPlace` sai sang `Entertainment`.
 Provenance `pool_category=shopping` là tín hiệu tổng quát cho cùng mapping, tránh
 phải hard-code từng thương hiệu retail từ nguồn live.
+Ở compact boundary, provider note được dùng làm semantic context để chuyển art
+supply store, photo booth, garden center, plant service và venue thương mại
+tương tự khỏi TravelPlace trước khi áp cap Entertainment.
 Food-name guard sửa nguồn gắn nhầm quán phở/bún/cơm/lẩu/mì thành leisure về
 `Restaurant` trước khi chia quota.
 
@@ -60,8 +65,9 @@ candidate khỏi PlaceChecker chỉ vì chưa được bốc vào một slot.
 
 Entertainment tùy chọn do hệ thống tìm phải có Bayesian-adjusted rating tối
 thiểu 4,2/5. Candidate direct-user/URL không qua quality gate này. Với candidate
-có thể xếp 08:00-12:00, compact selector chỉ giữ một Entertainment cho mỗi năm
-ngày; candidate chỉ khả thi buổi chiều/tối vẫn cạnh tranh trong quota chung.
+có thể xếp 08:00-18:00, compact selector chỉ giữ tối đa
+`max(1, ceil(days / 3))`; candidate chỉ khả thi buổi tối vẫn cạnh tranh trong
+quota chung.
 Đây là giảm reserve trước Planner, không phải gán lịch tại PlaceChecker.
 
 Selector Style tổng quát hoạt động trước thematic retrieval. Preference được

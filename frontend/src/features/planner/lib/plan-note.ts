@@ -40,6 +40,39 @@ const VIETNAMESE_NOTE_TRANSLATIONS: Record<string, string> = {
     "Khoảng nghỉ này không cần địa điểm cụ thể"
 };
 
+const GOOGLE_CATEGORY_DESCRIPTIONS: Record<string, string> = {
+  reflexologist: "cơ sở bấm huyệt và chăm sóc sức khỏe",
+  "massage therapist": "cơ sở massage và trị liệu thư giãn",
+  spa: "cơ sở spa và chăm sóc sức khỏe",
+  restaurant: "nhà hàng phục vụ ăn uống",
+  "coffee shop": "quán cà phê",
+  cafe: "quán cà phê",
+  hotel: "cơ sở lưu trú",
+  museum: "bảo tàng",
+  park: "công viên",
+  "tourist attraction": "địa điểm tham quan",
+  "shopping mall": "trung tâm mua sắm",
+  store: "cửa hàng",
+  bar: "quán bar",
+  "night club": "câu lạc bộ đêm",
+  "beauty salon": "cơ sở làm đẹp"
+};
+
+function describeGeneratedGoogleCategory(value: string): string {
+  const match = value.match(
+    /^(.+?)\s+thuộc\s+danh mục\s+([^;,.]+?)\s*[;,.]?\s*mô tả tối thiểu được tạo từ dữ liệu nguồn\.?$/iu
+  );
+  if (!match) return value;
+
+  const [, name, rawCategory] = match;
+  const categoryKey = rawCategory.trim().toLocaleLowerCase("en");
+  const description = GOOGLE_CATEGORY_DESCRIPTIONS[categoryKey];
+  if (description) return `${name.trim()} là ${description}.`;
+
+  const readableCategory = rawCategory.trim().replaceAll("_", " ");
+  return `${name.trim()} là địa điểm thuộc nhóm ${readableCategory}.`;
+}
+
 function normalizedLookupKey(value: string): string {
   return value
     .trim()
@@ -71,7 +104,7 @@ export function formatSourceNoteForDisplay(value: unknown): string | null {
   const note = formatPlanNote(value);
   if (!note) return null;
 
-  const withoutInternalRating = note
+  const withoutInternalRating = describeGeneratedGoogleCategory(note)
     .replace(/\s*Bayesian rating\s+\d+(?:\.\d+)?\s*\/\s*5\.?/giu, "")
     .trim();
   return withoutInternalRating || null;

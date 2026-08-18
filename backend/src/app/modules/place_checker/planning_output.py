@@ -156,6 +156,9 @@ class PlaceCheckerPlannerOutputBuilder:
                 name=checked.canonical_name,
                 tags=checked.tags,
                 pool_category=checked.pool_category,
+                context=(
+                    checked.provider_note.text if checked.provider_note else None
+                ),
             )
             if category == "accommodation":
                 continue

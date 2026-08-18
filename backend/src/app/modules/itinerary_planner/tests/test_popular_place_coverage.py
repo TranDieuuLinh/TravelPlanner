@@ -75,4 +75,4 @@ def test_daily_popular_target_is_soft_when_none_is_selected() -> None:
     solver.parameters.num_search_workers = 1
 
     assert solver.Solve(model) == cp_model.OPTIMAL
-    assert solver.Value(cost) == 1_800
+    assert solver.Value(cost) == 3_600

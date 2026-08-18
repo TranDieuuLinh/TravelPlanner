@@ -30,13 +30,21 @@ _ENTERTAINMENT_NAME_MARKERS = (
     "bowling",
     "candles",
     "culcat",
+    "cua hang",
     "dau vai",
     "elly",
     "entertainment",
+    "faculty",
     "game center",
+    "garden center",
     "garmin",
+    "giai co",
+    "gift shop",
+    "gifts",
     "golf",
+    "interior plant service",
     "karaoke",
+    "khoa",
     "kinh mat",
     "mall",
     "massage",
@@ -45,13 +53,35 @@ _ENTERTAINMENT_NAME_MARKERS = (
     "music box",
     "musicbox",
     "noraebang",
+    "pilates",
+    "pickleball",
+    "school",
+    "photo booth",
+    "showroom",
     "spa",
     "studio",
     "souvenir",
     "souvenirs",
     "souvernirs",
     "store",
+    "art supply store",
+    "artistic handicrafts",
+    "tam quat",
+    "tiredcity",
     "tri lieu",
+    "truong dh",
+    "vong hoa",
+    "nha tang le",
+    "cong ty",
+    "costume rental service",
+    "vinhomes",
+)
+_DRINK_NAME_MARKERS = (
+    "cafe",
+    "ca phe",
+    "coffee",
+    "tea",
+    "tra sua",
 )
 _RESTAURANT_NAME_MARKERS = (
     "bun cha",
@@ -84,11 +114,16 @@ def planner_category_for_candidate(
     name: str | None,
     tags: list[str] | tuple[str, ...] = (),
     pool_category: str | None = None,
+    context: str | None = None,
 ) -> str:
     """Correct obvious leisure venues mislabeled as TravelPlace upstream."""
     category = planner_category(value)
     padded_name = f" {normalize_text(name)} "
-    if category in {"drink_dessert", "entertainment"} and any(
+    if category == "restaurant" and any(
+        f" {marker} " in padded_name for marker in _DRINK_NAME_MARKERS
+    ):
+        return "drink_dessert"
+    if category != "accommodation" and any(
         f" {marker} " in padded_name
         for marker in _RESTAURANT_NAME_MARKERS
     ):
@@ -97,7 +132,7 @@ def planner_category_for_candidate(
         return category
     if normalize_text(pool_category) == "shopping":
         return "entertainment"
-    identity = normalize_text(" ".join([name or "", *tags]))
+    identity = normalize_text(" ".join([name or "", context or "", *tags]))
     padded_identity = f" {identity} "
     if any(
         f" {marker} " in padded_identity
@@ -107,6 +142,3 @@ def planner_category_for_candidate(
     if "entertainment" in {normalize_text(tag) for tag in tags}:
         return "entertainment"
     return category
-    "giai co",
-    "gift shop",
-    "gifts",

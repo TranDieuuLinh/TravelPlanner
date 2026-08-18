@@ -47,9 +47,10 @@ Knowledge Graph làm Google/KG fallback. Output là object
 Candidate pool gửi sang Planner có quota độc lập: 22 TravelPlace/ngày,
 16 Restaurant/ngày và 6 DrinkDessert/Entertainment/ngày. Entertainment do hệ
 thống gợi ý phải đạt Bayesian-adjusted rating tối thiểu 4,2/5; input trực tiếp
-và URL luôn được giữ. Compact pool chỉ giữ một Entertainment có thể xếp buổi
-sáng trong mỗi năm ngày, còn DrinkDessert và Entertainment chỉ mở buổi
-chiều/tối không chịu giới hạn sáng này. `22 TravelPlace/ngày` là target retrieval
+và URL luôn được giữ. Compact pool chỉ giữ tối đa
+`max(1, ceil(days / 3))` Entertainment tùy chọn có thể xếp trong khung
+08:00-18:00; candidate chỉ mở buổi tối và DrinkDessert không chịu giới hạn này.
+`22 TravelPlace/ngày` là target retrieval
 để tạo nhiều phương án, không phải hard gate: compact handoff chỉ cần tối thiểu
 8 TravelPlace/ngày trước khi gọi Planner. Food reserve
 được over-fetch riêng để chứa `2 × days` candidate cho sáu Style. Chỉ candidate vượt đủ
@@ -59,12 +60,14 @@ chỉ tạo warning vì Planner vẫn có thể dùng general food pool theo rou
 output gửi cả `foodCoverage` gồm hard/reserve assignments và missing slots để
 Planner biết feasibility đã được kiểm tra trước.
 
-TravelPlace reserve chạy query lõi riêng cho famous/must-see landmark và các
+TravelPlace reserve chạy hai query lõi cho famous/must-see và
+historic landmark/museum/temple/old quarter, một query lõi cho authentic local
+cultural special experience và các
 query khám phá độc lập cho culture, nature,
 shopping, nightlife, workshop, performance, outdoor, family, special
 experience và local activity. Đây là query intent, không phải theme của place.
 Selection giữ một đại diện cho mỗi tag KG có ý nghĩa trước khi bù theo tỷ lệ
-tham chiếu theo tỷ lệ 6/14 candidate có evidence `Special_Experience`,
+tham chiếu 8/14 candidate có evidence/tag provenance `Special_Experience`,
 4/14 candidate có Bayesian popularity signal và phần còn lại theo ranking.
 Popular chỉ được tính khi có ít nhất 500 review và popularity score từ 0,70;
 candidate vài trăm review không còn làm đầy bucket landmark. Nếu tên/tag cho
@@ -73,6 +76,9 @@ studio, massage/trị liệu hoặc store/souvenir, runtime sửa category `Trav
 sai thành `Entertainment` trước khi chia quota.
 Candidate có provenance `pool_category=shopping` cũng đi vào leisure pool thay
 vì được tính là landmark, kể cả tên thương hiệu không chứa từ retail rõ ràng.
+Compact projection còn đọc provider note để nhận các source category như art
+supply store, photo booth, garden center và plant service; các venue thương mại
+này cũng đi vào leisure pool thay vì TravelPlace.
 Ngược lại, tên món/quán ăn rõ ràng sửa source `cafe/entertainment` sai về
 `Restaurant` trước scoring và compact projection.
 Khi fill phần còn lại, selector ưu tiên tag ít xuất hiện và soft-cap một tag

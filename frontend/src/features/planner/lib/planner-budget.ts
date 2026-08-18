@@ -13,6 +13,31 @@ type PlannerBudgetOptions = {
   travelerCount?: number | null;
 };
 
+export type PlannerBudgetReference = {
+  amountPerPerson: number;
+  source: "explicit" | "estimated_daily_cost";
+};
+
+export function plannerBudgetReference(
+  plan: TravelPlan,
+  fallbackTarget?: number | null,
+): PlannerBudgetReference | null {
+  const normalizedAmount = plan.budget?.amountPerPerson;
+  if (normalizedAmount != null) {
+    return {
+      amountPerPerson: Math.max(0, normalizedAmount),
+      source: plan.budget?.source === "estimated_daily_cost"
+        ? "estimated_daily_cost"
+        : "explicit",
+    };
+  }
+  if (fallbackTarget == null) return null;
+  return {
+    amountPerPerson: Math.max(0, fallbackTarget),
+    source: "explicit",
+  };
+}
+
 export function formatPlannerMoney(
   amount: number,
   currency: string,

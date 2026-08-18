@@ -2,6 +2,7 @@ import type { TravelPlan } from "@/features/planner/api/plans";
 import {
   formatPlannerMoney,
   plannerBudgetBreakdown,
+  plannerBudgetReference,
 } from "@/features/planner/lib/planner-budget";
 
 type PlannerBudgetSummaryProps = {
@@ -34,13 +35,14 @@ export function PlannerBudgetSummary({
   const budget = plannerBudgetBreakdown(plan, {
     travelerCount: effectiveTravelerCount,
   });
-  const userBudget =
-    budgetTarget ??
-    (plan.budget?.source === "explicit"
-      ? plan.budget.amountPerPerson
-      : null);
+  const referenceBudget = plannerBudgetReference(plan, budgetTarget);
+  const referenceBudgetLabel = referenceBudget?.source === "estimated_daily_cost"
+    ? "Ngân sách đề xuất"
+    : "Ngân sách của bạn";
   const budgetDifference =
-    userBudget == null ? null : userBudget - budget.perPersonTotal;
+    referenceBudget == null
+      ? null
+      : referenceBudget.amountPerPerson - budget.perPersonTotal;
   const visibleNotes = notes.map((note) => note.trim()).filter(Boolean);
   const budgetItems = ([
     { key: "travelPlaces", label: "Địa điểm", value: budget.travelPlaces },
@@ -114,10 +116,14 @@ export function PlannerBudgetSummary({
             </div>
             <span className="plannerBudgetBasis">mỗi người</span>
           </div>
-          {userBudget == null ? null : (
+          {referenceBudget == null ? null : (
             <p className={`plannerBudgetTarget ${budgetDifference != null && budgetDifference < 0 ? "is-over" : ""}`}>
-              Ngân sách của bạn: <strong>{formatPlannerMoney(userBudget, budget.currency)}</strong>
-              {budgetDifference == null ? null : ` · ${budgetDifference < 0 ? "Vượt" : "Còn lại"} ${formatPlannerMoney(Math.abs(budgetDifference), budget.currency)}`}
+              <span title={referenceBudget.source === "estimated_daily_cost" ? "Ước tính từ dữ liệu giá theo điểm đến của PlaceChecker" : undefined}>
+                {referenceBudgetLabel}: <strong>{formatPlannerMoney(referenceBudget.amountPerPerson, budget.currency)}</strong> <small>/ người</small>
+              </span>
+              {budgetDifference == null ? null : (
+                <span>{budgetDifference < 0 ? "Vượt" : "Còn lại"} {formatPlannerMoney(Math.abs(budgetDifference), budget.currency)}</span>
+              )}
             </p>
           )}
         </div>
@@ -134,7 +140,10 @@ export function PlannerBudgetSummary({
                 <span className="plannerBudgetItemIcon" aria-hidden="true"><svg viewBox="0 0 24 24">{budgetIcons[item.key]}</svg></span>
                 <span>{item.label}</span>
               </div>
-              <strong>{formatPlannerMoney(item.value, budget.currency)}</strong>
+              <div className="plannerBudgetItemAmount">
+                <strong>{formatPlannerMoney(item.value, budget.currency)}</strong>
+                <small>/ người</small>
+              </div>
               <div className="plannerBudgetMeter" aria-hidden="true"><span style={{ width: `${item.share}%` }} /></div>
               <small>{item.share.toFixed(1)}%</small>
             </div>

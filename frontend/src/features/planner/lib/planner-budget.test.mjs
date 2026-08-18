@@ -1,7 +1,45 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { plannerBudgetBreakdown } from "./planner-budget.ts";
+import {
+  plannerBudgetBreakdown,
+  plannerBudgetReference,
+} from "./planner-budget.ts";
+
+test("uses the normalized PlaceChecker per-person budget before raw intake", () => {
+  const plan = {
+    id: "plan-budget",
+    title: "Hà Nội",
+    destination: "Hà Nội",
+    kind: "main",
+    days: [],
+    budget: {
+      amountPerPerson: 5_000_000,
+      currency: "VND",
+      source: "estimated_daily_cost",
+    },
+  };
+
+  assert.deepEqual(plannerBudgetReference(plan, 10_000_000), {
+    amountPerPerson: 5_000_000,
+    source: "estimated_daily_cost",
+  });
+});
+
+test("falls back to an explicit intake budget for legacy plans", () => {
+  const plan = {
+    id: "legacy-budget",
+    title: "Hà Nội",
+    destination: "Hà Nội",
+    kind: "main",
+    days: [],
+  };
+
+  assert.deepEqual(plannerBudgetReference(plan, 3_000_000), {
+    amountPerPerson: 3_000_000,
+    source: "explicit",
+  });
+});
 
 test("combines daily costs into the four user-facing budget groups", () => {
   const result = plannerBudgetBreakdown({

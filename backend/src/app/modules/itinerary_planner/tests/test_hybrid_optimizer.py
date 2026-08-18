@@ -52,7 +52,7 @@ def test_hybrid_repairs_each_day_and_never_reuses_candidate() -> None:
 
     assert (
         result.objective_policy_version
-        == "hybrid-activity-corridor-v6-balanced-popular-place"
+        == "hybrid-activity-corridor-v8-first-visitor-landmarks"
     )
     assert [item.name for item in result.passes] == [
         "day_1:priority",
@@ -94,6 +94,37 @@ def test_hybrid_distributes_popular_places_across_trip_days() -> None:
     }
 
     assert all(count >= 1 for count in popular_by_day.values()), popular_by_day
+
+
+def test_hybrid_reserves_two_special_places_for_each_trip_day() -> None:
+    specials = [candidate(f"special_{index}") for index in range(6)]
+    for item in specials:
+        item["sourceKind"] = "special_experience"
+    problem = prepare_planning_problem(
+        ItineraryPlannerInput.model_validate(
+            base_payload(days=3, places=specials)
+        )
+    )
+    routing = asyncio.run(
+        build_routing_problem(
+            problem,
+            GeneratedMatrixProvider(),
+            XanhSmTransportCostEstimator(),
+        )
+    )
+
+    result = optimize_hybrid_itinerary(problem, routing, config=FAST_CONFIG)
+    special_by_day = {
+        day: sum(
+            stop.place_id.startswith("special_")
+            for stop in result.scheduled_stops
+            if stop.day == day
+        )
+        for day in range(1, 4)
+    }
+
+    assert sum(special_by_day.values()) >= 5
+    assert all(count >= 1 for count in special_by_day.values())
 
 
 def test_two_opt_and_swap_reduce_route_cost() -> None:

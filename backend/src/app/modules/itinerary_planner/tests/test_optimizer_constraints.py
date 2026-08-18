@@ -88,7 +88,7 @@ def test_schedule_is_infeasible_without_activity_between_meals() -> None:
         solve_payload(raw)
 
 
-def test_requires_two_places_and_limits_entertainment_to_three_per_day() -> None:
+def test_requires_two_places_and_limits_entertainment_to_one_per_day() -> None:
     entertainment_items = [
         entertainment(
             f"entertainment_{index}",
@@ -106,10 +106,10 @@ def test_requires_two_places_and_limits_entertainment_to_three_per_day() -> None
     place_ids = {item.place_id for item in prepared.valid_places}
     entertainment_ids = {item.place_id for item in prepared.valid_entertainment}
     assert len(selected & place_ids) >= 2
-    assert len(selected & entertainment_ids) == 3
+    assert len(selected & entertainment_ids) == 1
 
 
-def test_flexible_entertainment_is_scheduled_outside_the_morning() -> None:
+def test_flexible_entertainment_is_scheduled_outside_the_daytime() -> None:
     arcade = entertainment(
         "arcade",
         priority="user_input",
@@ -126,8 +126,8 @@ def test_flexible_entertainment_is_scheduled_outside_the_morning() -> None:
     arcade_stop = next(
         stop for stop in result.scheduled_stops if stop.place_id == "arcade"
     )
-    assert arcade_stop.start_minute >= 12 * 60
-    assert result.objective_components["morningEntertainmentExcessCost"] == 0
+    assert arcade_stop.start_minute >= 18 * 60
+    assert result.objective_components["daytimeEntertainmentExcessCost"] == 0
 
 
 def test_drink_dessert_is_limited_and_cannot_fill_adjacent_meals() -> None:

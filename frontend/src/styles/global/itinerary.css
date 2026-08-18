@@ -360,8 +360,12 @@
   font-size: .62rem;
 }
 
-.itinerary > .plannerBudgetCard .plannerBudgetItem > strong {
+.itinerary > .plannerBudgetCard .plannerBudgetItemAmount > strong {
   font-size: .72rem;
+}
+
+.itinerary > .plannerBudgetCard .plannerBudgetItemAmount > small {
+  font-size: .5rem;
 }
 
 .itinerary > .plannerBudgetCard .plannerBudgetItem > small {

@@ -500,12 +500,17 @@ nhóm `DrinkDessert`/`Entertainment` vào pool optional `entertainment`; đây c
 là thay đổi read/projection contract, không thêm bảng hoặc cột. Runtime compact
 pool dùng quota 22 TravelPlace và 6 DrinkDessert/Entertainment mỗi ngày; chỉ
 Entertainment tự gợi ý có Bayesian-adjusted rating từ 4,2/5 mới được giữ, đồng
-thời giảm riêng reserve có thể xếp buổi sáng. Chính sách này chỉ đọc các field
+thời giới hạn reserve tùy chọn có thể xếp 08:00-18:00 ở
+`max(1, ceil(days / 3))`. TravelPlace reserve dùng tỷ lệ tham chiếu 8/14 cho
+Special Experience có evidence/provenance đã duyệt. Chính sách này chỉ đọc các field
 `rating`, `review_count` và time window hiện có nên không cần migration.
 Runtime còn dùng canonical name/tag để sửa các leisure venue rõ ràng bị gắn
 `TravelPlace` sai sang `Entertainment`, và chỉ tính popular TravelPlace khi có
 ít nhất 500 review cùng Bayesian/popularity đủ cao. Đây là read-time policy;
 không ghi sửa `knowledge_entities` và không cần migration.
+Provider note hiện có cũng được đọc làm semantic context để nhận source category
+thương mại như art supply store, photo booth, garden center và plant service;
+không thêm cột và không ghi ngược category.
 
 PlaceChecker metadata read path truyền toàn bộ giá trị từ property `tags` cùng
 tag suy ra từ `Special_Experience`, `Offer_Item`, `Has_Style` và `Special_Near`.
