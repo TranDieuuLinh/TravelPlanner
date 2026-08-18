@@ -273,6 +273,7 @@ def finalize_itinerary(
             priority=item.priority,
             reason_code=item.reason_code,
             message=item.message,
+            notes=item.notes,
             source_refs=list(item.source_refs),
         )
         for item in problem.unscheduled_priority
@@ -284,6 +285,7 @@ def finalize_itinerary(
             priority=candidate.priority,
             reason_code="not_selected_by_optimizer",
             message="No feasible placement preserved this candidate in the optimized itinerary.",
+            notes=candidate.notes,
             source_refs=(
                 [candidate.notes.source_url]
                 if candidate.notes and candidate.notes.source_url

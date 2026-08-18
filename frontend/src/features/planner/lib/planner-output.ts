@@ -114,6 +114,8 @@ export type ItineraryPlannerOutput = {
     priority: string;
     reasonCode: string;
     message: string;
+    notes?: PlanSourceNote | string | null;
+    personalNotes?: string | null;
     sourceRefs?: string[];
   }>;
   discardedOptionalCount: number;
@@ -374,6 +376,8 @@ export function plannerOutputToTravelPlan(
       name: item.name,
       reasonCode: item.reasonCode,
       reason: item.message,
+      notes: item.notes ?? null,
+      personalNotes: item.personalNotes ?? null,
       sourceRefs: item.sourceRefs ?? [],
     })),
     routeEnrichmentStatus: "completed",

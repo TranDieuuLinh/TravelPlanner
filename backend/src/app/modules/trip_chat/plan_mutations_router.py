@@ -43,7 +43,21 @@ def _selected_item(
     source_refs: list[str],
     source_provider: str | None,
     source_activity: str | None,
+    note_text: str | None,
+    note_source_type: str | None,
+    note_source_url: str | None,
+    personal_notes: str | None,
 ) -> dict:
+    notes: dict[str, str | None] | str | None = None
+    if note_text:
+        if note_source_type in {"url", "google_maps", "knowledge_graph", "backend"}:
+            notes = {
+                "text": note_text,
+                "sourceType": note_source_type,
+                "sourceUrl": note_source_url,
+            }
+        else:
+            notes = note_text
     return {
         "placeId": place_id,
         "name": name.strip(),
@@ -58,6 +72,8 @@ def _selected_item(
         "sourceRefs": source_refs[:20],
         "sourceProvider": source_provider,
         "sourceActivity": source_activity,
+        "notes": notes,
+        "personalNotes": personal_notes,
     }
 
 
@@ -82,6 +98,10 @@ async def confirm_unscheduled_place(
     source_refs: list[str] = Form(default_factory=list, alias="sourceRefs", max_length=20),
     source_provider: str | None = Form(default=None, alias="sourceProvider", max_length=120),
     source_activity: str | None = Form(default=None, alias="sourceActivity", max_length=500),
+    note_text: str | None = Form(default=None, alias="noteText", max_length=4000),
+    note_source_type: str | None = Form(default=None, alias="noteSourceType", max_length=40),
+    note_source_url: str | None = Form(default=None, alias="noteSourceUrl", max_length=2048),
+    personal_notes: str | None = Form(default=None, alias="personalNotes", max_length=4000),
     position: int | None = Form(default=None, ge=0),
     user: AuthUser = Depends(require_current_user),
     service: TripChatService = Depends(_service),
@@ -108,6 +128,10 @@ async def confirm_unscheduled_place(
             source_refs=source_refs,
             source_provider=source_provider,
             source_activity=source_activity,
+            note_text=note_text,
+            note_source_type=note_source_type,
+            note_source_url=note_source_url,
+            personal_notes=personal_notes,
         ),
         position=position,
     )

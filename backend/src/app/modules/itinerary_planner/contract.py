@@ -268,6 +268,7 @@ class UpstreamCandidateExclusion(PlannerContractModel):
     priority: CandidatePriority
     reason_code: str = Field(min_length=1, max_length=100)
     message: str = Field(min_length=1, max_length=1000)
+    notes: SourceNote | None = None
     source_refs: list[str] = Field(default_factory=list, max_length=20)
 
 

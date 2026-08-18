@@ -176,10 +176,11 @@ Frontend chỉ hiển thị đi bộ cho chặng ngắn hơn 1,5 km. Với chặ
 phương án hợp lệ, thao tác chọn option gọi Trip Chat mutation; backend lưu
 `selectedTransport` vào đúng leg trong `currentPlannerOutput` với optimistic
 revision để lựa chọn còn nguyên sau khi tải lại.
-Địa điểm trong `currentPlannerOutput.unscheduled` có thể tìm tối đa 5 kết quả
-từ search địa điểm ở frontend. Người dùng chọn ngày và kết quả phù hợp; Trip
-Chat mutation kiểm tra revision, thêm stop và xóa entry chưa xếp nguyên tử.
-Menu ba chấm của card chưa xếp có thao tác tìm lại và xóa entry.
+Địa điểm trong `currentPlannerOutput.unscheduled` bị lỗi canonical identity sẽ
+được frontend tự tìm top 1 và thêm vào ngày ít điểm nhất qua Trip Chat mutation;
+mutation kiểm tra revision, thêm stop và xóa entry chưa xếp nguyên tử. Nếu top 1
+không tìm được, card fallback vẫn cho phép tìm tối đa 5 kết quả, chọn ngày và
+match thủ công. Menu ba chấm của card chưa xếp có thao tác tìm lại và xóa entry.
 Danh sách TripChat chỉ map contract summary và giữ `hasItinerary`; sau một
 message, frontend áp dụng trực tiếp full chat snapshot vừa nhận để chuyển sang
 itinerary mà không phụ thuộc vào một lượt GET đồng bộ thứ hai. Output không có

@@ -680,7 +680,7 @@ export function UnscheduledPlacesSection({
                             onClick={() => void searchMatches(place, key)}
                             type="button"
                           >
-                            Tìm top 5 địa điểm để chọn
+                            Tìm lại địa điểm
                           </button>
                         );
                       })()}

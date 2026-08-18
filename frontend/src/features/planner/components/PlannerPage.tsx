@@ -1289,6 +1289,8 @@ function Planner() {
   const [editSearchCompleted, setEditSearchCompleted] = useState(false);
   const [editSearchFailed, setEditSearchFailed] = useState(false);
   const [mutatingItem, setMutatingItem] = useState(false);
+  const autoResolvedUnscheduledKeysRef = useRef(new Set<string>());
+  const autoResolvingUnscheduledRef = useRef(false);
   const [noteEditor, setNoteEditor] = useState<{
     target?: "item" | "accommodation";
     day: number;
@@ -4384,6 +4386,7 @@ function Planner() {
         return;
       }
       applyTripChat(updated);
+      setActivePlanDay(day);
       void refreshPlanDayRoutes(updated.currentPlan, day);
       showPlannerToast(`Đã thêm ${itineraryDisplayName(match.name)} vào Ngày ${day}`);
     } catch (caught) {
@@ -4396,6 +4399,77 @@ function Planner() {
       setMutatingItem(false);
     }
   }
+
+  function unscheduledPlaceKey(place: UnscheduledPlace): string {
+    return `${place.candidateId ?? place.placeId ?? place.name}`;
+  }
+
+  function defaultDayForUnscheduledPlace(currentPlan: TravelPlan): number | null {
+    if (currentPlan.days.length === 0) return null;
+    return [...currentPlan.days].sort(
+      (left, right) => left.items.length - right.items.length || left.day - right.day,
+    )[0]?.day ?? null;
+  }
+
+  async function autoResolveUnscheduledTopOne(place: UnscheduledPlace) {
+    if (
+      !activeChatId ||
+      !plan ||
+      autoResolvingUnscheduledRef.current ||
+      !["missing_canonical_identity", "identity_needs_review"].includes(
+        place.reasonCode,
+      )
+    ) {
+      return;
+    }
+    const key = unscheduledPlaceKey(place);
+    if (autoResolvedUnscheduledKeysRef.current.has(key)) return;
+    autoResolvedUnscheduledKeysRef.current.add(key);
+    autoResolvingUnscheduledRef.current = true;
+    setMutatingItem(true);
+    try {
+      const [match] = await searchPlaces(place.name, plan.destination, 1);
+      const day = defaultDayForUnscheduledPlace(plan);
+      if (!match || !day) return;
+      const updated = await confirmTripChatUnscheduledPlace({
+        chatId: activeChatId,
+        expectedRevision: chatRevision,
+        place,
+        day,
+        match,
+      });
+      if (!updated.currentPlan) {
+        setError("Không thể tự động thêm địa điểm vì bản kế hoạch chưa hoàn chỉnh.");
+        return;
+      }
+      applyTripChat(updated);
+      setActivePlanDay(day);
+      void refreshPlanDayRoutes(updated.currentPlan, day);
+      showPlannerToast(`Đã tự động thêm ${itineraryDisplayName(match.name)} vào Ngày ${day}`);
+    } catch {
+      autoResolvedUnscheduledKeysRef.current.delete(key);
+      // Keep the fallback card visible so the user can search again manually.
+    } finally {
+      autoResolvingUnscheduledRef.current = false;
+      setMutatingItem(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!plan || !activeChatId || mutatingItem) return;
+    const routeStillEnriching =
+      plan.routeEnrichmentStatus === "pending" ||
+      plan.days.some((day) =>
+        day.transportLegs.some((leg) => leg.source === "geodesic_estimate"),
+      );
+    if (routeStillEnriching) return;
+    const place = plan.unscheduledPlaces?.find(
+      (candidate) =>
+        candidate.reasonCode === "missing_canonical_identity" ||
+        candidate.reasonCode === "identity_needs_review",
+    );
+    if (place) void autoResolveUnscheduledTopOne(place);
+  }, [activeChatId, mutatingItem, plan]);
 
   function handleUrlPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
     const pastedText = event.clipboardData.getData("text");
@@ -5066,7 +5140,8 @@ function Planner() {
                             </button>
                           );
                         })}
-                        <button
+                        {(displayedPlan.unscheduledPlaces?.length ?? 0) > 0 ? (
+                          <button
                           aria-controls="plan-days-panel"
                           aria-selected={activePlanDay === UNSCHEDULED_PLAN_DAY}
                           className={
@@ -5097,7 +5172,8 @@ function Planner() {
                               {displayedPlan.unscheduledPlaces?.length} địa điểm
                             </small>
                           ) : null}
-                        </button>
+                          </button>
+                        ) : null}
                         <button
                           aria-controls="plan-days-panel"
                           aria-selected={activePlanDay === GROUP_PLAN_DAY}
@@ -6650,7 +6726,8 @@ function Planner() {
                     </button>
                   );
                 })}
-                <button
+                {(displayedPlan?.unscheduledPlaces?.length ?? 0) > 0 ? (
+                  <button
                   aria-selected={activePlanDay === UNSCHEDULED_PLAN_DAY}
                   className={
                     activePlanDay === UNSCHEDULED_PLAN_DAY
@@ -6666,7 +6743,8 @@ function Planner() {
                   type="button"
                 >
                   Chưa xếp
-                </button>
+                  </button>
+                ) : null}
               </div>
 
               <PlannerMap

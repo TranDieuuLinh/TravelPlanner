@@ -14,6 +14,11 @@ def _chat_with_unscheduled_place():
             "name": "Hanoi Train Street",
             "reasonCode": "identity_needs_review",
             "message": "Cần xác nhận địa điểm.",
+            "notes": {
+                "text": "Nên ghé vào buổi sáng.",
+                "sourceType": "url",
+                "sourceUrl": "https://www.youtube.com/watch?v=train-street",
+            },
             "sourceRefs": ["https://www.youtube.com/watch?v=train-street"],
         }],
     }
@@ -43,6 +48,11 @@ def test_confirm_unscheduled_place_moves_selected_match_into_day() -> None:
             "placeType": "attraction",
             "sourceRefs": ["https://www.youtube.com/watch?v=train-street"],
             "sourceProvider": "youtube",
+            "notes": {
+                "text": "Nên ghé vào buổi sáng.",
+                "sourceType": "url",
+                "sourceUrl": "https://www.youtube.com/watch?v=train-street",
+            },
         },
     ))
 
@@ -55,6 +65,7 @@ def test_confirm_unscheduled_place_moves_selected_match_into_day() -> None:
         "https://www.youtube.com/watch?v=train-street"
     ]
     assert updated.current_planner_output["days"][0]["stops"][0]["sourceProvider"] == "youtube"
+    assert updated.current_planner_output["days"][0]["stops"][0]["notes"]["text"] == "Nên ghé vào buổi sáng."
     assert updated.current_planner_output["unscheduled"] == []
 
 

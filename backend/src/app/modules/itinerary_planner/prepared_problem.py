@@ -14,6 +14,7 @@ from app.modules.itinerary_planner.contract import (
     PlannerTrip,
 )
 from app.modules.itinerary_planner.time_windows import PlanningWindow
+from app.shared.contracts.source_note import SourceNote
 
 Candidate = PlannerCandidate | PlannerFoodCandidate | PlannerEntertainmentCandidate
 CandidateDay = tuple[str, int]
@@ -27,6 +28,7 @@ class CandidateExclusion:
     priority: CandidatePriority
     reason_code: str
     message: str
+    notes: SourceNote | None = None
     source_refs: tuple[str, ...] = ()
 
 

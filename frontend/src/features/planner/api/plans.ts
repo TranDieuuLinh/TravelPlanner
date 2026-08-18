@@ -130,6 +130,8 @@ export type UnscheduledPlace = {
   sourceRefs?: string[];
   sourceProvider?: string | null;
   sourceActivity?: string | null;
+  notes?: PlanSourceNote | string | null;
+  personalNotes?: string | null;
   rating?: number | null;
   reviewCount?: number | null;
   topMatches?: Array<{
@@ -794,6 +796,8 @@ export async function confirmTripChatUnscheduledPlace(input: {
     | "sourceRefs"
     | "sourceProvider"
     | "sourceActivity"
+    | "notes"
+    | "personalNotes"
   >;
   day: number;
   match: {
@@ -828,6 +832,16 @@ export async function confirmTripChatUnscheduledPlace(input: {
   }
   if (input.place.sourceProvider) form.append("sourceProvider", input.place.sourceProvider);
   if (input.place.sourceActivity) form.append("sourceActivity", input.place.sourceActivity);
+  if (input.place.notes) {
+    if (typeof input.place.notes === "string") {
+      form.append("noteText", input.place.notes);
+    } else {
+      form.append("noteText", input.place.notes.text);
+      form.append("noteSourceType", input.place.notes.sourceType);
+      if (input.place.notes.sourceUrl) form.append("noteSourceUrl", input.place.notes.sourceUrl);
+    }
+  }
+  if (input.place.personalNotes) form.append("personalNotes", input.place.personalNotes);
 
   return apiFetch<TripChat>(
     `/v1/trip-chats/${input.chatId}/plan/unscheduled-places/confirm`,

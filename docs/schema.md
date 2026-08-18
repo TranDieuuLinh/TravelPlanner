@@ -268,10 +268,11 @@ anchor khi có budget target, nếu không mới dùng candidate đầu tiên; c
 Rich PlaceChecker result trả `foodStyleCoverage[]` gồm Style ID/tên, target,
 số quán đã chọn, số Item phân biệt và trạng thái complete. Compact Planner
 contract vẫn nhận food venue cùng `foodCoverage` meal feasibility.
-Output planner giữ các entry không xếp được trong `unscheduled`; frontend có thể
-search tối đa 5 địa điểm thay thế, chọn ngày, rồi gọi mutation xác nhận để đưa
-match đã chọn vào `days[].stops` và loại entry khỏi `unscheduled` cùng một
-revision.
+Output planner giữ các entry không xếp được trong `unscheduled`; với lỗi
+canonical identity, frontend tự search top 1 và đưa match vào ngày ít điểm nhất.
+Nếu không có match, người dùng vẫn có thể search tối đa 5 địa điểm thay thế,
+chọn ngày, rồi gọi mutation xác nhận để đưa match vào `days[].stops` và loại
+entry khỏi `unscheduled` cùng một revision.
 Rich result còn trả `styleCandidateSelections[]` với place/entity type,
 Style/Item ID và tên, `relationshipSource`, cùng
 `styleCandidateCoverage[]` và các input Style/Item không resolve được. Selector
