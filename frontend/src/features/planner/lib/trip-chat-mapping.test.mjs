@@ -112,3 +112,37 @@ test("preserves structured content blocks and keeps old messages empty", () => {
   assert.deepEqual(chat.messages[0].contentBlocks, []);
   assert.equal(chat.messages[1].contentBlocks[0].type, "paragraph");
 });
+
+test("keeps source provenance when mapping a legacy itinerary snapshot", () => {
+  const chat = mapCurrentTripChat({
+    id: "chat-legacy-source",
+    title: "Hà Nội",
+    threadId: "thread-legacy-source",
+    revision: 1,
+    hasItinerary: true,
+    createdAt: "2026-08-14T00:00:00Z",
+    updatedAt: "2026-08-14T01:00:00Z",
+    currentItinerary: {
+      itineraryId: "legacy-1",
+      intent: { destination: "Hà Nội", people: 2 },
+      days: [{
+        day: 1,
+        items: [{
+          itemId: "legacy-item-1",
+          place: {
+            placeId: "pho-ly-quoc-su",
+            name: "Phở Lý Quốc Sư",
+            sourceUrl: "https://www.tiktok.com/@creator/video/1",
+          },
+          startMinute: 600,
+          endMinute: 660,
+        }],
+      }],
+    },
+    messages: [],
+  }, plannerOutputToTravelPlan);
+
+  assert.deepEqual(chat.currentPlan.days[0].items[0].sourceRefs, [
+    "https://www.tiktok.com/@creator/video/1",
+  ]);
+});

@@ -45,6 +45,10 @@ Khi số TravelPlace đủ điều kiện còn thấp hơn hard handoff tối th
 `authentic local cultural special experience` vẫn được thêm ngay cả khi phần
 thiếu chỉ còn một vài candidate; adaptive query budget không được chỉ chọn query
 generic đầu tiên rồi block mà chưa thử recovery theo trải nghiệm đặc trưng.
+Recovery tiếp tục thử reserve `park lake garden` để lấy TravelPlace có metadata
+đủ dùng khi các special experience đã trùng với pool hiện có. Quota balancer chỉ
+tính candidate đang có đủ tọa độ, duration và cost handoff; candidate conditional
+thiếu dữ liệu không được chiếm chỗ của Planner pool.
 
 - khoảng 8/14 có evidence hoặc provenance tag `Special_Experience` đã duyệt;
 - khoảng 4/14 có popularity signal từ Bayesian quality và `log(reviewCount)`;

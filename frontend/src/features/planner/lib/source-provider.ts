@@ -5,6 +5,7 @@ export type SourceProviderKind =
   | "url";
 
 type ItinerarySourceItem = {
+  sourceUrl?: string | null;
   sourceRefs?: string[];
   notes?: { sourceUrl?: string | null } | string | null;
   noteSources?: Array<{
@@ -38,7 +39,7 @@ export function itinerarySourceUrls(item: ItinerarySourceItem): string[] {
 
   // The selected note is the item's direct provenance. Prefer it over broader
   // place references so an official/map URL cannot mask a social import URL.
-  return [noteUrl, ...noteSourceUrls, ...(item.sourceRefs ?? [])]
+  return [item.sourceUrl, noteUrl, ...noteSourceUrls, ...(item.sourceRefs ?? [])]
     .map((value) => value?.trim() ?? "")
     .filter(
       (value, index, values) =>

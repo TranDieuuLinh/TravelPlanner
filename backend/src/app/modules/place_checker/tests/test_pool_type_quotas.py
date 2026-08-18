@@ -84,6 +84,30 @@ def test_full_existing_pool_does_not_select_extra_candidates() -> None:
     assert result.ranked == []
 
 
+def test_existing_conditional_place_without_duration_does_not_consume_pool_slot() -> None:
+    from app.modules.place_checker.tests.analysis_fixtures import (
+        evaluated_place,
+        place_batch,
+    )
+
+    incomplete = evaluated_place(
+        "existing-incomplete",
+        typical_duration=None,
+    )
+    existing = place_batch(incomplete)
+    result = CandidateScoringService().rank(
+        retrieval(
+            candidate("new-travel", category="travel_place"),
+        ),
+        analysis_context(days=1),
+        existing,
+    )
+
+    assert [item.candidate.candidate_key for item in result.ranked] == [
+        "new-travel"
+    ]
+
+
 def test_activity_reserve_covers_special_and_popular_candidates() -> None:
     relation = PlaceRelationshipEvidence(
         relationship_type="Special_Experience",
@@ -217,6 +241,23 @@ def test_accommodation_pool_keeps_five_candidates_for_percentile_selection() -> 
 def test_cafe_category_is_not_counted_as_travel_place() -> None:
     assert planner_category("cafe") == "drink_dessert"
     assert planner_category("DrinkDessert") == "drink_dessert"
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
+            name="Cafe Test",
+            tags=["drink_dessert"],
+        )
+        == "drink_dessert"
+    )
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
+            name="A Venue",
+            tags=["travel_place"],
+            context="provider category: cafe",
+        )
+        == "drink_dessert"
+    )
     assert CandidatePoolBalancer._entity_type("cafe") == "entertainment"
 
 

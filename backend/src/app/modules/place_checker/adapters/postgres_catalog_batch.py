@@ -7,6 +7,7 @@ from collections import defaultdict
 from app.modules.place_checker.adapters.postgres_batch_search_query import (
     PLACE_BATCH_SEARCH_SQL,
 )
+from app.modules.place_checker.adapters.postgres_retry import fetch_catalog_rows
 from app.shared.tools.search_places import AdministrativeArea, PlaceProviderCandidate
 from app.shared.tools.search_places.normalization import normalize_text
 
@@ -46,8 +47,8 @@ class PostgresCatalogBatchMixin:
         ]
         requested_types = sorted(self._types_for_hint(place_type_hint))
         fetch_limit = min(60, max(1, limit))
-        pool = await self._get_pool()
-        rows = await pool.fetch(
+        rows = await fetch_catalog_rows(
+            self,
             PLACE_BATCH_SEARCH_SQL,
             queries,
             input_adm.adm_id,

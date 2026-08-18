@@ -32,6 +32,13 @@ from app.modules.place_checker.planner_category import (
 from app.modules.place_checker.planner_exclusions import build_excluded_candidate
 from app.modules.place_checker.planner_semantics import split_trip_preferences
 from app.modules.place_checker.planning_place_projection import PlannerPlaceProjector
+from app.modules.place_checker.planner_pool_normalization import (
+    merge_selection_relationships,
+    move_existing_candidate_to_drink_entertainment,
+    move_food_selection_if_drink,
+    move_place_selection_if_drink,
+    promote_user_input,
+)
 from app.modules.place_checker.planning_projection import PlaceCheckerPlanningProjector
 from app.modules.place_checker.planning_time_windows import meals_for_hours
 from app.modules.place_checker.pool_policy import (
@@ -198,6 +205,11 @@ class PlaceCheckerPlannerOutputBuilder:
             if place.place_id
         }
         for item in result.resolved_items:
+            category = planner_category_for_candidate(
+                item.selected.category if item.selected else None,
+                name=item.selected.name if item.selected else None,
+                tags=item.selected.tags if item.selected else (),
+            )
             if (
                 item.selected is None
                 or item.selected.coordinates is None
@@ -212,17 +224,20 @@ class PlaceCheckerPlannerOutputBuilder:
             ):
                 continue
             if item.selected.place_id in seen:
-                places = self._promote_user_input(places, item.selected.place_id)
-                food = self._promote_user_input(food, item.selected.place_id)
-                entertainment = self._promote_user_input(
-                    entertainment, item.selected.place_id
-                )
+                if category == "drink_dessert":
+                    move_existing_candidate_to_drink_entertainment(
+                        places,
+                        food,
+                        entertainment,
+                        item.selected.place_id,
+                    )
+                else:
+                    places = promote_user_input(places, item.selected.place_id)
+                    food = promote_user_input(food, item.selected.place_id)
+                    entertainment = promote_user_input(
+                        entertainment, item.selected.place_id
+                    )
                 continue
-            category = planner_category_for_candidate(
-                item.selected.category,
-                name=item.selected.name,
-                tags=item.selected.tags,
-            )
             if category == "restaurant":
                 meals = meals_for_hours(item.selected.opening_hours)
                 if not meals:
@@ -259,15 +274,14 @@ class PlaceCheckerPlannerOutputBuilder:
             )
             if existing_index is not None:
                 current = food[existing_index]
+                if move_food_selection_if_drink(
+                    food, entertainment, existing_index, selection
+                ):
+                    continue
                 food[existing_index] = current.model_copy(
                     update={
-                        "relationships": list(
-                            dict.fromkeys(
-                                [
-                                    *current.relationships,
-                                    *selection.related_anchor_place_ids,
-                                ]
-                            )
+                        "relationships": merge_selection_relationships(
+                            current, selection
                         ),
                     }
                 )
@@ -281,16 +295,15 @@ class PlaceCheckerPlannerOutputBuilder:
                 None,
             )
             if existing_place_index is not None:
+                if move_place_selection_if_drink(
+                    places, entertainment, existing_place_index, selection
+                ):
+                    continue
                 current = places[existing_place_index]
                 places[existing_place_index] = current.model_copy(
                     update={
-                        "relationships": list(
-                            dict.fromkeys(
-                                [
-                                    *current.relationships,
-                                    *selection.related_anchor_place_ids,
-                                ]
-                            )
+                        "relationships": merge_selection_relationships(
+                            current, selection
                         ),
                     }
                 )
@@ -383,12 +396,3 @@ class PlaceCheckerPlannerOutputBuilder:
             )
         )
         return [candidate for _, candidate in indexed[:limit]]
-
-    @staticmethod
-    def _promote_user_input(candidates: list, place_id: str) -> list:
-        return [
-            candidate.model_copy(update={"priority": "user_input"})
-            if candidate.place_id == place_id
-            else candidate
-            for candidate in candidates
-        ]

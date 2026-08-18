@@ -652,6 +652,49 @@ def test_thematic_query_rejects_unrelated_special_experience() -> None:
     assert [item.entity_id for item in result] == ["kg:garden"]
 
 
+def test_special_experience_query_accepts_kg_special_experience_tag() -> None:
+    special = PlaceSearchMatch(
+        place_id="kg:craft-village",
+        provider="knowledge_graph",
+        name="Traditional Craft Village",
+        coordinates=Coordinates(latitude=21.034, longitude=105.847),
+        tags=["experience:special_experience"],
+        score=0.72,
+        relationship_score=0.78,
+    )
+    tool = FakeSearchTool(
+        PlaceSearchResult(
+            status="resolved",
+            query="authentic local cultural special experience",
+            normalized_query="authentic local cultural special experience",
+            search_mode="requirement",
+            top_matches=[special],
+            resolution_reason="requirement_match",
+        )
+    )
+    source = SearchPlacesGapSource(
+        tool,
+        provider_name="knowledge_graph",
+        source_kind=RetrievalSourceKind.knowledge_graph,
+    )
+    query = TargetedRetrievalQuery(
+        gap_id="pool:special_experience_candidates",
+        gap_type=GapType.experience_coverage,
+        severity=IssueSeverity.low,
+        query_text="authentic local cultural special experience",
+        adm_id="adm1_vn_ha_noi",
+        adm_name="Hà Nội",
+        country_code="VN",
+        budget_level="low",
+        relation_terms=["heritage", "local culture"],
+        limit=5,
+    )
+
+    result = asyncio.run(source.search(query))
+
+    assert [item.entity_id for item in result] == ["kg:craft-village"]
+
+
 def test_external_call_budget_uses_at_most_two_sources() -> None:
     sources = [
         FakeSource(f"external_{index}", RetrievalSourceKind.external)

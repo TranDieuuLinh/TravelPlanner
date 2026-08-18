@@ -14,6 +14,7 @@ from app.modules.itinerary_planner.beam_search.constraints import (
 from app.modules.itinerary_planner.contract import PlannerContractModel
 from app.modules.itinerary_planner.optimizer.result import OptimizationResult
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
+from app.modules.itinerary_planner.quality import bayesian_adjusted_rating_by_id
 from app.modules.itinerary_planner.routing_models import RoutingProblem
 
 
@@ -49,7 +50,14 @@ def evaluate_plan(
     candidates = [
         problem.candidate_by_id[stop.place_id] for stop in result.scheduled_stops
     ]
-    ratings = [item.rating for item in candidates if item.rating is not None]
+    adjusted_ratings = bayesian_adjusted_rating_by_id(
+        problem.candidate_by_id.values()
+    )
+    ratings = [
+        adjusted_ratings[item.place_id]
+        for item in candidates
+        if adjusted_ratings[item.place_id] is not None
+    ]
     reviews = [item.review_count for item in candidates if item.review_count is not None]
     distances = [
         routing.travel_by_candidate_pair[(arc.origin_id, arc.destination_id)].distance_meters

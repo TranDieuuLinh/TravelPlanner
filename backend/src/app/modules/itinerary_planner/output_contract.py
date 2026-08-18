@@ -35,6 +35,7 @@ class ItineraryStop(PlannerContractModel):
     tags: list[str] = Field(default_factory=list)
     image_urls: list[str] = Field(default_factory=list)
     rating: float | None = Field(default=None, ge=0, le=5)
+    bayesian_rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     opening_hours: OpeningHours = None
     cost_per_person: int = Field(ge=0)

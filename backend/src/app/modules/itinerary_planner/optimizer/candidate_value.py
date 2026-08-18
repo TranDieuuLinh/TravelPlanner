@@ -1,4 +1,5 @@
 from app.modules.itinerary_planner.contract import CandidatePriority, CandidateSourceKind
+from app.modules.itinerary_planner.quality import bayesian_adjusted_rating_by_id
 
 
 def build_special_value(problem, variables, weights):
@@ -48,10 +49,13 @@ def build_low_confidence_generic_place_cost(problem, variables, weight):
 
 
 def build_low_quality_food_cost(problem, variables, weight):
+    bayesian_ratings = bayesian_adjusted_rating_by_id(
+        problem.candidate_by_id.values()
+    )
     return sum(
         variables.selected[candidate.place_id]
         * (
-            weight * int((candidate.rating or 0) < 4.0)
+            weight * int((bayesian_ratings.get(candidate.place_id) or 0) < 4.0)
             + weight // 3 * int((candidate.review_count or 0) < 100)
         )
         for candidate in problem.valid_food

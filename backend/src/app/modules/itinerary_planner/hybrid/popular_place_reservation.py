@@ -9,6 +9,7 @@ from app.modules.itinerary_planner.optimizer.special_place_coverage import (
     SPECIAL_PLACES_PER_DAY,
 )
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
+from app.modules.itinerary_planner.quality import bayesian_adjusted_rating_by_id
 
 
 def available_candidate_ids(
@@ -66,13 +67,16 @@ def _group_candidates_for_day(
         for candidate_id in remaining
         if day in problem.feasible_days[candidate_id]
     ]
+    bayesian_ratings = bayesian_adjusted_rating_by_id(
+        problem.candidate_by_id.values()
+    )
     ranked = sorted(
         feasible_now,
         key=lambda candidate_id: (
             not _is_last_feasible_day(problem, candidate_id, day),
             day not in problem.preferred_days[candidate_id],
             -(problem.candidate_by_id[candidate_id].review_count or 0),
-            -(problem.candidate_by_id[candidate_id].rating or 0),
+            -(bayesian_ratings.get(candidate_id) or 0),
             candidate_id,
         ),
     )

@@ -35,7 +35,7 @@ from app.modules.information_finder.service import (
     InformationFinderService,
 )
 from app.modules.itinerary_planner.public import (
-    build_valhalla_itinerary_planner_graph,
+    build_valhalla_beam_first_itinerary_planner_graph,
 )
 from app.modules.knowledge_graph.public import (
     build_draft_place_store,
@@ -341,7 +341,7 @@ def get_graph():
             else None
         ),
         itinerary_planner_graph=(
-            build_valhalla_itinerary_planner_graph(
+            build_valhalla_beam_first_itinerary_planner_graph(
                 settings.valhalla_base_url,
                 timeout_seconds=settings.valhalla_timeout_seconds,
                 provider_version=settings.valhalla_graph_version,

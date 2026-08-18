@@ -83,7 +83,7 @@ def long_transition_allowed(
     *,
     distance_meters: int,
     distance_q3: float | None,
-    rating: float | None,
+    adjusted_rating: float | None,
     review_count: int | None,
     review_q3: float | None,
     config: BeamSearchConfig,
@@ -91,8 +91,8 @@ def long_transition_allowed(
     if distance_q3 is None or distance_meters < distance_q3:
         return True
     return (
-        rating is not None
-        and rating >= config.long_distance_rating_min
+        adjusted_rating is not None
+        and adjusted_rating >= config.long_distance_rating_min
         and review_count is not None
         and review_q3 is not None
         and review_count >= review_q3

@@ -97,7 +97,7 @@ POOL_QUERY_SPECS = {
     ),
     "pool:nature_alternatives": (
         GapType.experience_coverage,
-        "nature lake garden",
+        "park lake garden",
         "travel place",
     ),
     "pool:shopping_alternatives": (
@@ -208,6 +208,7 @@ POOL_RELATION_TERMS = {
         "ngoài trời",
         "đi dạo",
         "cắm trại",
+        "park",
         "nature",
         "garden",
         "lake",

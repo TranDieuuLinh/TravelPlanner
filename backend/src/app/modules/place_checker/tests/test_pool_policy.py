@@ -299,7 +299,10 @@ def test_small_handoff_shortfall_always_queries_special_experience() -> None:
     )
 
     assert list(selected) == [
+        "pool:travel_place_candidates",
         "pool:special_experience_candidates",
+        "pool:travel_place_reserve",
+        "pool:nature_alternatives",
     ]
 
 

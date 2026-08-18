@@ -131,8 +131,16 @@ def planner_category_for_candidate(
         f" {marker} " in padded_name for marker in _PUBLIC_PLACE_NAME_MARKERS
     ):
         return "travel_place"
-    if category == "restaurant" and any(
-        f" {marker} " in padded_name for marker in _DRINK_NAME_MARKERS
+    identity = normalize_text(" ".join([name or "", context or "", *tags]))
+    padded_identity = f" {identity} "
+    has_drink_tag = any(planner_category(tag) == "drink_dessert" for tag in tags)
+    if category != "accommodation" and (
+        any(f" {marker} " in padded_name for marker in _DRINK_NAME_MARKERS)
+        or any(
+            f" {marker} " in padded_identity for marker in _DRINK_NAME_MARKERS
+        )
+        or planner_category(pool_category) == "drink_dessert"
+        or has_drink_tag
     ):
         return "drink_dessert"
     if category != "accommodation" and any(
@@ -144,8 +152,6 @@ def planner_category_for_candidate(
         return category
     if normalize_text(pool_category) == "shopping":
         return "entertainment"
-    identity = normalize_text(" ".join([name or "", context or "", *tags]))
-    padded_identity = f" {identity} "
     if any(
         f" {marker} " in padded_identity
         for marker in _ENTERTAINMENT_NAME_MARKERS

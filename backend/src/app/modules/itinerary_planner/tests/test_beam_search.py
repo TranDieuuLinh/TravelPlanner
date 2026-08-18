@@ -76,7 +76,7 @@ def test_long_transition_requires_quality_exception() -> None:
     assert long_transition_allowed(
         distance_meters=10_000,
         distance_q3=8_000,
-        rating=4.2,
+        adjusted_rating=4.2,
         review_count=500,
         review_q3=400,
         config=config,
@@ -118,7 +118,7 @@ def test_travelplace_quality_and_unique_daily_coverage_are_prioritized() -> None
     assert not long_transition_allowed(
         distance_meters=10_000,
         distance_q3=8_000,
-        rating=2.9,
+        adjusted_rating=2.9,
         review_count=500,
         review_q3=400,
         config=config,

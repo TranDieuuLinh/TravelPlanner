@@ -2,6 +2,7 @@ from app.modules.place_checker.adapters.postgres_style_candidate_query import (
     STYLE_CANDIDATE_SQL,
     STYLE_INTENT_RESOLUTION_SQL,
 )
+from app.modules.place_checker.adapters.postgres_retry import fetch_catalog_rows
 from app.modules.place_checker.style_candidate_contract import (
     ResolvedStyleIntent,
     StyleCandidate,
@@ -18,8 +19,8 @@ class PostgresStyleCandidateMixin:
         item_inputs: list[str],
         per_style_limit: int,
     ) -> StyleCandidateSourceBatch:
-        pool = await self._get_pool()
-        resolution_rows = await pool.fetch(
+        resolution_rows = await fetch_catalog_rows(
+            self,
             STYLE_INTENT_RESOLUTION_SQL,
             list(dict.fromkeys(style_inputs)),
             list(dict.fromkeys(item_inputs)),
@@ -39,7 +40,8 @@ class PostgresStyleCandidateMixin:
             dict.fromkeys(intent.style_id for intent in resolved_intents)
         )
         candidate_rows = (
-            await pool.fetch(
+            await fetch_catalog_rows(
+                self,
                 STYLE_CANDIDATE_SQL,
                 adm_id,
                 style_ids,

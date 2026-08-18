@@ -170,6 +170,9 @@ test("maps planner stops, route legs, and unscheduled places to TravelPlan", () 
   assert.equal(plan.days[0].costBreakdown.localTransport, 90_000);
   assert.equal(plan.days[0].items[0].itemId, "planner:1:place-ho-guom");
   assert.equal(plan.days[0].items[0].notes.sourceType, "url");
+  assert.deepEqual(plan.days[0].items[0].sourceRefs, [
+    "https://example.test/video",
+  ]);
   assert.equal(plan.days[0].items[0].personalNotes, "Nhớ mang ô");
   assert.deepEqual(plan.days[0].items[0].openingHours, [{
     dayOfWeek: 6,

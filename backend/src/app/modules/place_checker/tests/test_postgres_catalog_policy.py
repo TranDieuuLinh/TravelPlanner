@@ -2,6 +2,8 @@ import asyncio
 import sys
 from types import SimpleNamespace
 
+import asyncpg
+
 from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCatalog
 from app.modules.place_checker.adapters.postgres_catalog_mapping import (
     PostgresCatalogMappingMixin,
@@ -12,6 +14,43 @@ from app.modules.place_checker.adapters.postgres_food_query import (
 )
 from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARCH_SQL
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
+
+
+def test_catalog_recycles_dropped_connection_before_retrying_read(monkeypatch) -> None:
+    class FlakyPool:
+        def __init__(self, rows, *, fail_first: bool = False) -> None:
+            self.rows = rows
+            self.fail_first = fail_first
+            self.calls = 0
+            self.terminated = False
+
+        async def fetch(self, sql, *arguments):
+            self.calls += 1
+            if self.fail_first and self.calls == 1:
+                raise asyncpg.ConnectionDoesNotExistError("connection dropped")
+            return self.rows
+
+        def terminate(self):
+            self.terminated = True
+
+    stale = FlakyPool([], fail_first=True)
+    healthy = FlakyPool([{"id": "place-1"}])
+    catalog = PostgresPlaceCatalog("postgresql://example")
+    catalog._pool = stale
+
+    async def get_pool():
+        if catalog._pool is None:
+            catalog._pool = healthy
+        return catalog._pool
+
+    monkeypatch.setattr(catalog, "_get_pool", get_pool)
+
+    rows = asyncio.run(catalog._fetch("SELECT 1"))
+
+    assert rows == [{"id": "place-1"}]
+    assert stale.calls == 1
+    assert stale.terminated is True
+    assert healthy.calls == 1
 
 
 def test_generic_travel_pool_uses_adm_candidates_without_experience_bucket_cap() -> (

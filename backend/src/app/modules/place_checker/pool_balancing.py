@@ -2,6 +2,7 @@ from app.modules.place_checker.activity_pool_selection import select_activity_co
 from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
 from app.modules.place_checker.planner_category import planner_category
 from app.modules.place_checker.planner_category import planner_category_for_candidate
+from app.modules.place_checker.price_policy import has_planner_cost
 from app.modules.place_checker.pool_policy import ACCOMMODATION_POOL_TARGET
 from app.modules.place_checker.scoring_contract import ScoredCandidate
 
@@ -24,7 +25,11 @@ class CandidatePoolBalancer:
             "accommodation": 0,
         }
         for evaluation in existing_places.places:
-            if not evaluation.planner_eligible or not evaluation.place.place_id:
+            if (
+                not evaluation.planner_eligible
+                or not evaluation.place.place_id
+                or not cls._has_handoff_metadata(evaluation)
+            ):
                 continue
             category = (
                 evaluation.place.metadata.category
@@ -37,6 +42,12 @@ class CandidatePoolBalancer:
                     category,
                     name=evaluation.place.canonical_name,
                     tags=metadata.tags if metadata else (),
+                    pool_category=cls._pool_category(metadata.tags if metadata else ()),
+                    context=(
+                        metadata.source_note.text
+                        if metadata and metadata.source_note
+                        else None
+                    ),
                 )
             ] += 1
 
@@ -125,12 +136,14 @@ class CandidatePoolBalancer:
         name: str | None = None,
         tags: list[str] | tuple[str, ...] = (),
         pool_category: str | None = None,
+        context: str | None = None,
     ) -> str:
         normalized = planner_category_for_candidate(
             category,
             name=name,
             tags=tags,
             pool_category=pool_category,
+            context=context,
         )
         if normalized == "restaurant":
             return "restaurant"
@@ -139,3 +152,29 @@ class CandidatePoolBalancer:
         if normalized == "accommodation":
             return "accommodation"
         return "travel_place"
+
+    @staticmethod
+    def _pool_category(tags: list[str] | tuple[str, ...]) -> str | None:
+        return next(
+            (
+                tag.split(":", 1)[1]
+                for tag in tags
+                if tag.startswith("pool_category:")
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _has_handoff_metadata(evaluation) -> bool:
+        metadata = evaluation.place.metadata
+        if metadata is None or metadata.coordinates is None:
+            return False
+        if metadata.typical_duration_minutes is None:
+            return False
+        return has_planner_cost(
+            category=metadata.category,
+            minimum=metadata.minimum_cost,
+            typical=metadata.typical_cost,
+            maximum=metadata.maximum_cost,
+            tier=metadata.cost_tier,
+        )

@@ -13,6 +13,7 @@ from app.modules.place_checker.adapters.postgres_catalog_mapping import (
 from app.modules.place_checker.adapters.postgres_catalog_batch import (
     PostgresCatalogBatchMixin,
 )
+from app.modules.place_checker.adapters.postgres_retry import PostgresCatalogRetryMixin
 from app.modules.place_checker.adapters.postgres_food_query import (
     SPECIAL_FOOD_RESTAURANT_SQL,
 )
@@ -34,6 +35,7 @@ def _asyncpg_url(database_url: str) -> str:
 
 
 class PostgresPlaceCatalog(
+    PostgresCatalogRetryMixin,
     PostgresStyleCandidateMixin,
     PostgresCatalogBatchMixin,
     PostgresCatalogMappingMixin,
@@ -69,8 +71,7 @@ class PostgresPlaceCatalog(
 
     async def resolve(self, input_name: str) -> AdmResolution:
         normalized = normalize_text(input_name)
-        pool = await self._get_pool()
-        rows = await pool.fetch(
+        rows = await self._fetch(
             """
             SELECT e.id, e.canonical_name, e.entity_type,
                    GREATEST(
@@ -132,8 +133,7 @@ class PostgresPlaceCatalog(
         # applies the final multi-signal score to this bounded top-K window.
         fetch_limit = min(60, max(1, limit))
         similarity_threshold = 0.22 if anchor_place_id else 0.30
-        pool = await self._get_pool()
-        rows = await pool.fetch(
+        rows = await self._fetch(
             PLACE_SEARCH_SQL,
             query,
             input_adm.adm_id,
@@ -147,13 +147,12 @@ class PostgresPlaceCatalog(
     async def get_many(self, place_ids: list[str]) -> dict[str, PlaceMetadata]:
         if not place_ids:
             return {}
-        pool = await self._get_pool()
-        entity_rows = await pool.fetch(
+        entity_rows = await self._fetch(
             """SELECT id, entity_type FROM knowledge_entities
                WHERE id = ANY($1::text[]) AND status <> 'rejected'""",
             place_ids,
         )
-        property_rows = await pool.fetch(
+        property_rows = await self._fetch(
             """
             SELECT entity_id, key, value, source, updated_at
             FROM knowledge_properties
@@ -161,7 +160,7 @@ class PostgresPlaceCatalog(
             """,
             place_ids,
         )
-        relationship_rows = await pool.fetch(
+        relationship_rows = await self._fetch(
             """
             SELECT relation.*, owner.entity_id,
                    related.id AS related_entity_id,
@@ -213,7 +212,7 @@ class PostgresPlaceCatalog(
         )
         related_property_ids = list(dict.fromkeys([*style_ids, *activity_ids]))
         related_property_rows = (
-            await pool.fetch(
+            await self._fetch(
                 """
                 SELECT entity_id, key, value
                 FROM knowledge_properties
@@ -281,8 +280,7 @@ class PostgresPlaceCatalog(
     ) -> list[FoodRestaurantCandidate]:
         if not anchor_place_ids:
             return []
-        pool = await self._get_pool()
-        rows = await pool.fetch(
+        rows = await self._fetch(
             SPECIAL_FOOD_RESTAURANT_SQL,
             adm_id,
             list(dict.fromkeys(anchor_place_ids)),

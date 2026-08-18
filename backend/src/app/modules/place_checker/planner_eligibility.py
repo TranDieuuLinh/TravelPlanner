@@ -4,18 +4,25 @@ from app.modules.place_checker.planning_time_windows import (
     meals_for_hours,
     parse_planner_windows,
 )
-from app.modules.place_checker.planner_category import planner_category
+from app.modules.place_checker.planner_category import planner_category_for_candidate
 from app.modules.place_checker.price_policy import has_planner_cost
 
 
 def is_planner_eligible(checked: CheckedPlace) -> bool:
+    category = planner_category_for_candidate(
+        checked.category,
+        name=checked.canonical_name,
+        tags=checked.tags,
+        pool_category=checked.pool_category,
+        context=checked.provider_note.text if checked.provider_note else None,
+    )
     base_eligible = bool(
         checked.place_id
         and checked.canonical_name
         and checked.coordinates
         and checked.duration.typical_minutes
         and has_planner_cost(
-            category=planner_category(checked.category),
+            category=category,
             minimum=checked.cost.minimum,
             typical=checked.cost.typical,
             maximum=checked.cost.maximum,
@@ -28,7 +35,7 @@ def is_planner_eligible(checked: CheckedPlace) -> bool:
     )
     if not base_eligible:
         return False
-    if planner_category(checked.category) not in {"restaurant", "drink_dessert"}:
+    if category not in {"restaurant", "drink_dessert"}:
         return True
     return bool(
         checked.opening.hours

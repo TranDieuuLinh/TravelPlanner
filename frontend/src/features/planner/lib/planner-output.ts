@@ -33,6 +33,12 @@ export type PlannerOutputStop = {
   costPerPerson: number;
 };
 
+function plannerStopSourceRefs(stop: PlannerOutputStop): string[] {
+  if (!stop.notes || typeof stop.notes === "string") return [];
+  const sourceUrl = stop.notes.sourceUrl?.trim();
+  return sourceUrl && /^https?:\/\//i.test(sourceUrl) ? [sourceUrl] : [];
+}
+
 export type PlannerOutputLeg = {
   fromPlaceId: string;
   toPlaceId: string;
@@ -289,7 +295,7 @@ export function plannerOutputToTravelPlan(
               ? "Entertainment"
               : "TravelPlace",
         source: "itinerary_planner",
-        sourceRefs: [],
+        sourceRefs: plannerStopSourceRefs(stop),
         tags: stop.tags ?? [],
         imageUrls: stop.imageUrls ?? [],
         notes: stop.notes ?? null,

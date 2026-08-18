@@ -114,6 +114,7 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
     lake = next(stop for stop in output.days[0].stops if stop.place_id == "lake")
     assert lake.image_urls == ["https://example.test/lake.jpg"]
     assert lake.rating == 4.7
+    assert lake.bayesian_rating is not None
     assert lake.review_count == 100
     assert lake.item_id == "planner:1:lake"
     assert lake.notes is not None
@@ -161,6 +162,7 @@ def test_phase5_adds_selected_accommodation_to_daily_and_total_cost() -> None:
     output = result["output"]
     assert output.accommodation is not None
     assert output.accommodation.place_id == "hotel:priced"
+    assert output.accommodation.bayesian_rating is not None
     assert output.accommodation_nights == 1
     assert output.days[0].cost_breakdown.accommodation == 300_000
     assert output.days[1].cost_breakdown.accommodation == 0

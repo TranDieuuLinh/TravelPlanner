@@ -257,6 +257,7 @@ class PlannerAccommodation(PlannerContractModel):
     coordinates: PlannerCoordinates
     address: str | None = Field(default=None, max_length=1000)
     rating: float | None = Field(default=None, ge=0, le=5)
+    bayesian_rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int | None = Field(default=None, ge=0)
     price_per_night: PlannerPrice
 

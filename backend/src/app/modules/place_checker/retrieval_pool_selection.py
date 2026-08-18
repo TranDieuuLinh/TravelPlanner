@@ -93,10 +93,25 @@ def select_adaptive_pool_specs(
     # The generic query is often satisfied by already-known URL/landmark data;
     # adding the special-experience query gives the planner a distinct local-
     # culture candidate instead of silently blocking after the first query.
+    if handoff_shortfall and "pool:travel_place_candidates" in all_specs:
+        selected.setdefault(
+            "pool:travel_place_candidates",
+            all_specs["pool:travel_place_candidates"],
+        )
     if handoff_shortfall and "pool:special_experience_candidates" in all_specs:
         selected.setdefault(
             "pool:special_experience_candidates",
             all_specs["pool:special_experience_candidates"],
+        )
+    if handoff_shortfall and "pool:travel_place_reserve" in all_specs:
+        selected.setdefault(
+            "pool:travel_place_reserve",
+            all_specs["pool:travel_place_reserve"],
+        )
+    if handoff_shortfall and "pool:nature_alternatives" in all_specs:
+        selected.setdefault(
+            "pool:nature_alternatives",
+            all_specs["pool:nature_alternatives"],
         )
     if accommodation_count == 0 and "pool:accommodation_candidates" in all_specs:
         selected["pool:accommodation_candidates"] = all_specs[

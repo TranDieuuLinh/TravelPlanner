@@ -1,6 +1,6 @@
 # Task 11: Performance, observability và xử lý lỗi
 
-Cập nhật lần cuối: 2026-08-17.
+Cập nhật lần cuối: 2026-08-18.
 
 ## Mục tiêu
 
@@ -16,6 +16,10 @@ bộ từ source/tool.
 - Áp external call budget và top-K budget cho từng gap.
 - Không chạy N x N route matrix; detailed routing thuộc downstream.
 - Dùng bounded concurrency và database session tách biệt khi cần.
+- SELECT của PostgreSQL catalog retry một lần sau khi recycle pool khi gặp
+  connection bị đóng giữa truy vấn; nếu lần retry vẫn thất bại, provider trả
+  lỗi có cấu trúc để PlaceChecker tạo partial output thay vì làm rơi raw
+  `asyncpg` exception ra API.
 
 ## Chính sách lỗi
 

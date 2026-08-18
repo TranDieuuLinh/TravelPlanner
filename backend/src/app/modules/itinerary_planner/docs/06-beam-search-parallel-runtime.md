@@ -1,16 +1,20 @@
 # Beam Search parallel runtime
 
-Cập nhật lần cuối: 2026-08-17.
+Cập nhật lần cuối: 2026-08-18.
 
-Đây là implementation thử nghiệm chạy song song với graph hybrid CP-SAT hiện
-tại. Graph mặc định chưa đổi; factory `build_beam_search_itinerary_planner_graph`
-cho phép kiểm thử Beam Search độc lập trước khi rollout.
+Đây là runtime Beam-first. Ứng dụng ưu tiên Beam Search qua factory
+`build_valhalla_beam_first_itinerary_planner_graph`; nếu Beam trả lỗi, kết quả
+`PARTIAL` hoặc timeline không hợp lệ, graph hybrid CP-SAT hiện tại được dùng
+làm fallback và output nhận warning tương ứng. Factory
+`build_beam_search_itinerary_planner_graph` vẫn cho phép kiểm thử Beam Search
+độc lập.
 
 Beam Search nhận `PreparedPlanningProblem` và `RoutingProblem` sau global
 Valhalla matrix. Mỗi transition phải đạt các hard checks sau:
 
 - matrix cell reachable và không nối hai restaurant liên tiếp;
-- nếu distance từ Q3 trở lên, điểm đến phải có rating tối thiểu 3.0 và
+- nếu distance từ Q3 trở lên, điểm đến phải có adjusted Bayesian rating tối thiểu
+  3.0 và
   review count từ Q2/P50 trở lên;
 - `safeTravel` được quy đổi từ giây sang phút, sau đó cộng với duration của
   điểm đến và phải nằm trọn trong một opening/time window;
@@ -42,10 +46,12 @@ có nhiều travel place unique được ưu tiên hơn ngày ít travel place.
 Ở bước tổng hợp cuối của mỗi nhánh, mỗi travel place còn cộng thêm
 `travelplace_final_weight = 10` vào branch score.
 
-Output Beam thêm `evaluation` với min/max/median của rating, review count và
-distance meters; counter JSON cho tags/styles/items; số lượng restaurant,
-drink/dessert, entertainment, travel place; tổng giá và score. CP-SAT output
-vẫn hợp lệ và để `evaluation` là `null` khi đi qua graph cũ.
+Output Beam thêm `evaluation` với min/max/median của adjusted Bayesian rating,
+review count và distance meters; counter JSON cho tags/styles/items; số lượng
+restaurant, drink/dessert, entertainment, travel place; tổng giá và score.
+Rating gốc vẫn được giữ trong stop metadata để bảo toàn provenance; output stop
+thêm `bayesianRating` cho giá trị dùng khi xếp hạng. CP-SAT output vẫn hợp lệ
+và để `evaluation` là `null` khi đi qua graph cũ.
 
 Giới hạn mặc định là beam width 32, tối đa 16 stop/ngày và 3 giây cho mỗi
 ngày. Đây là giới hạn bảo vệ runtime, không phải bằng chứng optimality.

@@ -50,10 +50,10 @@ giới HTTP. Thư mục `orchestration/` sở hữu root graph và ánh xạ cá
 contract giữa các module. Business rule về du lịch không nên đặt trong
 `orchestration/`.
 
-`itinerary_planner` hiện giữ graph hybrid CP-SAT làm runtime mặc định và có
-submodule `beam_search/` chạy song song cho rollout thử nghiệm. Beam dùng
-PreparedPlanningProblem và global Valhalla matrix, không thay đổi graph mặc
-định hoặc database ownership.
+`itinerary_planner` ưu tiên graph Beam Search trong runtime Valhalla và giữ
+graph hybrid CP-SAT làm fallback khi Beam không tạo được itinerary hợp lệ.
+Beam dùng PreparedPlanningProblem và global Valhalla matrix; fallback được
+thực hiện qua public planner wrapper và không thay đổi database ownership.
 Beam chỉ cấm lặp `TravelPlace`; food và leisure được phép lặp khi cần, nhưng
 thứ tự xếp hạng ưu tiên ít lặp hơn theo `Entertainment -> DrinkDessert ->
 Restaurant`.
@@ -477,6 +477,10 @@ game center, massage/trị liệu, spa và retail store/souvenir bị gắn Trav
 sai sang Entertainment trước scoring/quota/compact output. Food dùng reserve `16/ngày`:
 Compact boundary còn dùng provider note làm semantic context để nhận art supply
 store, photo booth, garden center và plant service bị gắn sai TravelPlace.
+DrinkDessert/cafe/coffee/tea/bakery/dessert luôn được chuẩn hóa vào pool
+Entertainment ở compact boundary, kể cả khi raw prompt/URL upstream gắn nhãn
+Restaurant hoặc TravelPlace; duplicate food/place candidate cũng được chuyển pool
+trước khi Planner nhận dữ liệu.
 ba Style bữa chính được active mặc định; Style food/drink khác chỉ active khi
 được resolve từ preference hoặc input Item. Mỗi Style active có target mềm
 `2 × days`, chọn Item trước rồi reverse `Offer_Item` sang quán theo anchor region.

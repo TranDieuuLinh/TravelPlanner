@@ -278,12 +278,25 @@ class SearchPlacesGapSource:
             for tag in relation_tags
         )
 
+    @staticmethod
+    def _is_special_experience_query(query: TargetedRetrievalQuery) -> bool:
+        return query.gap_id in {
+            "pool:special_experience_candidates",
+            "pool:special_experience_alternatives",
+            "pool:local_activity_alternatives",
+        }
+
     @classmethod
     def _is_relevant(cls, match, query: TargetedRetrievalQuery) -> bool:
         if match.score < 0.55:
             return False
         name_score = match.score_components.get("nameSimilarity", 0)
         if match.relationship_score > 0:
+            if cls._is_special_experience_query(query) and any(
+                tag.casefold() == "experience:special_experience"
+                for tag in match.tags
+            ):
+                return True
             return not query.relation_terms or cls._matches_relation_terms(
                 match.tags, query.relation_terms
             )

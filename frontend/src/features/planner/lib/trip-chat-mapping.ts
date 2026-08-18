@@ -75,6 +75,29 @@ function currentItineraryToPlan(
         const place = item.place ?? {};
         const start = item.startMinute ?? item.start_minute;
         const end = item.endMinute ?? item.end_minute;
+        const notes = place.notes ?? item.notes ?? null;
+        const noteSourceUrl =
+          notes && typeof notes === "object" ? notes.sourceUrl : null;
+        const sourceRefs = [
+          place.sourceUrl ?? place.source_url,
+          item.sourceUrl ?? item.source_url,
+          noteSourceUrl,
+          ...(Array.isArray(place.sourceRefs)
+            ? place.sourceRefs
+            : Array.isArray(place.source_refs)
+              ? place.source_refs
+              : []),
+          ...(Array.isArray(item.sourceRefs)
+            ? item.sourceRefs
+            : Array.isArray(item.source_refs)
+              ? item.source_refs
+              : []),
+        ]
+          .map((value) => String(value ?? "").trim())
+          .filter(
+            (value, index, values) =>
+              /^https?:\/\//i.test(value) && values.indexOf(value) === index,
+          );
         return {
           itemId: item.itemId ?? item.item_id,
           placeId: place.placeId ?? place.place_id,
@@ -82,8 +105,16 @@ function currentItineraryToPlan(
           address: null,
           timeWindow: `${formatMinute(start)} – ${formatMinute(end)}`,
           placeType: "activity",
-          source: place.source ?? "agent",
-          sourceRefs: [],
+          source: place.source ?? place.source_type ?? item.source ?? "agent",
+          sourceRefs,
+          sourceProvider:
+            place.sourceProvider ??
+            place.source_provider ??
+            item.sourceProvider ??
+            item.source_provider ??
+            null,
+          notes,
+          noteSources: place.noteSources ?? item.noteSources ?? [],
           latitude: place.coordinates?.latitude ?? null,
           longitude: place.coordinates?.longitude ?? null,
           tags: place.tags ?? [],

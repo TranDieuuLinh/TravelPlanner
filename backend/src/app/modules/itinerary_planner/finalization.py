@@ -22,6 +22,7 @@ from app.modules.itinerary_planner.policies import (
     ACCOMMODATION_RELOCATION_DISTANCE_METERS,
 )
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
+from app.modules.itinerary_planner.quality import bayesian_adjusted_rating_by_id
 from app.modules.itinerary_planner.route_enrichment import RouteEnrichmentResult
 from app.modules.itinerary_planner.routing_models import RoutingProblem
 from app.shared.tools.daily_cost import DailyCostCalculator
@@ -49,11 +50,25 @@ def finalize_itinerary(
         )
     food_ids = {food.place_id for food in problem.valid_food}
     entertainment_ids = {item.place_id for item in problem.valid_entertainment}
+    bayesian_ratings = bayesian_adjusted_rating_by_id(
+        problem.candidate_by_id.values()
+    )
+    accommodation_bayesian_ratings = bayesian_adjusted_rating_by_id(
+        problem.accommodations
+    )
     selected_accommodation = (
         problem.accommodation_by_id.get(optimization.selected_accommodation_id)
         if optimization.selected_accommodation_id
         else None
     )
+    if selected_accommodation is not None:
+        selected_accommodation = selected_accommodation.model_copy(
+            update={
+                "bayesian_rating": accommodation_bayesian_ratings.get(
+                    selected_accommodation.place_id
+                )
+            }
+        )
     accommodation_cost = (
         problem.accommodation_cost_per_person_by_id.get(
             optimization.selected_accommodation_id, 0
@@ -92,6 +107,7 @@ def finalize_itinerary(
                 tags=candidate.tags,
                 image_urls=candidate.image_urls,
                 rating=candidate.rating,
+                bayesian_rating=bayesian_ratings.get(candidate.place_id),
                 review_count=candidate.review_count,
                 opening_hours=candidate.opening_hours,
                 cost_per_person=ceil(candidate.price.cost),

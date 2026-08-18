@@ -220,6 +220,95 @@ def test_compact_output_projects_drink_dessert_as_entertainment_not_meal() -> No
     assert "drink:cafe" not in {food.place_id for food in output.food}
 
 
+def test_drink_selection_reclassifies_an_existing_food_candidate() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-drink-overlap"))
+    checked = result.checked_places[0].model_copy(
+        update={"category": "restaurant", "canonical_name": "Cafe Test"}
+    )
+    result.checked_places[0] = checked
+    selection = SelectedFoodRestaurant(
+        anchor_place_id=checked.place_id,
+        anchor_name=checked.canonical_name,
+        food_item_id="drink:coffee",
+        food_item_name="Cà phê",
+        offered_food_item_id="drink:coffee",
+        offered_food_item_name="Cà phê",
+        food_match_type="direct_id",
+        food_match_confidence=1,
+        restaurant_id=checked.place_id,
+        restaurant_name=checked.canonical_name,
+        distance_km=0.2,
+        rating=4.5,
+        review_count=100,
+        pair_score=0.8,
+        selection_reason="style_item_diversity",
+        metadata=metadata(
+            checked.place_id,
+            category="drink_dessert",
+            cost_tier=CostTier.low,
+            latitude=21.031,
+        ),
+    )
+    result = result.model_copy(update={"food_restaurant_selections": [selection]})
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+
+    assert checked.place_id not in {food.place_id for food in output.food}
+    drink = next(
+        place for place in output.entertainment or [] if place.place_id == checked.place_id
+    )
+    assert drink.entity_type == "drink_dessert"
+
+
+def test_drink_selection_reclassifies_an_existing_place_candidate() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-drink-place-overlap"))
+    checked = result.checked_places[0].model_copy(
+        update={"category": "travel_place", "canonical_name": "Cafe Test"}
+    )
+    result.checked_places[0] = checked
+    selection = SelectedFoodRestaurant(
+        anchor_place_id=checked.place_id,
+        anchor_name=checked.canonical_name,
+        food_item_id="drink:coffee",
+        food_item_name="Cà phê",
+        offered_food_item_id="drink:coffee",
+        offered_food_item_name="Cà phê",
+        food_match_type="direct_id",
+        food_match_confidence=1,
+        restaurant_id=checked.place_id,
+        restaurant_name=checked.canonical_name,
+        distance_km=0.2,
+        rating=4.5,
+        review_count=100,
+        pair_score=0.8,
+        selection_reason="style_item_diversity",
+        metadata=metadata(
+            checked.place_id,
+            category="drink_dessert",
+            cost_tier=CostTier.low,
+            latitude=21.031,
+        ),
+    )
+    result = result.model_copy(update={"food_restaurant_selections": [selection]})
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result,
+        start_date="2026-08-20",
+        timezone="Asia/Ho_Chi_Minh",
+    )
+
+    assert checked.place_id not in {place.place_id for place in output.places}
+    assert checked.place_id not in {food.place_id for food in output.food}
+    drink = next(
+        place for place in output.entertainment or [] if place.place_id == checked.place_id
+    )
+    assert drink.entity_type == "drink_dessert"
+
+
 def test_compact_output_reclassifies_mislabeled_music_box_as_entertainment() -> None:
     result = asyncio.run(pipeline().check(payload(), request_id="request-music-box"))
     first = result.checked_places[0]
@@ -264,6 +353,34 @@ def test_resolved_item_promotes_duplicate_pool_candidate_to_user_input() -> None
     )
 
     assert promoted.priority == "user_input"
+
+
+def test_resolved_drink_duplicate_is_moved_to_entertainment_pool() -> None:
+    result = asyncio.run(pipeline().check(payload(), request_id="request-item-drink-overlap"))
+    checked = result.checked_places[0]
+    resolved = result.resolved_items[0]
+    result.resolved_items[0] = resolved.model_copy(
+        update={
+            "selected": resolved.selected.model_copy(
+                update={
+                    "place_id": checked.place_id,
+                    "name": "Cafe Test",
+                    "category": "drink_dessert",
+                    "tags": ["drink_dessert"],
+                }
+            )
+        }
+    )
+
+    output = PlaceCheckerPlannerOutputBuilder().build(
+        result, start_date="2026-08-20", timezone="Asia/Ho_Chi_Minh"
+    )
+
+    assert checked.place_id not in {place.place_id for place in output.places}
+    drink = next(
+        place for place in output.entertainment or [] if place.place_id == checked.place_id
+    )
+    assert drink.entity_type == "drink_dessert"
 
 
 def test_food_pool_cap_prefers_required_then_paired_candidates() -> None:

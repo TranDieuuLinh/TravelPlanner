@@ -424,13 +424,16 @@ contract legacy phục vụ PlanEditor; output mới được trả riêng qua
 `plannerOutput` để biểu diễn overnight, geometry và solver metadata.
 `people` được sao chép từ Planner input để Trip Chat lưu cùng snapshot; frontend
 vì vậy vẫn hiển thị đúng quy mô nhóm sau khi tải lại chat.
-Ngoài graph hybrid CP-SAT mặc định, module có factory Beam Search chạy song song
-để thử nghiệm rollout. Beam áp hard rule không nối restaurant-to-restaurant,
+Module ưu tiên factory Beam Search trong runtime Valhalla và dùng graph hybrid
+CP-SAT làm fallback khi Beam thất bại hoặc trả lịch không đầy đủ. Beam áp hard
+rule không nối restaurant-to-restaurant,
 kiểm tra distance Q3, rating tối thiểu 3.0, review count từ Q2/P50,
 opening window và khoảng chờ tối đa 60 phút.
-Khi dùng Beam, output có thêm `evaluation` gồm min/max/median rating,
-reviewCount, distanceMeters; counter tags/styles/items; và các count
+Khi dùng Beam, output có thêm `evaluation` gồm min/max/median adjusted Bayesian
+rating, reviewCount, distanceMeters; counter tags/styles/items; và các count
 restaurant, drinkDessert, entertainment, travelPlace cùng totalPrice.
+Mỗi stop giữ rating gốc từ nguồn và thêm `bayesianRating`; solver dùng adjusted
+Bayesian rating cho quality score, long-transition threshold và evaluation.
 Trip Chat cho phép user sửa/xóa accommodation và lưu `personalNotes` trên
 chính accommodation trong snapshot. Đổi `placeId` cập nhật các ordered route
 leg tham chiếu nơi lưu trú; xóa nơi lưu trú đồng thời bỏ transfer leg và phần

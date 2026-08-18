@@ -34,7 +34,10 @@ from app.modules.itinerary_planner.optimizer.result import (
 )
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import RoutingProblem
-from app.modules.itinerary_planner.quality import bayesian_quality_by_id
+from app.modules.itinerary_planner.quality import (
+    bayesian_adjusted_rating_by_id,
+    bayesian_quality_by_id,
+)
 from app.modules.itinerary_planner.policies import MEAL_POLICIES, MINIMUM_MEAL_START_GAPS
 
 
@@ -89,6 +92,9 @@ def optimize_beam_search(
         quantile=selected_config.review_quantile,
     )
     quality = bayesian_quality_by_id(problem.candidate_by_id.values())
+    adjusted_ratings = bayesian_adjusted_rating_by_id(
+        problem.candidate_by_id.values()
+    )
     day_search_limit = selected_config.time_limit_seconds
     if problem.trip.days > 1 and day_search_limit is not None:
         # Backtracking invokes the day search once per partial plan.  Bound
@@ -118,6 +124,7 @@ def optimize_beam_search(
                 day=day,
                 used_ids=frozenset(used_travelplaces),
                 quality=quality,
+                adjusted_ratings=adjusted_ratings,
                 distance_q3=distance_q3,
                 review_q3=review_q3,
                 config=day_search_config,
@@ -217,6 +224,7 @@ def _search_day(
     day: int,
     used_ids: frozenset[str],
     quality: dict[str, float],
+    adjusted_ratings: dict[str, float | None],
     distance_q3: float | None,
     review_q3: float | None,
     config: BeamSearchConfig,
@@ -239,6 +247,7 @@ def _search_day(
                 day=day,
                 used_ids=used_ids,
                 quality=quality,
+                adjusted_ratings=adjusted_ratings,
                 distance_q3=distance_q3,
                 review_q3=review_q3,
                 config=config,
@@ -268,6 +277,7 @@ def _expand_state(
     day: int,
     used_ids: frozenset[str],
     quality: dict[str, float],
+    adjusted_ratings: dict[str, float | None],
     distance_q3: float | None,
     review_q3: float | None,
     config: BeamSearchConfig,
@@ -302,7 +312,7 @@ def _expand_state(
             if not long_transition_allowed(
                 distance_meters=travel.distance_meters,
                 distance_q3=distance_q3,
-                rating=candidate.rating,
+                adjusted_rating=adjusted_ratings.get(candidate_id),
                 review_count=candidate.review_count,
                 review_q3=review_q3,
                 config=config,
