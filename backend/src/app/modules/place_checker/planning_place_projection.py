@@ -76,7 +76,11 @@ class PlannerPlaceProjector:
     ) -> PlannerOutputFood:
         return PlannerOutputFood(
             **cls.place(checked, days).model_dump(),
-            venue_type=planner_category(checked.category),
+            # The caller has already classified this candidate as food using its
+            # name, tags, pool category, and provider note. Provider category can
+            # still be the generic ``travel_place`` and must not leak into this
+            # narrower planner contract.
+            venue_type="restaurant",
             supported_meals=supported_meals,
         )
 
@@ -148,7 +152,7 @@ class PlannerPlaceProjector:
     ) -> PlannerOutputFood:
         return PlannerOutputFood(
             **cls.item_place(item, days).model_dump(),
-            venue_type=planner_category(item.selected.category),
+            venue_type="restaurant",
             supported_meals=supported_meals,
         )
 

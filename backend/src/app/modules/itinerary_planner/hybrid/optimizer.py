@@ -4,6 +4,9 @@ from collections import Counter
 from dataclasses import replace
 
 from app.modules.itinerary_planner.hybrid.assembly import assemble_hybrid_result
+from app.modules.itinerary_planner.accommodation_selection import (
+    select_accommodation_anchor_id,
+)
 from app.modules.itinerary_planner.hybrid.heuristic import (
     build_day_shortlist,
     full_day_candidate_ids,
@@ -47,11 +50,7 @@ def optimize_hybrid_itinerary(
     used_ids: set[str] = set()
     trip_tag_counts: Counter[str] = Counter()
     results: list[OptimizationResult] = []
-    accommodation_id = (
-        problem.accommodations[0].place_id
-        if problem.accommodations and problem.accommodation_nights
-        else None
-    )
+    accommodation_id = select_accommodation_anchor_id(problem)
     previous_last_end: int | None = None
     previous_return_minutes = 0
     for day in range(1, problem.trip.days + 1):
@@ -73,6 +72,7 @@ def optimize_hybrid_itinerary(
             used_ids=frozenset(used_ids),
             quality_max=selected_weights.quality_max,
             trip_tag_counts=trip_tag_counts,
+            budget_overage_10k=selected_weights.budget_overage_10k,
         )
         try:
             result = _solve_day(

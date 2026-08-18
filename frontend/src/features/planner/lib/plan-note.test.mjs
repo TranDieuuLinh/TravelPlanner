@@ -115,9 +115,15 @@ test("turns generated Google category metadata into a useful description", () =>
   );
   assert.equal(
     formatSourceNoteForDisplay(
-      "Địa điểm mẫu thuộc danh mục Art_center; mô tả tối thiểu được tạo từ dữ liệu nguồn."
+      "Chùa Một Cột thuộc danh mục Place of worship; mô tả tối thiểu được tạo từ dữ liệu nguồn."
     ),
-    "Địa điểm mẫu là địa điểm thuộc nhóm Art center."
+    "Chùa Một Cột là nơi sinh hoạt tín ngưỡng và tôn giáo."
+  );
+  assert.equal(
+    formatSourceNoteForDisplay(
+      "Địa điểm mẫu thuộc danh mục Undocumented_category; mô tả tối thiểu được tạo từ dữ liệu nguồn."
+    ),
+    null
   );
 });
 

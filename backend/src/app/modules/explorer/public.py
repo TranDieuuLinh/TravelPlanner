@@ -61,6 +61,9 @@ def create_explorer_service(
     dedupe_provider: str = "gemini",
     note_provider: str = "gemini",
     url_timeout_seconds: float = 30,
+    source_extraction_timeout_seconds: float = 90,
+    source_synthesis_timeout_seconds: float = 105,
+    source_chunk_timeout_seconds: float = 60,
     ytdlp_cookie_file: str | None = None,
     frame_interval_seconds: float = 3,
     frame_batch_size: int = 10,
@@ -92,6 +95,7 @@ def create_explorer_service(
             synthesis_limiter=synthesis_limiter,
             dedupe_provider=dedupe_provider,
             note_provider=note_provider,
+            source_chunk_timeout_seconds=source_chunk_timeout_seconds,
         )
     if draft_provider == "gemini":
         if gemini is None:
@@ -214,6 +218,9 @@ def create_explorer_service(
         draft_cache=draft_cache,
         draft_cache_namespace=draft_cache_namespace,
         minimum_synthesis_coverage=minimum_synthesis_coverage,
+        source_extraction_timeout_seconds=source_extraction_timeout_seconds,
+        source_synthesis_timeout_seconds=source_synthesis_timeout_seconds,
+        fallback_drafts=rules,
     )
 
 

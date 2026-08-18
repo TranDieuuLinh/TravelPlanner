@@ -1,6 +1,7 @@
 import asyncio
 import json
 from collections import defaultdict
+from itertools import zip_longest
 from urllib.parse import urlparse
 
 from pydantic import ValidationError
@@ -69,6 +70,33 @@ with origin=url for URL artifacts or origin=input for direct image OCR. Include 
 named venue supported by source evidence; completeness is more important than selecting
 only highlights. Deduplicate only exact references to the same venue."""
 
+
+def _round_robin_jobs(groups):
+    """Give every source a synthesis slot before a long source gets another."""
+    return [
+        job
+        for round_items in zip_longest(*groups)
+        for job in round_items
+        if job is not None
+    ]
+
+
+async def _gather_with_timeout(awaitables, timeout_seconds: float):
+    tasks = [asyncio.create_task(awaitable) for awaitable in awaitables]
+    done, pending = await asyncio.wait(tasks, timeout=timeout_seconds)
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+    return [
+        task.result()
+        if task in done and not task.cancelled() and task.exception() is None
+        else task.exception()
+        if task in done and not task.cancelled()
+        else TimeoutError("source chunk synthesis timed out")
+        for task in tasks
+    ]
+
 def _provider_schema(value):
     if isinstance(value, dict):
         return {
@@ -96,6 +124,7 @@ class GeminiExplorerDraftGenerator:
         synthesis_limiter: asyncio.Semaphore | None = None,
         dedupe_provider: str = "gemini",
         note_provider: str = "gemini",
+        source_chunk_timeout_seconds: float = 60,
     ) -> None:
         self.client = client
         self.max_output_tokens = max_output_tokens
@@ -106,6 +135,7 @@ class GeminiExplorerDraftGenerator:
             max(1, synthesis_max_concurrency)
         )
         self.dedupe_provider = dedupe_provider
+        self.source_chunk_timeout_seconds = source_chunk_timeout_seconds
         self.source_extractor = GeminiSourceChunkExtractor(
             client,
             max_output_tokens=source_max_output_tokens,
@@ -138,11 +168,10 @@ class GeminiExplorerDraftGenerator:
                 source.platform = self._platform(source.source_ref)
             else:
                 source.platform = "image"
-        jobs = [
-            (source, chunk)
+        jobs = _round_robin_jobs([
+            [(source, chunk) for chunk in self._source_chunks(source)]
             for source in sources
-            for chunk in self._source_chunks(source)
-        ]
+        ])
         chunk_counts = defaultdict(int)
         for source, _ in jobs:
             chunk_counts[source.source_index] += 1
@@ -176,8 +205,9 @@ class GeminiExplorerDraftGenerator:
                         await asyncio.sleep(exc.retry_after_seconds)
             raise AssertionError("chunk retry loop must return or raise")
 
-        results = await asyncio.gather(
-            *(extract(*job) for job in jobs), return_exceptions=True
+        results = await _gather_with_timeout(
+            (extract(*job) for job in jobs),
+            self.source_chunk_timeout_seconds,
         )
         extracted = [result for result in results if not isinstance(result, Exception)]
         if not extracted:

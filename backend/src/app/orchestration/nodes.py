@@ -22,6 +22,7 @@ from app.modules.supervisor.public import (
     build_supervisor_graph,
 )
 from app.orchestration.root_state import RootState
+from app.orchestration.routes import explorer_can_plan
 from app.orchestration.memory_projection import (
     build_blocked_clarification,
     information_query,
@@ -149,7 +150,7 @@ class RootNodes:
             "explorer_output": output,
             "warnings": [*state.get("warnings", []), *output.warnings],
         }
-        if output.status != "ready":
+        if not explorer_can_plan(output):
             update.update(
                 {
                     "clarification_question": output.clarification_question,

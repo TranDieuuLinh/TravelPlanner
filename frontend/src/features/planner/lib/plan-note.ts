@@ -51,14 +51,32 @@ const GOOGLE_CATEGORY_DESCRIPTIONS: Record<string, string> = {
   museum: "bảo tàng",
   park: "công viên",
   "tourist attraction": "địa điểm tham quan",
+  "place of worship": "nơi sinh hoạt tín ngưỡng và tôn giáo",
+  temple: "đền thờ và địa điểm sinh hoạt tín ngưỡng",
+  pagoda: "chùa và địa điểm sinh hoạt Phật giáo",
+  church: "nhà thờ và địa điểm sinh hoạt Kitô giáo",
+  mosque: "thánh đường và địa điểm sinh hoạt Hồi giáo",
+  shrine: "đền thờ và địa điểm sinh hoạt tín ngưỡng",
   "shopping mall": "trung tâm mua sắm",
   store: "cửa hàng",
   bar: "quán bar",
   "night club": "câu lạc bộ đêm",
-  "beauty salon": "cơ sở làm đẹp"
+  "beauty salon": "cơ sở làm đẹp",
+  "historical landmark": "di tích lịch sử",
+  "cultural landmark": "địa điểm văn hóa",
+  "art museum": "bảo tàng mỹ thuật",
+  "art gallery": "phòng trưng bày nghệ thuật",
+  "performing arts theater": "nhà hát biểu diễn nghệ thuật",
+  "amusement park": "khu vui chơi giải trí",
+  zoo: "vườn thú",
+  aquarium: "thủy cung",
+  market: "khu chợ",
+  "night market": "chợ đêm",
+  "observation deck": "điểm ngắm cảnh",
+  "scenic spot": "địa điểm ngắm cảnh"
 };
 
-function describeGeneratedGoogleCategory(value: string): string {
+function describeGeneratedGoogleCategory(value: string): string | null {
   const match = value.match(
     /^(.+?)\s+thuộc\s+danh mục\s+([^;,.]+?)\s*[;,.]?\s*mô tả tối thiểu được tạo từ dữ liệu nguồn\.?$/iu
   );
@@ -69,8 +87,10 @@ function describeGeneratedGoogleCategory(value: string): string {
   const description = GOOGLE_CATEGORY_DESCRIPTIONS[categoryKey];
   if (description) return `${name.trim()} là ${description}.`;
 
-  const readableCategory = rawCategory.trim().replaceAll("_", " ");
-  return `${name.trim()} là địa điểm thuộc nhóm ${readableCategory}.`;
+  // An untranslated provider category is implementation metadata, not a
+  // useful description for travellers. Hide it until a clear Vietnamese
+  // explanation is available.
+  return null;
 }
 
 function normalizedLookupKey(value: string): string {
@@ -104,7 +124,10 @@ export function formatSourceNoteForDisplay(value: unknown): string | null {
   const note = formatPlanNote(value);
   if (!note) return null;
 
-  const withoutInternalRating = describeGeneratedGoogleCategory(note)
+  const describedNote = describeGeneratedGoogleCategory(note);
+  if (!describedNote) return null;
+
+  const withoutInternalRating = describedNote
     .replace(/\s*Bayesian rating\s+\d+(?:\.\d+)?\s*\/\s*5\.?/giu, "")
     .trim();
   return withoutInternalRating || null;

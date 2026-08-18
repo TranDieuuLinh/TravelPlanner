@@ -34,7 +34,7 @@ class TargetedRetrievalBatchMixin:
                 warnings.extend(queue_warnings)
             return results, event_ids, warnings
 
-        source_items = await batch_search(queries, max_concurrency=2)
+        source_items = await batch_search(queries, max_concurrency=4)
         results = []
         external_calls_remaining = self.external_call_budget
         for query, source_item in zip(queries, source_items):

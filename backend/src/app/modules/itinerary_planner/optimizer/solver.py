@@ -143,7 +143,7 @@ def _solve_utility_with_incumbent(
     config: SolverConfig,
     objective: cp_model.LinearExpr,
 ) -> tuple[cp_model.CpSolver, SolverPassResult]:
-    """Keep the best utility solution until ten parallel rounds stagnate."""
+    """Keep the best utility solution until configured parallel rounds stagnate."""
     best_solver: cp_model.CpSolver | None = None
     best_pass: SolverPassResult | None = None
     attempt_count = 0

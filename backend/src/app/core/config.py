@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     explorer_dedupe_provider: Literal["rules", "gemini"] = "gemini"
     explorer_note_provider: Literal["rules", "gemini"] = "gemini"
     explorer_url_timeout_seconds: float = Field(default=30.0, gt=0)
+    explorer_source_extraction_timeout_seconds: float = Field(default=90.0, gt=0)
+    explorer_source_synthesis_timeout_seconds: float = Field(default=105.0, gt=0)
+    explorer_source_chunk_timeout_seconds: float = Field(default=60.0, gt=0)
     explorer_url_cache_ttl_seconds: float = Field(default=604_800, gt=0)
     explorer_draft_cache_ttl_seconds: float = Field(default=604_800, gt=0)
     explorer_ytdlp_cookie_file: str | None = None

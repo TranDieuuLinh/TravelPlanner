@@ -17,7 +17,7 @@ def test_default_solver_is_deterministic_without_wall_clock_deadlines() -> None:
     assert config.utility_timeout_seconds is None
     assert config.utility_relative_gap_limit == 0.05
     assert config.utility_parallel_workers == 3
-    assert config.max_utility_no_improvement_rounds == 3
+    assert config.max_utility_no_improvement_rounds == 1
 
 
 def test_utility_gap_does_not_claim_exact_optimality() -> None:

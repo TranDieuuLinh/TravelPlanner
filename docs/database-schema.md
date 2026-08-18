@@ -74,6 +74,10 @@ Migration `003_explorer_draft_cache.sql` tạo `explorer_draft_cache`. Bảng l�
 `ExplorerDraft` đã chuẩn hóa theo hash của prompt và evidence, namespace/model,
 TTL ứng dụng; không lưu media hoặc raw third-party payload.
 
+Timeout theo source/chunk, lịch round-robin và fallback tiêu đề Markdown chỉ là
+runtime policy. Thay đổi này không thêm bảng/cột và không thay đổi ownership của
+`source_documents` hoặc `explorer_draft_cache`.
+
 ## Schema cache nguồn Information Finder
 
 Migration nguồn: `backend/migrations/001_information_finder_source_cache.sql`.
@@ -500,8 +504,10 @@ nhóm `DrinkDessert`/`Entertainment` vào pool optional `entertainment`; đây c
 là thay đổi read/projection contract, không thêm bảng hoặc cột. Runtime compact
 pool dùng quota 22 TravelPlace và 6 DrinkDessert/Entertainment mỗi ngày; chỉ
 Entertainment tự gợi ý có Bayesian-adjusted rating từ 4,2/5 mới được giữ, đồng
-thời giới hạn reserve tùy chọn có thể xếp 08:00-18:00 ở
-`max(1, ceil(days / 3))`. TravelPlace reserve dùng tỷ lệ tham chiếu 8/14 cho
+thời tourist-suitability gate loại category cửa hàng/dịch vụ thương mại khỏi
+optional pool. Runtime chỉ giới hạn reserve Entertainment chỉ mở buổi sáng ở tối đa một
+candidate/ngày; candidate có thể xếp chiều/tối vẫn được giữ. TravelPlace reserve
+dùng tỷ lệ tham chiếu 8/14 cho
 Special Experience có evidence/provenance đã duyệt. Chính sách này chỉ đọc các field
 `rating`, `review_count` và time window hiện có nên không cần migration.
 Runtime còn dùng canonical name/tag để sửa các leisure venue rõ ràng bị gắn

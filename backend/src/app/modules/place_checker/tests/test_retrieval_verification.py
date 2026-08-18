@@ -217,7 +217,7 @@ def test_retrieval_batches_gaps_and_enriches_metadata_once() -> None:
 
     result = asyncio.run(service.retrieve(gaps, analysis_context()))
 
-    assert source.batch_sizes == [(3, 2)]
+    assert source.batch_sizes == [(3, 4)]
     assert metadata.calls == [["kg:place-0", "kg:place-1", "kg:place-2"]]
     assert len(result.gaps) == 3
 

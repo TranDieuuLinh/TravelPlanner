@@ -31,8 +31,8 @@ def test_source_mix_hits_rounded_morning_and_evening_targets() -> None:
     periods = {item.period: item for item in result.source_mix}
 
     assert result.objective_components["sourceMixDeviationCost"] == 0
-    assert (periods["morning"].target_special, periods["morning"].target_offer) == (1, 1)
-    assert (periods["morning"].actual_special, periods["morning"].actual_offer) == (1, 1)
+    assert (periods["morning"].target_special, periods["morning"].target_offer) == (1, 0)
+    assert (periods["morning"].actual_special, periods["morning"].actual_offer) == (1, 0)
     assert (periods["evening"].target_special, periods["evening"].target_offer) == (2, 1)
     assert (periods["evening"].actual_special, periods["evening"].actual_offer) == (2, 1)
     assert not periods["morning"].fallback_used

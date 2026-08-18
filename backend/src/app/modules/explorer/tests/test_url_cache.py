@@ -7,8 +7,8 @@ from app.modules.explorer.adapters.url_cache import (
     canonicalize_source_url,
 )
 from app.modules.explorer.adapters.postgres import asyncpg_dsn
-from app.modules.explorer.contract import ExplorerInput
-from app.modules.explorer.models import SourceArtifact, SourceExtractionResult
+from app.modules.explorer.contract import ExplorerInput, ExplorerPlace, PlaceSource
+from app.modules.explorer.models import ExplorerDraft, SourceArtifact, SourceExtractionResult
 from app.modules.explorer.service import ExplorerService
 
 
@@ -42,6 +42,54 @@ class BrokenCache:
 
     async def save(self, url, result):
         raise RuntimeError("cache unavailable")
+
+
+class SlowUrlExtractor:
+    async def extract(self, url, *, source_index, raw_prompt):
+        await asyncio.sleep(60)
+
+
+class SlowDraftGenerator:
+    async def from_sources(self, *, raw_prompt, sources):
+        await asyncio.sleep(60)
+
+    async def from_prompt(self, raw_prompt):
+        await asyncio.sleep(60)
+
+
+class FallbackDraftGenerator:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def from_sources(self, *, raw_prompt, sources):
+        self.calls += 1
+        return ExplorerDraft(
+            input_adm="Hanoi",
+            places=[ExplorerPlace(
+                name="Structured Place",
+                sourcePlaces=[PlaceSource(
+                    origin="url",
+                    evidenceType="web_text",
+                    sourceUrl=sources[0].source_ref,
+                    evidence="## 1. Structured Place",
+                )],
+            )],
+        )
+
+
+class FastDraftGenerator:
+    async def from_sources(self, *, raw_prompt, sources):
+        return ExplorerDraft(
+            places=[ExplorerPlace(
+                name="Semantic Place",
+                sourcePlaces=[PlaceSource(
+                    origin="url",
+                    evidenceType="caption",
+                    sourceUrl=sources[0].source_ref,
+                    evidence="Semantic Place",
+                )],
+            )]
+        )
 
 
 def service_with(extractor: CountingUrlExtractor, cache=None) -> ExplorerService:
@@ -148,3 +196,86 @@ def test_cache_failure_does_not_block_extraction() -> None:
     assert result.status == "succeeded"
     assert result.cache_status == "miss"
     assert extractor.calls == 1
+
+
+def test_source_extraction_has_one_wall_clock_budget_including_retries() -> None:
+    unused = UnusedDependency()
+    service = ExplorerService(
+        drafts=unused,
+        url_extractor=SlowUrlExtractor(),
+        image_extractor=unused,
+        snapshots=unused,
+        source_extraction_timeout_seconds=0.01,
+    )
+
+    result = extract(
+        service,
+        ExplorerInput(
+            urls=["https://example.com/slow"],
+            forceRefresh=True,
+        ),
+    )
+
+    assert result.status == "failed_retryable"
+    assert result.error is not None
+    assert result.error.code == "SOURCE_EXTRACTION_TIMEOUT"
+
+
+def test_source_synthesis_timeout_uses_uncached_deterministic_fallback() -> None:
+    unused = UnusedDependency()
+    fallback = FallbackDraftGenerator()
+    service = ExplorerService(
+        drafts=SlowDraftGenerator(),
+        fallback_drafts=fallback,
+        url_extractor=unused,
+        image_extractor=unused,
+        snapshots=unused,
+        source_synthesis_timeout_seconds=0.01,
+    )
+    source = SourceExtractionResult(
+        sourceIndex=0,
+        sourceKind="url",
+        sourceRef="https://example.com/slow",
+        status="succeeded",
+        artifacts=[SourceArtifact(
+            artifactType="caption",
+            text="Hà Nội",
+            sourceUrl="https://example.com/slow",
+        )],
+    )
+
+    draft = asyncio.run(service.source_draft(
+        ExplorerInput(rawPrompt="Đi Hà Nội", forceRefresh=True),
+        [source],
+    ))
+
+    assert draft.input_adm == "Hanoi"
+    assert fallback.calls == 1
+    assert source.status == "partial"
+    assert source.synthesis_coverage_ratio == 0
+
+
+def test_successful_semantic_synthesis_also_keeps_structured_web_places() -> None:
+    unused = UnusedDependency()
+    fallback = FallbackDraftGenerator()
+    service = ExplorerService(
+        drafts=FastDraftGenerator(),
+        fallback_drafts=fallback,
+        url_extractor=unused,
+        image_extractor=unused,
+        snapshots=unused,
+    )
+    source = SourceExtractionResult(
+        sourceIndex=0,
+        sourceKind="url",
+        sourceRef="https://example.com/guide",
+        status="succeeded",
+    )
+
+    draft = asyncio.run(service.source_draft(ExplorerInput(urls=[source.source_ref]), [source]))
+
+    assert [place.name for place in draft.places] == [
+        "Semantic Place",
+        "Structured Place",
+    ]
+    assert fallback.calls == 1

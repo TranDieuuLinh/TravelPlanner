@@ -10,7 +10,7 @@ class SolverConfig:
     utility_timeout_seconds: float | None = None
     utility_relative_gap_limit: float = 0.05
     utility_parallel_workers: int = 3
-    max_utility_no_improvement_rounds: int = 3
+    max_utility_no_improvement_rounds: int = 1
     random_seed: int = 42
     log_search_progress: bool = False
     max_inter_stop_wait_minutes: int | None = MAX_INTER_STOP_WAIT_MINUTES
@@ -18,7 +18,7 @@ class SolverConfig:
 
 @dataclass(frozen=True, slots=True)
 class ObjectiveWeights:
-    policy_version: str = "itinerary-utility-v12-first-visitor-landmarks"
+    policy_version: str = "itinerary-utility-v16-evening-special-first"
     activity_coverage: int = 350
     special_experience: int = 4_000
     preference_max: int = 600
@@ -46,9 +46,12 @@ class ObjectiveWeights:
     unknown_opening: int = 5
     source_mix_deviation: int = 2_000
     daytime_entertainment_excess: int = 6_000
+    evening_special_experience: int = 9_000
+    evening_entertainment_fallback: int = 7_000
+    evening_entertainment_special_conflict: int = 6_000
     special_place_shortfall: int = 10_000
     popular_place_shortfall: int = 6_000
-    budget_overage_10k: int = 5
+    budget_overage_10k: int = 500
 
 
 STRONG_TAGS = frozenset(

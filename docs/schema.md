@@ -56,6 +56,12 @@ Planner validation/preflight failure trả `422`; provider, matrix hoặc solver
 `detail.retryable`. Observability ghi các response này là failure thay vì
 `success=true` với `plannerOutput=null`.
 
+Explorer output `partial` vẫn được phép đi tiếp sang Place Checker khi có
+`input_ADM`; các nguồn lỗi/timeout được giữ trong `warnings` và
+`completeness.sources`. Place Checker `food[].venueType` luôn là `restaurant`
+ngay cả khi category thô từ provider là `travel_place` nhưng policy theo tên,
+tag, pool và provider note đã phân loại candidate đó là nhà hàng.
+
 ## Các module
 
 | Module | Input | Output |
@@ -223,13 +229,15 @@ Retrieval/ranking dùng target `22 TravelPlace/ngày`, `16 Restaurant/ngày` và
 `6 DrinkDessert/Entertainment/ngày`. Core TravelPlace retrieval có query riêng
 cho famous/must-see, historic landmark/museum/temple/old quarter và authentic
 local cultural special experience.
-Entertainment tự gợi ý phải đạt Bayesian rating
-điều chỉnh tối thiểu 4,2/5; direct-user/URL được giữ. Compact selector
+Entertainment tự gợi ý phải đạt Bayesian rating điều chỉnh tối thiểu 4,2/5 và
+qua tourist-suitability gate để loại cửa hàng/dịch vụ thương mại;
+DrinkDessert phải có tín hiệu cafe/tea/bakery/dessert/bar/lounge và không được
+là quán món chính gắn sai. Direct-user/URL được giữ. Compact selector
 chỉ dùng `8 TravelPlace/ngày` làm hard handoff minimum; phần thiếu so với target
-22/ngày là reserve shortfall, không tự chặn Planner. Selector giữ tối đa
-`max(1, ceil(days / 3))` Entertainment tùy chọn có thể xếp 08:00-18:00;
-candidate chỉ khả thi buổi tối không chịu cap này nhưng vẫn nằm trong quota toàn
-ngày. Ba Style breakfast/lunch/dinner active
+22/ngày là reserve shortfall, không tự chặn Planner. Selector chỉ giới hạn
+Entertainment chỉ mở buổi sáng ở tối đa một candidate/ngày; candidate có thể
+xếp chiều/tối vẫn nằm trong quota toàn ngày và làm fallback cho Planner. Ba
+Style breakfast/lunch/dinner active
 mặc định; Style food/drink khác chỉ active khi request resolve tới Style đó.
 Mỗi Style active có target mềm `2 × days`; PlaceChecker chọn Item trước, reverse
 `Offer_Item` sang Restaurant/DrinkDessert và cân bằng
@@ -244,8 +252,9 @@ matching làm PlaceChecker `blocked`;
 thiếu relationship gần chỉ tạo warning và general food vẫn được phép. Một pool
 Accommodation riêng chỉ nhận khách sạn đã xác minh có giá dương. Low/medium/high
 chọn tối đa ba phương án quanh P25/P50/P80, sau đó xếp lại theo khoảng cách tới
-tâm compact TravelPlace pool. Candidate đầu tiên là top accommodation anchor
-của hybrid Planner; hai phương án còn lại không kích hoạt global re-solve.
+tâm compact TravelPlace pool. Hybrid dùng candidate rẻ nhất làm accommodation
+anchor khi có budget target, nếu không mới dùng candidate đầu tiên; các phương
+án còn lại không kích hoạt global re-solve.
 Rich PlaceChecker result trả `foodStyleCoverage[]` gồm Style ID/tên, target,
 số quán đã chọn, số Item phân biệt và trạng thái complete. Compact Planner
 contract vẫn nhận food venue cùng `foodCoverage` meal feasibility.
@@ -360,6 +369,17 @@ Planner còn cộng 4.000 utility cho mỗi TravelPlace thuộc Special Experien
 Candidate TravelPlace generic dưới 500 review và quán rating dưới 4,0/review
 quá ít chịu cost chất lượng; stop vượt nhịp ngày hợp lý chịu cost 800 để tránh
 lịch dày máy móc.
+Trong hybrid solve, budget `estimated_daily_cost` có biên mềm 5%, được trừ tổng
+lưu trú của accommodation anchor rồi chia phần còn lại theo số ngày. Overage
+cost là 500 utility cho mỗi 10.000 VND; shortlist giữ tối đa sáu quán mỗi meal
+slot để budget objective có đủ phương án rẻ, thay vì cho từng ngày dùng nhầm
+toàn budget chuyến.
+Hybrid shortlist tính thêm access cost hai chiều giữa accommodation anchor và
+activity; budget thấp vì vậy ưu tiên cụm nội đô trước điểm xa tốn xe.
+Với budget explicit/estimated, shortlist mở toàn bộ daily feasible reserve trước
+khi rank thay vì chỉ dùng geographic preferred day.
+Food reserve được rank theo tổng giá quán và corridor transport cost khi có
+budget, trước travel-time/quality tie-break.
 Nightlife và night-market bị clamp start từ 18:00; `Weekend Night Market` chỉ
 khả thi vào Thứ Sáu-Chủ Nhật theo `trip.startDate`. Candidate place được đánh
 dấu `drink_dessert` bị giới hạn tối đa hai điểm mỗi ngày.

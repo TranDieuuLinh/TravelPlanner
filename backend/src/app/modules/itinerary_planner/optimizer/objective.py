@@ -18,6 +18,9 @@ from app.modules.itinerary_planner.optimizer.config import ObjectiveWeights
 from app.modules.itinerary_planner.optimizer.entertainment_mix import (
     build_daytime_entertainment_excess_cost,
 )
+from app.modules.itinerary_planner.optimizer.evening_entertainment import (
+    build_evening_entertainment_policy,
+)
 from app.modules.itinerary_planner.optimizer.popular_place_coverage import (
     build_popular_place_shortfall_cost,
 )
@@ -60,6 +63,14 @@ def build_objective(
     variables: PlannerVariables,
     weights: ObjectiveWeights,
 ) -> ObjectiveExpressions:
+    evening_entertainment = build_evening_entertainment_policy(
+        model,
+        problem,
+        variables,
+        special_weight=weights.evening_special_experience,
+        fallback_weight=weights.evening_entertainment_fallback,
+        conflict_weight=weights.evening_entertainment_special_conflict,
+    )
     positive = {
         "activityCoverageValue": build_activity_coverage_value(
             model, problem, variables, weights
@@ -71,6 +82,10 @@ def build_objective(
         "popularityValue": build_popularity_value(problem, variables, weights),
         "timeFitValue": _time_fit(model, problem, variables, weights),
         "relationshipValue": _relationship_value(model, problem, variables, weights),
+        "eveningSpecialExperienceValue": evening_entertainment.special_value,
+        "eveningEntertainmentFallbackValue": (
+            evening_entertainment.fallback_value
+        ),
     }
     negative = {
         "sameDayTagRepetitionCost": build_same_day_tag_repetition_cost(
@@ -107,6 +122,9 @@ def build_objective(
                 variables,
                 weights.daytime_entertainment_excess,
             )
+        ),
+        "eveningEntertainmentSpecialConflictCost": (
+            evening_entertainment.special_conflict_cost
         ),
         "specialPlaceShortfallCost": build_special_place_shortfall_cost(
             model,

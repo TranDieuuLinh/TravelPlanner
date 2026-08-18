@@ -176,6 +176,10 @@ def test_expanded_pool_queries_independent_activity_themes_and_styles() -> None:
     } <= set(queries)
     assert queries["pool:nature_alternatives"].relation_terms
     assert queries["pool:nightlife_alternatives"].relation_terms
+    assert (
+        queries["pool:entertainment_alternatives"].query_text
+        == "water puppet theater cultural performance live music evening show"
+    )
 
 
 def test_adaptive_pool_skips_reserve_queries_when_existing_pool_is_sufficient() -> None:

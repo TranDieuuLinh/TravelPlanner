@@ -87,7 +87,7 @@ POOL_QUERY_SPECS = {
     "pool:drink_alternatives": (GapType.food_coverage, "cafe", "cafe"),
     "pool:entertainment_alternatives": (
         GapType.time_of_day,
-        "entertainment show games",
+        "water puppet theater cultural performance live music evening show",
         "entertainment",
     ),
     "pool:culture_alternatives": (
@@ -193,6 +193,15 @@ POOL_RELATION_TERMS = {
         "nghề thủ công truyền thống",
         "heritage",
         "local culture",
+    ],
+    "pool:entertainment_alternatives": [
+        "múa rối nước",
+        "biểu diễn văn hóa",
+        "nhà hát",
+        "water puppet",
+        "cultural performance",
+        "theater",
+        "live music",
     ],
     "pool:culture_alternatives": ["văn hóa", "tham quan", "heritage", "museum"],
     "pool:nature_alternatives": [

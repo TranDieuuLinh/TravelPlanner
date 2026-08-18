@@ -257,6 +257,13 @@ def compose_explorer_service(
         dedupe_provider=settings.explorer_dedupe_provider,
         note_provider=settings.explorer_note_provider,
         url_timeout_seconds=settings.explorer_url_timeout_seconds,
+        source_extraction_timeout_seconds=(
+            settings.explorer_source_extraction_timeout_seconds
+        ),
+        source_synthesis_timeout_seconds=(
+            settings.explorer_source_synthesis_timeout_seconds
+        ),
+        source_chunk_timeout_seconds=settings.explorer_source_chunk_timeout_seconds,
         ytdlp_cookie_file=settings.explorer_ytdlp_cookie_file,
         frame_interval_seconds=settings.explorer_frame_interval_seconds,
         frame_batch_size=settings.explorer_frame_batch_size,

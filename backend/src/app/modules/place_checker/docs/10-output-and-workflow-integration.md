@@ -222,10 +222,10 @@ ngân sách. PlaceChecker không tự biến dữ liệu thiếu thành giá mi�
 Accommodation dùng boundary riêng, không đi vào `places` như activity. Chỉ bản
 ghi đã xác minh và có `typical_cost > 0` được chọn. Budget low/medium/high xác
 định mốc P25/P50/P80; selector lấy tối đa ba candidate quanh mốc đó rồi xếp lại
-theo khoảng cách tới tâm tọa độ của compact TravelPlace pool. Candidate đầu tiên
-vì vậy là top accommodation anchor mà hybrid Planner dùng, còn hai candidate sau
-được giữ làm dữ liệu giải thích/dự phòng ở boundary. Output kèm `coordinates` và
-`pricePerNight`.
+theo khoảng cách tới tâm tọa độ của compact TravelPlace pool. Khi có budget
+target, hybrid Planner dùng candidate rẻ nhất làm anchor; nếu không mới dùng
+candidate đầu tiên. Các candidate còn lại được giữ làm dữ liệu giải thích/dự
+phòng ở boundary. Output kèm `coordinates` và `pricePerNight`.
 
 ## Budget truyền sang Planner
 

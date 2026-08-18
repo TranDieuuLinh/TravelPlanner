@@ -14,8 +14,8 @@ PlaceChecker không gán ngày hoặc buổi. Module chỉ trả pool đã xác 
 
 Pool có ba quota độc lập: reserve 22 `TravelPlace`/ngày, 16 `Restaurant`/ngày
 và 6 `DrinkDessert`/`Entertainment` mỗi ngày. TravelPlace tăng để bảo vệ
-preflight; trong compact pool, Entertainment tùy chọn có thể rơi vào ban ngày
-08:00-18:00 có cap riêng nhỏ hơn quota toàn ngày.
+preflight; trong compact pool, Entertainment chỉ mở buổi sáng có cap tối đa
+một candidate/ngày. Candidate có thể xếp chiều/tối vẫn được giữ làm reserve.
 Target 22 TravelPlace/ngày điều khiển retrieval và ranking. Hard handoff gate
 riêng chỉ yêu cầu 8 TravelPlace/ngày; vì vậy pool đủ lớn để Planner tối ưu sẽ
 không bị chặn chỉ vì nguồn live không lấp đầy toàn bộ reserve mong muốn.
@@ -38,7 +38,9 @@ TravelPlace selector dùng coverage mềm trên phần candidate retrieval cần
 Core retrieval luôn có query `famous landmark must see top attraction`, query
 `iconic historic landmark museum temple old quarter` và query `authentic local
 cultural special experience` riêng, không phụ thuộc query chung `travel place`
-hay theme query.
+hay theme query. Entertainment reserve dùng query ưu tiên `water puppet`, nhà
+hát, biểu diễn văn hóa, live music và evening show thay cho từ khóa
+`entertainment` chung dễ trả về doanh nghiệp dịch vụ.
 
 - khoảng 8/14 có evidence hoặc provenance tag `Special_Experience` đã duyệt;
 - khoảng 4/14 có popularity signal từ Bayesian quality và `log(reviewCount)`;
@@ -64,10 +66,14 @@ day. FinalItineraryPlanner áp tỷ lệ khi đã biết số slot sáng/tối. 
 candidate khỏi PlaceChecker chỉ vì chưa được bốc vào một slot.
 
 Entertainment tùy chọn do hệ thống tìm phải có Bayesian-adjusted rating tối
-thiểu 4,2/5. Candidate direct-user/URL không qua quality gate này. Với candidate
-có thể xếp 08:00-18:00, compact selector chỉ giữ tối đa
-`max(1, ceil(days / 3))`; candidate chỉ khả thi buổi tối vẫn cạnh tranh trong
-quota chung.
+thiểu 4,2/5. Candidate direct-user/URL không qua quality gate này. Candidate
+cửa hàng hoặc dịch vụ thương mại (clothing/souvenir/ceramic shop, event
+planner) bị tourist-suitability gate loại khỏi optional Entertainment dù rating
+cao. DrinkDessert phải có tín hiệu đồ uống/tráng miệng rõ ràng; candidate có
+note món ăn đặc trưng bị loại khỏi leisure pool. Với candidate
+có toàn bộ time window kết thúc không muộn hơn 12:00, compact selector chỉ giữ
+tối đa một candidate/ngày. Candidate có thể xếp chiều hoặc tối vẫn cạnh tranh
+trong quota chung để Planner dùng làm phương án buổi tối.
 Đây là giảm reserve trước Planner, không phải gán lịch tại PlaceChecker.
 
 Selector Style tổng quát hoạt động trước thematic retrieval. Preference được

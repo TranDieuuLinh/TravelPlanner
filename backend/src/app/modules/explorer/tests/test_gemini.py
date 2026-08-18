@@ -1,7 +1,11 @@
 import asyncio
 import json
 
-from app.modules.explorer.adapters.gemini import GeminiExplorerDraftGenerator
+from app.modules.explorer.adapters.gemini import (
+    GeminiExplorerDraftGenerator,
+    _gather_with_timeout,
+    _round_robin_jobs,
+)
 from app.modules.explorer.models import ExplorerDraft, SourceArtifact, SourceExtractionResult
 from app.modules.explorer.source_chunking import prioritize_timestamp_chunk
 from app.shared.llm import LlmAllKeysUnavailable
@@ -206,6 +210,35 @@ def test_long_source_is_extracted_per_chunk_then_consolidated() -> None:
     )
 
 
+def test_source_chunks_are_scheduled_round_robin_without_starvation() -> None:
+    assert _round_robin_jobs([
+        ["youtube-1", "youtube-2", "youtube-3"],
+        ["klook-1", "klook-2"],
+        ["instagram-1"],
+    ]) == [
+        "youtube-1",
+        "klook-1",
+        "instagram-1",
+        "youtube-2",
+        "klook-2",
+        "youtube-3",
+    ]
+
+
+def test_chunk_deadline_keeps_completed_results_and_times_out_only_pending() -> None:
+    async def value_after(delay, value):
+        await asyncio.sleep(delay)
+        return value
+
+    results = asyncio.run(_gather_with_timeout(
+        [value_after(0, "klook"), value_after(60, "youtube")],
+        timeout_seconds=0.01,
+    ))
+
+    assert results[0] == "klook"
+    assert isinstance(results[1], TimeoutError)
+
+
 def test_url_source_repairs_invented_provenance() -> None:
     draft = ExplorerDraft(
         places=[{
@@ -336,7 +369,6 @@ def test_successful_chunk_is_not_repeated_when_another_chunk_retries() -> None:
             SourceArtifact(artifactType="transcript", text="retry"),
         ],
     )
-
     asyncio.run(generator.from_sources(raw_prompt=None, sources=[source]))
 
     assert client.calls == {"good": 1, "retry": 2}
