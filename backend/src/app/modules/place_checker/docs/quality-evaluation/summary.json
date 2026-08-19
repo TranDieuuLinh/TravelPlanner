@@ -1,0 +1,4885 @@
+[
+  {
+    "scenario": "01_happy_mixed_sources",
+    "status": "conditional",
+    "destinationStatus": "resolved",
+    "destination": "Hà Nội",
+    "inputPlaceCount": 3,
+    "candidateValidationIssueCount": 0,
+    "checkedPlaceCount": 40,
+    "eligiblePlaceCount": 40,
+    "mandatoryCount": 2,
+    "categoryDistribution": {
+      "restaurant": 2,
+      "drink dessert": 6,
+      "travel place": 32
+    },
+    "experienceGroups": [
+      "Cắm trại",
+      "Dùng bữa",
+      "Mua sắm",
+      "Tham quan văn hóa và tín ngưỡng",
+      "Tham quan địa danh",
+      "Thưởng thức đồ uống",
+      "Uống cà phê",
+      "Uống trà",
+      "Vui chơi dành cho trẻ em",
+      "Ăn phở",
+      "Đi dạo ngoài trời"
+    ],
+    "budgetStatus": "unknown",
+    "unknownCostCount": 11,
+    "capacityStatus": "overloaded",
+    "geographicSpread": "dispersed",
+    "geographicRadiusKm": 10.436,
+    "openGaps": [
+      "trip_capacity",
+      "budget",
+      "geographic_balance",
+      "data_quality"
+    ],
+    "resolvedItems": [
+      {
+        "requirement": "phở",
+        "status": "resolved",
+        "selected": "Phở Gia Truyền Bát Đàn",
+        "alternatives": []
+      },
+      {
+        "requirement": "ngắm hoàng hôn",
+        "status": "resolved",
+        "selected": "West Lake",
+        "alternatives": []
+      }
+    ],
+    "unresolvedEntities": [],
+    "warnings": [
+      "Chưa xác định được trạng thái hoạt động hiện tại."
+    ],
+    "checkedPlaces": [
+      {
+        "name": "Phở Gia Truyền Bát Đàn",
+        "category": "restaurant",
+        "mandatory": true,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "item:Phở",
+          "experience:Ăn phở",
+          "experience:Dùng bữa"
+        ]
+      },
+      {
+        "name": "Cafe Giảng",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "West Lake",
+        "category": "travel_place",
+        "mandatory": true,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Bodhi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.643729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Tam Da Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.64289,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Geology Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.642487,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Yen So Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.616358,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "S'Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.525342,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Dùng bữa",
+          "item:Trà",
+          "item:Sinh tố",
+          "item:Bánh mì",
+          "item:Phở",
+          "item:Chả giò",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Dong xuan market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6423,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Ho Chi Minh Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6347,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Museum of Infantry",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.634663,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Hanoi Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.618654,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "B52 Victory Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.615738,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Jura Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.611832,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Rose Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.611644,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Museum of Armored Forces",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.608025,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Tran Quoc Pagoda",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.608008,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Bảo Tàng I-Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.60508,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Virtual Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.531629,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Vui chơi dành cho trẻ em"
+        ]
+      },
+      {
+        "name": "Nen Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.545817,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "8 Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.485304,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Uống trà",
+          "item:Trà",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Lotus Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.544433,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Phú Đô Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.543782,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Me Tri Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.542063,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "An Hoa Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.541988,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Santorini park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.541442,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Era Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.455379,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Chả giò",
+          "item:Hải sản",
+          "item:Nấm"
+        ]
+      },
+      {
+        "name": "Vietnam Treasures Travel",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.531417,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "PHỐ ĐI BỘ TRẦN NHÂN TÔNG",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.531229,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Ja café",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.520684,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Dùng bữa",
+          "experience:Uống cà phê",
+          "item:Trà",
+          "item:Phở",
+          "item:Bánh mì",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Windie Garden",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.456463,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Cắm trại"
+        ]
+      },
+      {
+        "name": "Cafe 30",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.455721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống trà",
+          "experience:Thưởng thức đồ uống",
+          "experience:Uống cà phê",
+          "item:Trà",
+          "item:Trà sữa",
+          "item:Sinh tố",
+          "item:Nước trái cây",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Phuong Trach pagoda",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.506267,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Xuan Trach pagoda",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.506192,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "T Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.500079,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Uống trà",
+          "experience:Dùng bữa",
+          "item:Cà phê",
+          "item:Trà"
+        ]
+      },
+      {
+        "name": "Ngoi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.484453,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Cu Da Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.483729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Bia Ba Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.48319,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Mỗ Lao Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.482965,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Hà Đông Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.482412,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      }
+    ],
+    "durationMs": 1558
+  },
+  {
+    "scenario": "02_noisy_duplicate_and_typo",
+    "status": "conditional",
+    "destinationStatus": "resolved",
+    "destination": "Hà Nội",
+    "inputPlaceCount": 3,
+    "candidateValidationIssueCount": 0,
+    "checkedPlaceCount": 31,
+    "eligiblePlaceCount": 30,
+    "mandatoryCount": 1,
+    "categoryDistribution": {
+      "travel place": 15,
+      "restaurant": 7,
+      "drink dessert": 8
+    },
+    "experienceGroups": [
+      "Dùng bữa",
+      "Hát karaoke",
+      "Mua sắm",
+      "Tham quan văn hóa và tín ngưỡng",
+      "Tham quan địa danh",
+      "Thưởng thức đồ uống",
+      "Uống cà phê",
+      "Uống trà",
+      "Vui chơi dành cho trẻ em",
+      "Đi dạo ngoài trời"
+    ],
+    "budgetStatus": "at_risk",
+    "unknownCostCount": 4,
+    "capacityStatus": "overloaded",
+    "geographicSpread": "moderate",
+    "geographicRadiusKm": 7.315,
+    "openGaps": [
+      "trip_capacity",
+      "budget",
+      "data_quality"
+    ],
+    "resolvedItems": [
+      {
+        "requirement": "bún chả",
+        "status": "resolved",
+        "selected": "Yến Bún Chả",
+        "alternatives": [
+          "The Hanoian - 5 Trần Phú",
+          "Quán Bún Chả Gia Truyền34 _ Nước Ép Sinh Tố Bé Mập",
+          "Hanoi-Oi Kitchen",
+          "Bún chả 27"
+        ]
+      }
+    ],
+    "unresolvedEntities": [
+      {
+        "entityType": "place",
+        "inputIndex": 1,
+        "inputName": "Templ of Litereture",
+        "reason": "identity_not_resolved",
+        "mandatory": false
+      }
+    ],
+    "warnings": [
+      "Chưa xác định được trạng thái hoạt động hiện tại.",
+      "Không tìm thấy identity đủ tin cậy trong đúng ADM.",
+      "Địa điểm chưa có canonical identity đủ tin cậy.",
+      "Địa điểm chưa có tọa độ hợp lệ."
+    ],
+    "checkedPlaces": [
+      {
+        "name": "Ho Chi Minh's Mausoleum",
+        "category": "travel_place",
+        "mandatory": true,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": null,
+        "category": null,
+        "mandatory": false,
+        "eligible": false,
+        "state": "rejected",
+        "verification": "unresolved",
+        "score": null,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": []
+      },
+      {
+        "name": "Era Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.650379,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Chả giò",
+          "item:Hải sản",
+          "item:Nấm"
+        ]
+      },
+      {
+        "name": "Tam Da Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.64289,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "S'Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.644342,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Dùng bữa",
+          "item:Trà",
+          "item:Sinh tố",
+          "item:Bánh mì",
+          "item:Phở",
+          "item:Chả giò",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "B52 Victory Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.640738,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Bodhi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.618729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Rose Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.611644,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Cái Mâm Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.650379,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Hải sản"
+        ]
+      },
+      {
+        "name": "Dong xuan market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6423,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Mơ Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.579721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Ja café",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.639684,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Dùng bữa",
+          "experience:Uống cà phê",
+          "item:Trà",
+          "item:Phở",
+          "item:Bánh mì",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Ho Chi Minh Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6347,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Virtual Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.567629,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Vui chơi dành cho trẻ em"
+        ]
+      },
+      {
+        "name": "Duck 34 Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.625342,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Lẩu",
+          "item:Cơm",
+          "item:Xôi"
+        ]
+      },
+      {
+        "name": "T Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.619079,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Uống trà",
+          "experience:Dùng bữa",
+          "item:Cà phê",
+          "item:Trà"
+        ]
+      },
+      {
+        "name": "Hanoi Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.618654,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Geology Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.617488,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Bảo Tàng I-Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.61608,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Cafe 30",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.554721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống trà",
+          "experience:Thưởng thức đồ uống",
+          "experience:Uống cà phê",
+          "item:Trà",
+          "item:Trà sữa",
+          "item:Sinh tố",
+          "item:Nước trái cây",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Museum of Infantry",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.609662,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Museum of Armored Forces",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.608025,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Tran Quoc Pagoda",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.608008,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Literature Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.541479,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Hát karaoke"
+        ]
+      },
+      {
+        "name": "Cafe 20",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.579684,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Khuê Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.576046,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa"
+        ]
+      },
+      {
+        "name": "1968 Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.572379,
+        "costTier": "high",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Bún chả",
+          "item:Chả giò"
+        ]
+      },
+      {
+        "name": "MIAs restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.572379,
+        "costTier": "high",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Mì Quảng",
+          "item:Cơm"
+        ]
+      },
+      {
+        "name": "J Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.559342,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Uống trà",
+          "item:Cà phê",
+          "item:Trà",
+          "item:Trà sữa"
+        ]
+      },
+      {
+        "name": "8 Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.559304,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Uống trà",
+          "item:Trà",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "CTaste Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.551083,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Kem",
+          "item:Bánh mì",
+          "item:Hải sản"
+        ]
+      }
+    ],
+    "durationMs": 1874
+  },
+  {
+    "scenario": "03_items_only",
+    "status": "conditional",
+    "destinationStatus": "resolved",
+    "destination": "Hà Nội",
+    "inputPlaceCount": 0,
+    "candidateValidationIssueCount": 0,
+    "checkedPlaceCount": 30,
+    "eligiblePlaceCount": 30,
+    "mandatoryCount": 0,
+    "categoryDistribution": {
+      "travel place": 29,
+      "drink dessert": 1
+    },
+    "experienceGroups": [
+      "Dùng bữa",
+      "Hát karaoke",
+      "Mua sắm",
+      "Tham quan văn hóa và tín ngưỡng",
+      "Tham quan địa danh",
+      "Uống cà phê",
+      "Vui chơi dành cho trẻ em",
+      "Đi dạo ngoài trời"
+    ],
+    "budgetStatus": "at_risk",
+    "unknownCostCount": 6,
+    "capacityStatus": "overloaded",
+    "geographicSpread": "dispersed",
+    "geographicRadiusKm": 20.533,
+    "openGaps": [
+      "trip_capacity",
+      "budget",
+      "geographic_balance",
+      "data_quality"
+    ],
+    "resolvedItems": [
+      {
+        "requirement": "bún chả",
+        "status": "resolved",
+        "selected": "Bún chả 27",
+        "alternatives": [
+          "Yến Bún Chả",
+          "Bún chả 22 ngõ Huyện",
+          "Bún Chả Gia Truyền Bà Trang",
+          "Chay Bát Hạnh"
+        ]
+      },
+      {
+        "requirement": "cà phê trứng",
+        "status": "resolved",
+        "selected": "Cà Phê Trang",
+        "alternatives": [
+          "1984 Coffee & Drinks",
+          "Allan Coffee",
+          "AYAI COFFEE & TEA",
+          "Bold Brew - Cafe & Work Date Huỳnh Thúc Kháng"
+        ]
+      },
+      {
+        "requirement": "múa rối nước",
+        "status": "resolved",
+        "selected": "Phường Múa Rối Nước Đào Thục.",
+        "alternatives": [
+          "Lotus Water Puppet Theater",
+          "Thang Long Water Puppet Theatre",
+          "Vietnam Puppet Theater",
+          "Aeon Mall Long Bien"
+        ]
+      }
+    ],
+    "unresolvedEntities": [],
+    "warnings": [
+      "Chưa xác định được trạng thái hoạt động hiện tại."
+    ],
+    "checkedPlaces": [
+      {
+        "name": "Ngoi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.773453,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Hanoi Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.732654,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Mỗ Lao Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.731965,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Yen So Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.730358,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Cu Da Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.772729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Bia Ba Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.77219,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Vo Vi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.772767,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "S'Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.614342,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Dùng bữa",
+          "item:Trà",
+          "item:Sinh tố",
+          "item:Bánh mì",
+          "item:Phở",
+          "item:Chả giò",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Bodhi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.772729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Tran Quoc Pagoda",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.746525,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Bảo Tàng I-Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.73408,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Tam Da Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.73189,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Geology Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.731487,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Hà Đông Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.731413,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Bông Đỏ Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.731413,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Dong xuan market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.7313,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Gamuda Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.730133,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "B52 Victory Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.729738,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Jura Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.725832,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Rose Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.725644,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Ho Chi Minh Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.7237,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Museum of Infantry",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.723662,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Ho Chi Minh Trail Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.722063,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Museum of Armored Forces",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.722025,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Nguyen Van Huyen Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.762229,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Phùng Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.732542,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Literature Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.655479,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Hát karaoke"
+        ]
+      },
+      {
+        "name": "Virtual Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.645629,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Vui chơi dành cho trẻ em"
+        ]
+      },
+      {
+        "name": "Dam Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.699967,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Nen Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.699817,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      }
+    ],
+    "durationMs": 1623
+  },
+  {
+    "scenario": "04_family_low_budget",
+    "status": "conditional",
+    "destinationStatus": "resolved",
+    "destination": "Hà Nội",
+    "inputPlaceCount": 2,
+    "candidateValidationIssueCount": 0,
+    "checkedPlaceCount": 20,
+    "eligiblePlaceCount": 20,
+    "mandatoryCount": 2,
+    "categoryDistribution": {
+      "travel place": 17,
+      "drink dessert": 2,
+      "restaurant": 1
+    },
+    "experienceGroups": [
+      "Dùng bữa",
+      "Mua sắm",
+      "Tham quan văn hóa và tín ngưỡng",
+      "Tham quan địa danh",
+      "Thưởng thức đồ uống",
+      "Uống cà phê",
+      "Uống trà",
+      "Vui chơi dành cho trẻ em",
+      "Đi dạo ngoài trời"
+    ],
+    "budgetStatus": "unknown",
+    "unknownCostCount": 3,
+    "capacityStatus": "overloaded",
+    "geographicSpread": "moderate",
+    "geographicRadiusKm": 7.061,
+    "openGaps": [
+      "trip_capacity",
+      "budget",
+      "people_accessibility",
+      "data_quality"
+    ],
+    "resolvedItems": [
+      {
+        "requirement": "khu vui chơi trẻ em",
+        "status": "resolved",
+        "selected": "Virtual Park",
+        "alternatives": [
+          "Khu vui chơi trẻ em Mr Haahoo Times Tower",
+          "Khu Vui Chơi Sắc Hoa Hồ Tây",
+          "Khu Vui Chơi BINA KIDS",
+          "Noi space"
+        ]
+      },
+      {
+        "requirement": "bánh mì",
+        "status": "resolved",
+        "selected": "Trong Vegetarian & Drink",
+        "alternatives": [
+          "Banh Mi 180",
+          "Banh Mi Vie",
+          "Bự Bánh Mì",
+          "Oddience"
+        ]
+      }
+    ],
+    "unresolvedEntities": [],
+    "warnings": [
+      "Chưa xác định được trạng thái hoạt động hiện tại."
+    ],
+    "checkedPlaces": [
+      {
+        "name": "Hanoi Zoo",
+        "category": "travel_place",
+        "mandatory": true,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Vietnam Museum of Ethnology",
+        "category": "travel_place",
+        "mandatory": true,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh",
+          "experience:Tham quan văn hóa và tín ngưỡng",
+          "experience:Dùng bữa"
+        ]
+      },
+      {
+        "name": "Museum of Armored Forces",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.593025,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "J Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.544342,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Uống trà",
+          "item:Cà phê",
+          "item:Trà",
+          "item:Trà sữa"
+        ]
+      },
+      {
+        "name": "Duck 34 Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.514342,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Lẩu",
+          "item:Cơm",
+          "item:Xôi"
+        ]
+      },
+      {
+        "name": "Ngoi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.579453,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Mỗ Lao Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.577965,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Virtual Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.576629,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Vui chơi dành cho trẻ em"
+        ]
+      },
+      {
+        "name": "Me Tri Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.562063,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Bodhi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.578729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Hanoi Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.578654,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Tam Da Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.57789,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Geology Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.577488,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Hà Đông Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.577412,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Dong xuan market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.5773,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "B52 Victory Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.575738,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Cafe 30",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.514721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống trà",
+          "experience:Thưởng thức đồ uống",
+          "experience:Uống cà phê",
+          "item:Trà",
+          "item:Trà sữa",
+          "item:Sinh tố",
+          "item:Nước trái cây",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Ho Chi Minh Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.5697,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Museum of Infantry",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.569663,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "An Hoa Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.561988,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      }
+    ],
+    "durationMs": 2280
+  },
+  {
+    "scenario": "05_direct_place_conflicts_with_avoids",
+    "status": "conditional",
+    "destinationStatus": "resolved",
+    "destination": "Hà Nội",
+    "inputPlaceCount": 2,
+    "candidateValidationIssueCount": 0,
+    "checkedPlaceCount": 20,
+    "eligiblePlaceCount": 20,
+    "mandatoryCount": 2,
+    "categoryDistribution": {
+      "restaurant": 1,
+      "travel place": 16,
+      "drink dessert": 3
+    },
+    "experienceGroups": [
+      "Dùng bữa",
+      "Mua sắm",
+      "Tham quan văn hóa và tín ngưỡng",
+      "Tham quan địa danh",
+      "Thưởng thức đồ uống",
+      "Trải nghiệm đồ uống buổi tối",
+      "Uống cà phê",
+      "Uống trà",
+      "Vui chơi dành cho trẻ em",
+      "Đi dạo ngoài trời"
+    ],
+    "budgetStatus": "at_risk",
+    "unknownCostCount": 0,
+    "capacityStatus": "overloaded",
+    "geographicSpread": "dispersed",
+    "geographicRadiusKm": 8.044,
+    "openGaps": [
+      "trip_capacity",
+      "budget",
+      "geographic_balance",
+      "data_quality"
+    ],
+    "resolvedItems": [],
+    "unresolvedEntities": [],
+    "warnings": [
+      "Chưa xác định được trạng thái hoạt động hiện tại.",
+      "Địa điểm xung đột với tránh né mềm: nightlife."
+    ],
+    "checkedPlaces": [
+      {
+        "name": "Ta Hien Beer Street",
+        "category": "restaurant",
+        "mandatory": true,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [
+          "nightlife"
+        ],
+        "tags": [
+          "restaurant",
+          "experience:Tham quan địa danh",
+          "experience:Trải nghiệm đồ uống buổi tối"
+        ]
+      },
+      {
+        "name": "Hanoi Old Quarter",
+        "category": "travel_place",
+        "mandatory": true,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh",
+          "experience:Mua sắm",
+          "experience:Dùng bữa"
+        ]
+      },
+      {
+        "name": "Bodhi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.643729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "S'Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.584342,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Dùng bữa",
+          "item:Trà",
+          "item:Sinh tố",
+          "item:Bánh mì",
+          "item:Phở",
+          "item:Chả giò",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Geology Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.642487,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Dong xuan market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6423,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Yen So Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.616358,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "8 Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.584304,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Uống trà",
+          "item:Trà",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Ho Chi Minh Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6347,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Hanoi Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.618654,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Tam Da Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.61789,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "B52 Victory Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.615738,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Cafe 30",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.554721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống trà",
+          "experience:Thưởng thức đồ uống",
+          "experience:Uống cà phê",
+          "item:Trà",
+          "item:Trà sữa",
+          "item:Sinh tố",
+          "item:Nước trái cây",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Jura Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.611832,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Rose Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.611644,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Museum of Infantry",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.609662,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Museum of Armored Forces",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.608025,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Bảo Tàng I-Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.60508,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Virtual Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.531629,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Vui chơi dành cho trẻ em"
+        ]
+      },
+      {
+        "name": "Tran Quoc Pagoda",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.583008,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng",
+          "experience:Tham quan địa danh"
+        ]
+      }
+    ],
+    "durationMs": 1709
+  },
+  {
+    "scenario": "06_wrong_city_place",
+    "status": "blocked",
+    "destinationStatus": "resolved",
+    "destination": "Hà Nội",
+    "inputPlaceCount": 2,
+    "candidateValidationIssueCount": 0,
+    "checkedPlaceCount": 21,
+    "eligiblePlaceCount": 20,
+    "mandatoryCount": 2,
+    "categoryDistribution": {
+      "travel place": 15,
+      "restaurant": 3,
+      "drink dessert": 2
+    },
+    "experienceGroups": [
+      "Dùng bữa",
+      "Hát karaoke",
+      "Mua sắm",
+      "Tham quan văn hóa và tín ngưỡng",
+      "Tham quan địa danh",
+      "Thưởng thức đồ uống",
+      "Uống cà phê",
+      "Uống trà",
+      "Vui chơi dành cho trẻ em",
+      "Đi dạo ngoài trời"
+    ],
+    "budgetStatus": "at_risk",
+    "unknownCostCount": 3,
+    "capacityStatus": "overloaded",
+    "geographicSpread": "moderate",
+    "geographicRadiusKm": 6.088,
+    "openGaps": [
+      "mandatory_identity_metadata",
+      "trip_capacity",
+      "budget",
+      "data_quality"
+    ],
+    "resolvedItems": [],
+    "unresolvedEntities": [
+      {
+        "entityType": "place",
+        "inputIndex": 0,
+        "inputName": "Independence Palace",
+        "reason": "identity_not_resolved",
+        "mandatory": true
+      }
+    ],
+    "warnings": [
+      "Không tìm thấy identity đủ tin cậy trong đúng ADM.",
+      "Địa điểm chưa có canonical identity đủ tin cậy.",
+      "Địa điểm chưa có tọa độ hợp lệ.",
+      "Chưa xác định được trạng thái hoạt động hiện tại."
+    ],
+    "checkedPlaces": [
+      {
+        "name": null,
+        "category": null,
+        "mandatory": true,
+        "eligible": false,
+        "state": "blocked",
+        "verification": "unresolved",
+        "score": null,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": []
+      },
+      {
+        "name": "West Lake",
+        "category": "travel_place",
+        "mandatory": true,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Tam Da Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.70289,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Era Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.657379,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Chả giò",
+          "item:Hải sản",
+          "item:Nấm"
+        ]
+      },
+      {
+        "name": "Mơ Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.639721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Museum of Infantry",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.694663,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Bodhi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.678729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Virtual Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.627629,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Vui chơi dành cho trẻ em"
+        ]
+      },
+      {
+        "name": "Hanoi Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.678654,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Geology Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.677488,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Dong xuan market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6773,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Bảo Tàng I-Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.67608,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "B52 Victory Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.675737,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Cafe 30",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.614721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống trà",
+          "experience:Thưởng thức đồ uống",
+          "experience:Uống cà phê",
+          "item:Trà",
+          "item:Trà sữa",
+          "item:Sinh tố",
+          "item:Nước trái cây",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Ho Chi Minh Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6697,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Museum of Armored Forces",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.668025,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Tran Quoc Pagoda",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.668008,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Me Tri Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.602063,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Literature Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.601479,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Hát karaoke"
+        ]
+      },
+      {
+        "name": "Cái Mâm Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.657379,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Hải sản"
+        ]
+      },
+      {
+        "name": "Duck 34 Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.657342,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Lẩu",
+          "item:Cơm",
+          "item:Xôi"
+        ]
+      }
+    ],
+    "durationMs": 2096
+  },
+  {
+    "scenario": "07_malformed_candidate_partial",
+    "status": "partial",
+    "destinationStatus": "resolved",
+    "destination": "Hà Nội",
+    "inputPlaceCount": 1,
+    "candidateValidationIssueCount": 1,
+    "checkedPlaceCount": 20,
+    "eligiblePlaceCount": 20,
+    "mandatoryCount": 1,
+    "categoryDistribution": {
+      "travel place": 15,
+      "restaurant": 3,
+      "drink dessert": 2
+    },
+    "experienceGroups": [
+      "Dùng bữa",
+      "Hát karaoke",
+      "Mua sắm",
+      "Tham quan văn hóa và tín ngưỡng",
+      "Tham quan địa danh",
+      "Thưởng thức đồ uống",
+      "Uống cà phê",
+      "Uống trà",
+      "Vui chơi dành cho trẻ em",
+      "Đi dạo ngoài trời"
+    ],
+    "budgetStatus": "at_risk",
+    "unknownCostCount": 2,
+    "capacityStatus": "overloaded",
+    "geographicSpread": "moderate",
+    "geographicRadiusKm": 6.088,
+    "openGaps": [
+      "trip_capacity",
+      "budget",
+      "data_quality"
+    ],
+    "resolvedItems": [],
+    "unresolvedEntities": [
+      {
+        "entityType": "validation",
+        "inputIndex": 1,
+        "inputName": "Broken candidate",
+        "reason": "INVALID_PLACE_CANDIDATE",
+        "mandatory": false
+      }
+    ],
+    "warnings": [
+      "Chưa xác định được trạng thái hoạt động hiện tại."
+    ],
+    "checkedPlaces": [
+      {
+        "name": "West Lake",
+        "category": "travel_place",
+        "mandatory": true,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Tam Da Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.70289,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Era Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.657379,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Chả giò",
+          "item:Hải sản",
+          "item:Nấm"
+        ]
+      },
+      {
+        "name": "Mơ Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.639721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Museum of Infantry",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.694663,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Bodhi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.678729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Virtual Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.627629,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Vui chơi dành cho trẻ em"
+        ]
+      },
+      {
+        "name": "Hanoi Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.678654,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Geology Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.677488,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Dong xuan market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6773,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Bảo Tàng I-Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.67608,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "B52 Victory Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.675737,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Cafe 30",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.614721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống trà",
+          "experience:Thưởng thức đồ uống",
+          "experience:Uống cà phê",
+          "item:Trà",
+          "item:Trà sữa",
+          "item:Sinh tố",
+          "item:Nước trái cây",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Ho Chi Minh Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6697,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Museum of Armored Forces",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.668025,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Tran Quoc Pagoda",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.668008,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Me Tri Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.602063,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Literature Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.601479,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Hát karaoke"
+        ]
+      },
+      {
+        "name": "Cái Mâm Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.657379,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Hải sản"
+        ]
+      },
+      {
+        "name": "Duck 34 Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.657342,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Lẩu",
+          "item:Cơm",
+          "item:Xôi"
+        ]
+      }
+    ],
+    "durationMs": 1884
+  },
+  {
+    "scenario": "08_unknown_destination",
+    "status": "blocked",
+    "destinationStatus": "unresolved",
+    "destination": null,
+    "inputPlaceCount": 1,
+    "candidateValidationIssueCount": 0,
+    "checkedPlaceCount": 1,
+    "eligiblePlaceCount": 0,
+    "mandatoryCount": 1,
+    "categoryDistribution": {},
+    "experienceGroups": [],
+    "budgetStatus": "unknown",
+    "unknownCostCount": 1,
+    "capacityStatus": "unknown",
+    "geographicSpread": "unknown",
+    "geographicRadiusKm": null,
+    "openGaps": [
+      "mandatory_identity_metadata",
+      "trip_capacity",
+      "food_coverage",
+      "experience_coverage",
+      "budget",
+      "data_quality"
+    ],
+    "resolvedItems": [],
+    "unresolvedEntities": [
+      {
+        "entityType": "adm",
+        "inputIndex": null,
+        "inputName": "Atlantis",
+        "reason": "destination_unresolved",
+        "mandatory": true
+      },
+      {
+        "entityType": "place",
+        "inputIndex": 0,
+        "inputName": "West Lake",
+        "reason": "identity_not_resolved",
+        "mandatory": true
+      }
+    ],
+    "warnings": [
+      "Không thể phân giải place khi destination ADM chưa rõ.",
+      "Địa điểm chưa có canonical identity đủ tin cậy.",
+      "Địa điểm chưa có tọa độ hợp lệ.",
+      "Không thể phân giải item khi destination ADM chưa rõ."
+    ],
+    "checkedPlaces": [
+      {
+        "name": null,
+        "category": null,
+        "mandatory": true,
+        "eligible": false,
+        "state": "blocked",
+        "verification": "unresolved",
+        "score": null,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": []
+      }
+    ],
+    "durationMs": 3
+  },
+  {
+    "scenario": "09_long_trip_sparse_input",
+    "status": "conditional",
+    "destinationStatus": "resolved",
+    "destination": "Hà Nội",
+    "inputPlaceCount": 1,
+    "candidateValidationIssueCount": 0,
+    "checkedPlaceCount": 60,
+    "eligiblePlaceCount": 60,
+    "mandatoryCount": 1,
+    "categoryDistribution": {
+      "travel place": 41,
+      "restaurant": 10,
+      "drink dessert": 9
+    },
+    "experienceGroups": [
+      "Cắm trại",
+      "Dùng bữa",
+      "Mua sắm",
+      "Tham quan văn hóa và tín ngưỡng",
+      "Tham quan địa danh",
+      "Thưởng thức đồ uống",
+      "Uống cà phê",
+      "Uống trà",
+      "Vui chơi dành cho trẻ em",
+      "Đi dạo ngoài trời"
+    ],
+    "budgetStatus": "at_risk",
+    "unknownCostCount": 18,
+    "capacityStatus": "overloaded",
+    "geographicSpread": "dispersed",
+    "geographicRadiusKm": 15.683,
+    "openGaps": [
+      "trip_capacity",
+      "budget",
+      "geographic_balance",
+      "data_quality"
+    ],
+    "resolvedItems": [],
+    "unresolvedEntities": [],
+    "warnings": [
+      "Chưa xác định được trạng thái hoạt động hiện tại.",
+      "Cost tier của địa điểm không phù hợp budget level thấp."
+    ],
+    "checkedPlaces": [
+      {
+        "name": "Ho Chi Minh's Mausoleum",
+        "category": "travel_place",
+        "mandatory": true,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": null,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Bodhi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.648729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Era Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.616379,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Chả giò",
+          "item:Hải sản",
+          "item:Nấm"
+        ]
+      },
+      {
+        "name": "Mơ Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.579721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Tam Da Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.64289,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Rose Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.641644,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "B52 Victory Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.640738,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Dong xuan market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6423,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Ho Chi Minh Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.6347,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Hanoi Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.618654,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Geology Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.617488,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Cái Mâm Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.616379,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Hải sản"
+        ]
+      },
+      {
+        "name": "Cafe 30",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.554721,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống trà",
+          "experience:Thưởng thức đồ uống",
+          "experience:Uống cà phê",
+          "item:Trà",
+          "item:Trà sữa",
+          "item:Sinh tố",
+          "item:Nước trái cây",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "S'Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.614342,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Dùng bữa",
+          "item:Trà",
+          "item:Sinh tố",
+          "item:Bánh mì",
+          "item:Phở",
+          "item:Chả giò",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Bảo Tàng I-Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.61008,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Ja café",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.609684,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Dùng bữa",
+          "experience:Uống cà phê",
+          "item:Trà",
+          "item:Phở",
+          "item:Bánh mì",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Museum of Infantry",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.609662,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Museum of Armored Forces",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.608025,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Virtual Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.531629,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Vui chơi dành cho trẻ em"
+        ]
+      },
+      {
+        "name": "Duck 34 Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.591342,
+        "costTier": "medium",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Lẩu",
+          "item:Cơm",
+          "item:Xôi"
+        ]
+      },
+      {
+        "name": "T Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.589079,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Uống trà",
+          "experience:Dùng bữa",
+          "item:Cà phê",
+          "item:Trà"
+        ]
+      },
+      {
+        "name": "Cafe 20",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.579684,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "Khuê Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.578046,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa"
+        ]
+      },
+      {
+        "name": "Nen Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.575817,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Lotus Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.574433,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Tran Quoc Pagoda",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.574008,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Phú Đô Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.573782,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Me Tri Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.572063,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "An Hoa Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.571988,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "J Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.559342,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Uống trà",
+          "item:Cà phê",
+          "item:Trà",
+          "item:Trà sữa"
+        ]
+      },
+      {
+        "name": "8 Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.559304,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "experience:Uống trà",
+          "item:Trà",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "CTaste Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.553083,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Kem",
+          "item:Bánh mì",
+          "item:Hải sản"
+        ]
+      },
+      {
+        "name": "Ngoi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.514453,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Cu Da Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.513729,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Bia Ba Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.51319,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Yen So Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.511358,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Gamuda Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.511133,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Jura Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.506832,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Nguyen Van Huyen Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.503229,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Windie Garden",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.441167,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Cắm trại"
+        ]
+      },
+      {
+        "name": "Cafe",
+        "category": "drink_dessert",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.494838,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "drink dessert",
+          "experience:Uống cà phê",
+          "item:Hải sản",
+          "item:Lẩu",
+          "item:Cà phê"
+        ]
+      },
+      {
+        "name": "PHỐ ĐI BỘ TRẦN NHÂN TÔNG",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.487614,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Mỗ Lao Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.482965,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Hà Đông Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.482412,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Bông Đỏ Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.482412,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Ho Chi Minh Trail Museum",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.473062,
+        "costTier": "low",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "Xuan Trach pagoda",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.472192,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Vietnam Treasures Travel",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.442417,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan địa danh"
+        ]
+      },
+      {
+        "name": "G-Mart",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.381405,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place"
+        ]
+      },
+      {
+        "name": "White Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.439358,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      },
+      {
+        "name": "Sym Music",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.37685,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place"
+        ]
+      },
+      {
+        "name": "An Hung Park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.436479,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "Santorini park",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.436442,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Đi dạo ngoài trời"
+        ]
+      },
+      {
+        "name": "1968 Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.424379,
+        "costTier": "high",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Bún chả",
+          "item:Chả giò"
+        ]
+      },
+      {
+        "name": "MIAs restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.424379,
+        "costTier": "high",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Mì Quảng",
+          "item:Cơm"
+        ]
+      },
+      {
+        "name": "Sa Market",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.411654,
+        "costTier": "unknown",
+        "costKnown": false,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Mua sắm"
+        ]
+      },
+      {
+        "name": "Doncook Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.402069,
+        "costTier": "high",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "experience:Thưởng thức đồ uống",
+          "item:Cocktail",
+          "item:Lẩu"
+        ]
+      },
+      {
+        "name": "SORA Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.399417,
+        "costTier": "high",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Phở",
+          "item:Hải sản"
+        ]
+      },
+      {
+        "name": "아리랑 - Arirang Restaurant",
+        "category": "restaurant",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.399342,
+        "costTier": "high",
+        "costKnown": true,
+        "durationKnown": false,
+        "avoidConflicts": [],
+        "tags": [
+          "restaurant",
+          "experience:Dùng bữa",
+          "item:Lẩu"
+        ]
+      },
+      {
+        "name": "Vo Vi Temple",
+        "category": "travel_place",
+        "mandatory": false,
+        "eligible": true,
+        "state": "conditional",
+        "verification": "verified_kg",
+        "score": 0.363767,
+        "costTier": "free",
+        "costKnown": true,
+        "durationKnown": true,
+        "avoidConflicts": [],
+        "tags": [
+          "travel place",
+          "experience:Tham quan văn hóa và tín ngưỡng"
+        ]
+      }
+    ],
+    "durationMs": 1889
+  }
+]

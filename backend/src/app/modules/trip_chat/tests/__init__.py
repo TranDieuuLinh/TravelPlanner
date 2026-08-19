@@ -1,0 +1,1 @@
+"""Trip-chat module tests."""

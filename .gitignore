@@ -7,22 +7,36 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.runlogs/
 node_modules/
 .next/
 .next-dev
 .next-build/
+.next-verify/
+.next-admin-verify/
+frontend/tsconfig.tsbuildinfo
 out/
 dist/
 coverage/
 *.db*
 *.sqlite3
+
+# Local knowledge-graph database dumps (too large for GitHub)
+*.sql
+!backend/migrations/*.sql
+database/kg_dump.sql
+database/kg_dump_v7.sql
+database/travelplanner_full_20260805_1548.sql
 backend/var/*.jsonl
 backend/var/user-post-media/
 backend/var/knowledge-graph-imports/
 backend/var/knowledge-graph-imports.json
+backend/var/place-dedupe/
+backend/logs/
 backend/.runlogs/
 
 database/backups/
+backups/*.sql
 *.dump
 
 auto-crawl/
@@ -46,3 +60,10 @@ routing-data/osm-source/*
 !routing-data/osm-source/.gitkeep
 
 note-of-trung.md
+data-knowledge-graph/
+
+trung-plans/
+
+/old_one/
+*.sql
+*.local*

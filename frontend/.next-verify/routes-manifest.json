@@ -1,0 +1,154 @@
+{
+  "version": 3,
+  "pages404": true,
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/creator/listings/[listingId]/edit",
+      "regex": "^/creator/listings/([^/]+?)/edit(?:/)?$",
+      "routeKeys": {
+        "nxtPlistingId": "nxtPlistingId"
+      },
+      "namedRegex": "^/creator/listings/(?<nxtPlistingId>[^/]+?)/edit(?:/)?$"
+    },
+    {
+      "page": "/groups/[groupId]",
+      "regex": "^/groups/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPgroupId": "nxtPgroupId"
+      },
+      "namedRegex": "^/groups/(?<nxtPgroupId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/listings/[listingId]",
+      "regex": "^/listings/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPlistingId": "nxtPlistingId"
+      },
+      "namedRegex": "^/listings/(?<nxtPlistingId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/orders/[orderId]/mock-momo",
+      "regex": "^/orders/([^/]+?)/mock\\-momo(?:/)?$",
+      "routeKeys": {
+        "nxtPorderId": "nxtPorderId"
+      },
+      "namedRegex": "^/orders/(?<nxtPorderId>[^/]+?)/mock\\-momo(?:/)?$"
+    },
+    {
+      "page": "/orders/[orderId]/result",
+      "regex": "^/orders/([^/]+?)/result(?:/)?$",
+      "routeKeys": {
+        "nxtPorderId": "nxtPorderId"
+      },
+      "namedRegex": "^/orders/(?<nxtPorderId>[^/]+?)/result(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/admin/listings",
+      "regex": "^/admin/listings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/listings(?:/)?$"
+    },
+    {
+      "page": "/admin/places",
+      "regex": "^/admin/places(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/admin/places(?:/)?$"
+    },
+    {
+      "page": "/creator/listings",
+      "regex": "^/creator/listings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/creator/listings(?:/)?$"
+    },
+    {
+      "page": "/creator/listings/new",
+      "regex": "^/creator/listings/new(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/creator/listings/new(?:/)?$"
+    },
+    {
+      "page": "/explore",
+      "regex": "^/explore(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/explore(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/planner",
+      "regex": "^/planner(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/planner(?:/)?$"
+    },
+    {
+      "page": "/profile",
+      "regex": "^/profile(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/profile(?:/)?$"
+    },
+    {
+      "page": "/reels",
+      "regex": "^/reels(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/reels(?:/)?$"
+    },
+    {
+      "page": "/register",
+      "regex": "^/register(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/register(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSuffix": ".prefetch.rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments"
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

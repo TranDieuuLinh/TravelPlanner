@@ -3,15 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
-import { APIError } from "@/lib/api";
-import { getAdminPendingListings, reviewListingVersion } from "@/lib/marketplace";
-import type { PendingListingVersion } from "@/types/marketplace";
+import { APIError } from "@/shared/api/client";
+import { getAdminPendingListings, reviewListingVersion } from "@/features/marketplace/api";
+import type { PendingListingVersion } from "@/features/marketplace/types";
 
 export default function AdminListingsPage() {
   const router = useRouter();
-  const { loading: authLoading, user } = useAuth();
+  const { loading: authLoading, sessionUnavailable, user } = useAuth();
 
   const [pendingListings, setPendingListings] = useState<PendingListingVersion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,14 +23,14 @@ export default function AdminListingsPage() {
   const [reviewing, setReviewing] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && (!user || user.role !== "admin")) {
+    if (!authLoading && !sessionUnavailable && (!user || user.role !== "admin")) {
       router.replace("/");
       return;
     }
     if (user && user.role === "admin") {
       fetchPending();
     }
-  }, [authLoading, router, user]);
+  }, [authLoading, router, sessionUnavailable, user]);
 
   async function fetchPending() {
     setLoading(true);
@@ -84,9 +84,10 @@ export default function AdminListingsPage() {
           <h1>Duyệt Listing Marketplace ({pendingListings.length})</h1>
           <p>Khai thác và kiểm duyệt chất lượng nội dung trước khi creator phát hành công khai.</p>
         </div>
-        <Link className="secondaryBtn" href="/profile">
-          ← Về Hồ sơ
-        </Link>
+        <div className="shellActions">
+          <Link className="secondaryBtn" href="/admin/places">Duyệt địa điểm</Link>
+          <Link className="secondaryBtn" href="/profile">← Về Hồ sơ</Link>
+        </div>
       </header>
 
       {error ? <div className="errorBanner">{error}</div> : null}

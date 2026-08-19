@@ -1,6 +1,13 @@
 import Image from "next/image";
 
-type PenguinMascotVariant = "chat" | "chatSpeaking" | "curious" | "hi" | "logo" | "search";
+type PenguinMascotVariant =
+  | "chat"
+  | "chatSpeaking"
+  | "curious"
+  | "hi"
+  | "logo"
+  | "plan"
+  | "search";
 
 const mascotSources: Record<PenguinMascotVariant, string> = {
   chat: "/images/penguin-travel-chat.png",
@@ -8,6 +15,7 @@ const mascotSources: Record<PenguinMascotVariant, string> = {
   curious: "/images/penguin-curious.png",
   hi: "/images/penguin-hi.png",
   logo: "/images/penguin-logo.png",
+  plan: "/images/penguin-plan.png",
   search: "/images/penguin-search.png",
 };
 

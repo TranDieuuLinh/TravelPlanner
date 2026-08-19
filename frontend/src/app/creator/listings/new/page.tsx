@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { APIError } from "@/lib/api";
-import { createListing, getPublishablePlans } from "@/lib/marketplace";
-import type { PublishablePlan } from "@/types/marketplace";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { APIError } from "@/shared/api/client";
+import { createListing, getPublishablePlans } from "@/features/marketplace/api";
+import type { PublishablePlan } from "@/features/marketplace/types";
 
 const categories = [
   { value: "food", label: "Ẩm thực & Văn hóa" },
@@ -20,7 +20,7 @@ const categories = [
 
 export default function NewListingPage() {
   const router = useRouter();
-  const { loading: authLoading, user } = useAuth();
+  const { loading: authLoading, sessionUnavailable, user } = useAuth();
 
   const [plans, setPlans] = useState<PublishablePlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState("");
@@ -35,14 +35,14 @@ export default function NewListingPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!authLoading && (!user || user.role !== "creator")) {
+    if (!authLoading && !sessionUnavailable && (!user || user.role !== "creator")) {
       router.replace("/profile");
       return;
     }
     if (user && user.role === "creator") {
       fetchPlans();
     }
-  }, [authLoading, router, user]);
+  }, [authLoading, router, sessionUnavailable, user]);
 
   async function fetchPlans() {
     setLoading(true);

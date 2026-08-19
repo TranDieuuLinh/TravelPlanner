@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type FormEvent } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { APIError } from "@/lib/api";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { postAuthRoute, safeNextPath } from "@/features/auth/lib/redirects";
+import { APIError } from "@/shared/api/client";
 
 export default function LoginPage() {
   return <Suspense fallback={<div className="routeLoading">Đang mở đăng nhập...</div>}><LoginForm /></Suspense>;
@@ -20,12 +21,10 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const requestedNext = params.get("next");
-  const nextPath = requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
-    ? requestedNext
-    : "/profile";
+  const nextPath = safeNextPath(requestedNext);
 
   useEffect(() => {
-    if (!loading && user) router.replace(nextPath);
+    if (!loading && user) router.replace(postAuthRoute(user, nextPath));
   }, [loading, nextPath, router, user]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -33,8 +32,8 @@ function LoginForm() {
     setBusy(true);
     setError("");
     try {
-      await login(email, password);
-      router.replace(nextPath);
+      const loggedInUser = await login(email, password);
+      router.replace(postAuthRoute(loggedInUser, nextPath));
     } catch (reason) {
       setError(reason instanceof APIError ? reason.message : "Không thể kết nối đến backend.");
     } finally {
@@ -46,7 +45,7 @@ function LoginForm() {
     <main className="authPage">
       <section className="authPanel" aria-labelledby="login-title">
         <div className="authHeading">
-          <span className="eyebrow">Tài khoản VSF</span>
+          <span className="eyebrow">Tài khoản TravelPlanner</span>
           <h1 id="login-title">Đăng nhập</h1>
           <p>Tiếp tục quản lý hồ sơ và những chuyến đi của bạn.</p>
         </div>
@@ -94,8 +93,8 @@ function LoginForm() {
               setBusy(true);
               setError("");
               try {
-                await login("creator@example.com", "Password123!");
-                router.replace("/creator/listings");
+                const loggedInUser = await login("creator@example.com", "Password123!");
+                router.replace(postAuthRoute(loggedInUser, nextPath));
               } catch (reason) {
                 setError(reason instanceof APIError ? reason.message : "Không thể đăng nhập Creator.");
               } finally {

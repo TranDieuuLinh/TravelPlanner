@@ -13,7 +13,7 @@ import { spawn } from "node:child_process";
 
 const projectRoot = process.cwd();
 const devOutputLink = join(projectRoot, ".next-dev");
-const devOutputTarget = join(tmpdir(), "VSF_TravelPlanner_next-dev");
+const devOutputTarget = join(tmpdir(), "travelplanner_next-dev");
 const nodeModules = join(projectRoot, "node_modules");
 const nextCli = join(nodeModules, "next", "dist", "bin", "next");
 
@@ -45,8 +45,54 @@ function hasBrokenTurbopackRuntime(outputDirectory) {
   return !existsSync(resolve(dirname(documentBundle), runtimeImport[1]));
 }
 
-if (hasBrokenTurbopackRuntime(devOutputTarget)) {
-  console.warn("Detected an incomplete Turbopack cache; rebuilding it.");
+function hasIncompleteWebpackRuntime(outputDirectory) {
+  const buildManifest = join(outputDirectory, "build-manifest.json");
+  if (!existsSync(buildManifest)) return false;
+
+  const requiredBrowserChunks = [
+    join(outputDirectory, "static", "chunks", "main-app.js"),
+    join(outputDirectory, "static", "chunks", "app-pages-internals.js")
+  ];
+
+  if (requiredBrowserChunks.some((chunkPath) => !existsSync(chunkPath))) {
+    return true;
+  }
+
+  const documentBundle = join(
+    outputDirectory,
+    "server",
+    "pages",
+    "_document.js"
+  );
+  if (!existsSync(documentBundle)) return false;
+
+  const documentSource = readFileSync(documentBundle, "utf8");
+  const documentEntry = documentSource.match(/__webpack_exec__\(["']([^"']+)["']\)/);
+  const documentChunks = documentSource.match(
+    /__webpack_require__\.X\(0,\s*\[([^\]]*)\]/
+  );
+  if (!documentEntry || !documentChunks) return false;
+
+  const requiredServerChunks = Array.from(
+    documentChunks[1].matchAll(/["']([^"']+)["']/g),
+    (match) => match[1]
+  );
+  const entryModuleMarker = `/***/ "${documentEntry[1]}":`;
+
+  return !requiredServerChunks.some((chunkId) => {
+    const chunkPath = join(outputDirectory, "server", `${chunkId}.js`);
+    return (
+      existsSync(chunkPath) &&
+      readFileSync(chunkPath, "utf8").includes(entryModuleMarker)
+    );
+  });
+}
+
+if (
+  hasBrokenTurbopackRuntime(devOutputTarget) ||
+  hasIncompleteWebpackRuntime(devOutputTarget)
+) {
+  console.warn("Detected an incomplete Next dev cache; rebuilding it.");
   rmSync(devOutputTarget, { recursive: true, force: true });
 }
 
@@ -66,10 +112,12 @@ if (!hasFileSystemEntry(devOutputLink)) {
   symlinkSync(devOutputTarget, devOutputLink, "junction");
 }
 
-// Next 15's Turbopack dev cache can leave page bundles behind after its shared
-// SSR runtime has disappeared. Use the stable webpack dev server by default;
-// production builds remain unchanged.
-const child = spawn(process.execPath, [nextCli, "dev"], {
+// Turbopack cuts route compilation time substantially for the large planner
+// client bundle. The cache checks above repair the incomplete-runtime case;
+// set NEXT_USE_TURBOPACK=0 only when debugging a bundler-specific issue.
+const devArgs = [nextCli, "dev"];
+if (process.env.NEXT_USE_TURBOPACK !== "0") devArgs.push("--turbopack");
+const child = spawn(process.execPath, devArgs, {
   cwd: projectRoot,
   env: {
     ...process.env,

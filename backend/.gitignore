@@ -1,0 +1,11 @@
+.env
+*.cookies.txt
+cookies.txt
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+/tests/test_flow_explorer_placechecker/

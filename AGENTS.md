@@ -1,108 +1,173 @@
 # AGENTS.md
 
-Đây là điểm bắt đầu dành cho các coding agent làm việc với VSF Travel Planner.
-Phải đọc file này trước khi thay đổi code.
+Đây là điểm bắt đầu dành cho coding agent làm việc với TravelPlanner. Phải đọc
+file này trước khi thay đổi code.
 
-## Tóm tắt sản phẩm
+Ngày cập nhật: 2026-08-11.
 
-VSF Travel Planner có hai năng lực cùng nằm trong MVP. Năng lực cốt lõi là biến
-URL video hoặc nội dung tham khảo thành địa điểm và ngữ cảnh có nguồn, để người
-dùng xác nhận trước khi Planner tạo Main Plan, kiểm tra tính khả thi và tạo
-Backup Plan riêng khi cần. Năng lực Marketplace cho phép creator xuất bản và bán
-plan có version; buyer nhận một bản sao cá nhân rồi tiếp tục chỉnh sửa bằng cùng
-Planner. Giá trị khác biệt của sản phẩm là chuỗi
-`URL -> dữ liệu có cấu trúc -> plan khả thi`, không chỉ là một phản hồi AI dạng
-văn bản.
+## Trạng thái backend hiện tại
 
-## Hiện trạng cần ghi nhớ
+Backend hiện tại là scaffold FastAPI/LangGraph theo kiến trúc module dọc
+(vertical feature modules), chưa phải hệ thống dữ liệu du lịch production.
 
-Tầm nhìn sản phẩm rộng hơn phần đã được triển khai.
+- Source code nằm trong `backend/src/app/`.
+- API hiện có `GET /health` và `POST /v1/agent/invoke`.
+- Root graph nằm trong `backend/src/app/orchestration/`.
+- Các module hiện có: `supervisor`, `explorer`, `information_finder`,
+  `place_checker`, `itinerary_planner` và `plan_editor`.
+- Module khác chỉ được dùng public contract qua `public.py`; không truy cập
+  trực tiếp state, node hoặc service nội bộ của module khác.
+- Supervisor là classifier xác định tuyến xử lý.
+- Explorer mới phân tích destination và duration từ input đơn giản.
+- Information finder ưu tiên cache PostgreSQL/pgvector với Gemini embeddings, có Tavily Search qua
+  cấu hình. Answer generator có thể dùng shared Gemini client với structured
+  claims/citation validation; extractive vẫn là development/runtime fallback.
+  Model baseline chưa được production-evaluated.
+- Place checker dùng `DevelopmentCatalog`, chỉ tạo dữ liệu placeholder với
+  `verified=false` và warning.
+- Itinerary planner dùng estimated routing, chưa dùng dữ liệu đường thực tế.
+- Checkpointer hiện lưu trong memory, cần durable storage trước khi production.
+- Hiện chưa triển khai authentication, Marketplace, import URL, lưu trữ bền
+  vững cho graph state, live place data và live routing.
+- `backend/src/app/shared/` chỉ chứa contract/persistence dùng chung; repository
+  `asyncpg` của Information Finder nằm trong chính module và chỉ sở hữu các bảng
+  tiền tố `information_finder_`.
 
-- Đã triển khai: đăng ký/đăng nhập bằng JWT cookie, refresh session, CSRF, RBAC,
-  hồ sơ, creator application, test backend, contract Planner–Marketplace, khung
-  luồng lập kế hoạch, kiểm tra plan, endpoint tạo plan dự phòng, health check và
-  giao diện người dùng tối giản.
-- Đang giả lập: phản hồi AI thông qua `StubLLMClient`.
-- Tạm thời: plan tạo qua trip chat đã được lưu trong PostgreSQL cùng lịch sử
-  revision; các endpoint plan độc lập và backup vẫn dùng repository trong bộ
-  nhớ của tiến trình.
-- Placeholder: Marketplace chỉ có endpoint danh mục.
-- Chưa triển khai: nhập URL, bản đồ, chỉnh sửa cộng tác, đồng bộ offline,
-  listing, order, payment, review, achievement, notification, creator analytics
-  và quy trình admin duyệt creator/listing.
+Không được mô tả tính năng mục tiêu hoặc placeholder như đã triển khai
+production. Không đưa tuyên bố sai về trạng thái hệ thống vào UI, API docs,
+README hoặc log.
 
-Không được mô tả một tính năng mục tiêu như thể nó đã được triển khai. Không
-được thêm các tuyên bố chưa đúng về trạng thái production vào UI hoặc tài liệu
-API.
+## Quy tắc phạm vi sửa đổi
 
-## Tài liệu cần đọc theo công việc
+- Khi làm một module, chỉ sửa trong folder của module đó:
+  `backend/src/app/modules/<module>/`.
+- Không sửa file ngoài module nếu không cần thiết cho thay đổi.
+- Nếu bắt buộc phải sửa ngoài module, phải xác định rõ lý do và chỉ sửa phần
+  tối thiểu liên quan, thường là public contract, root orchestration, shared
+  contract, API schema hoặc test integration.
+- Không đưa business rule của module vào `api/`, `orchestration/` hoặc module
+  khác. Root orchestration chỉ được điều phối và ánh xạ public contract.
+- Test của module phải nằm trong `backend/src/app/modules/<module>/tests/`.
+  Test graph/integration cấp backend nằm trong `backend/tests/`.
 
-| Công việc | Ngữ cảnh bắt buộc |
-| --- | --- |
-| Hành vi sản phẩm hoặc mức độ ưu tiên | `docs/01`, `docs/02`, `docs/03`, `docs/04` |
-| Backend hoặc hạ tầng | `docs/05`, `docs/06`, `docs/07`, ADR-001 |
-| Database hoặc migration | `docs/06`, ADR-001 |
-| AI Planner | `docs/06`, `docs/08`, `docs/09`, ADR-003 |
-| Bản đồ, định tuyến, địa điểm | `docs/04`, `docs/09`, ADR-002 |
-| Marketplace hoặc thanh toán | `docs/01`, `docs/03`, `docs/06`, `docs/11` |
-| Test hoặc CI | `docs/10` |
-| Authentication hoặc dữ liệu người dùng | `docs/06`, `docs/11` |
+## Quy tắc tool và provider
 
-## Quy tắc kiến trúc
+- Tool, provider interface và adapter phải thuộc module sử dụng chúng.
+- Đặt interface trong `ports.py`, implementation trong `adapters/`.
+- Nếu module có nhiều tool hoặc tool cần tổ chức riêng, tạo
+  `backend/src/app/modules/<module>/tools/` và đặt tool ở đó.
+- Không tạo tool dùng riêng cho một module trong `shared/`, `api/` hoặc
+  `orchestration/`.
+- Chỉ đưa capability vào `shared/` khi thực sự dùng chung bởi nhiều module và
+  không chứa business rule riêng của module nào.
+- External capability phải đi qua port/interface; không gọi provider trực tiếp
+  từ graph node nếu có thể tách adapter.
+- Importer không được truyền raw payload của nguồn vào Planner. Dữ liệu phải
+  được chuẩn hóa thành contract có provenance trước khi vào module tiếp theo.
 
-- Giữ cấu trúc monorepo chia thành `frontend/` và `backend/`.
-- Frontend sử dụng Next.js App Router, TypeScript, Zod và module theo tính năng.
-- Backend sử dụng FastAPI với ranh giới router -> service/workflow -> repository.
-- Quy tắc nghiệp vụ phải nằm trong
-  `backend/app/modules/<module>/domain` hoặc service, không đặt trong router
-  FastAPI.
-- Các nhà cung cấp AI, bản đồ, thanh toán và nội dung bên ngoài phải được đặt sau
-  interface.
-- Importer không được truyền payload thô của nguồn vào domain Planner. Nội dung
-  phải được chuẩn hóa thành source, claim và place candidate có provenance.
-- JSON của API sử dụng camelCase ở bên ngoài và snake_case trong Python.
-- Dữ liệu nghiệp vụ phải được lưu thông qua repository. Repository trong bộ nhớ
-  chỉ phù hợp cho prototype và test.
-- Plan đã mua phải tạo ra một bản sao cá nhân; chỉnh sửa bản sao không được thay
-  đổi phiên bản creator đã xuất bản.
-- Plan dự phòng là plan riêng được liên kết với plan chính; không được âm thầm
-  ghi đè plan chính đã khóa.
-- Phải lưu nguồn gốc và độ mới của dữ liệu du lịch lấy từ bên ngoài.
+## Kiến trúc backend
 
-## Danh sách kiểm tra khi thay đổi
+- Backend dùng FastAPI và LangGraph, package root là `backend/src`.
+- Cấu trúc chính:
 
-Trước khi sửa:
+  ```text
+  backend/src/app/
+  ├── api/              # HTTP boundary và API schema
+  ├── core/             # config và lỗi dùng ở cấp ứng dụng
+  ├── orchestration/    # root graph, route và ánh xạ public contract
+  ├── shared/           # contract/persistence thật sự dùng chung
+  └── modules/<module>/ # vertical feature module
+  ```
 
-1. Xác định công việc thay đổi hành vi hiện tại, hành vi mục tiêu hay cả hai.
-2. Kiểm tra module liên quan và ranh giới API/schema của nó.
-3. Kiểm tra tài liệu và ADR tương ứng.
+- Module nên có cấu trúc:
 
-Trước khi hoàn thành:
+  ```text
+  modules/<module>/
+  ├── public.py         # API import được module khác hỗ trợ
+  ├── contract.py       # Pydantic input/output contract
+  ├── state.py          # LangGraph state nội bộ
+  ├── graph.py          # factory tạo subgraph
+  ├── nodes.py          # node LangGraph mỏng
+  ├── service.py        # business behavior xác định được
+  ├── ports.py          # provider interface nếu cần
+  ├── adapters/         # provider implementation cụ thể nếu cần
+  ├── tools/            # tool riêng của module nếu cần
+  └── tests/             # test riêng của module
+  ```
 
-1. Chạy các test sát nhất với thay đổi và typecheck nếu contract bị ảnh hưởng.
-2. Kiểm tra luồng lỗi và phân quyền, không chỉ luồng thành công.
-3. Cập nhật tài liệu API/domain/MVP khi contract hoặc phạm vi thay đổi.
-4. Thêm ADR khi chọn provider hoặc đưa ra quyết định cấu trúc khó đảo ngược.
-5. Không ghi secret, dữ liệu cá nhân, payload thô của bên thứ ba hoặc toàn bộ
-   prompt vào log.
+- Business rule phải nằm trong module hoặc service của module, không đặt trong
+  FastAPI router hay root orchestration.
+- JSON bên ngoài dùng camelCase; Python dùng snake_case.
+- Module chỉ expose contract/API được hỗ trợ qua `public.py`.
+- Không mặc định coi database legacy hiện có là backend runtime. Chỉ kết nối
+  database hoặc thêm migration khi đã xác định rõ ownership, database đích,
+  repository và tài liệu liên quan.
+- Dữ liệu bên ngoài phải lưu provenance và độ mới khi feature đó được triển khai.
+- Plan đã mua phải là bản sao cá nhân; chỉnh sửa bản sao không được thay đổi
+  phiên bản creator đã xuất bản.
+- Backup plan là plan riêng liên kết với main plan; không âm thầm ghi đè main
+  plan đã khóa.
 
-## Lệnh thường dùng
+## Quy tắc tài liệu và ngày cập nhật
+
+- Tài liệu có tên bắt đầu bằng số là tài liệu theo thứ tự ưu tiên/roadmap; không
+  tự ý đổi số hoặc đổi tên nếu chưa có lý do rõ ràng.
+- Khi thay đổi behavior, contract, cấu trúc hoặc phạm vi được mô tả trong tài
+  liệu, phải cập nhật tài liệu liên quan trong cùng thay đổi.
+- Khi sửa nội dung liên quan đến file không có tiền tố số, phải cập nhật trường
+  ngày sửa đổi trong chính file đó theo định dạng `YYYY-MM-DD`. Nếu file chưa có
+  trường này, thêm `Cập nhật lần cuối: YYYY-MM-DD` ở phần đầu tài liệu.
+- Ít nhất phải xem tài liệu liên quan sau khi thay đổi: `docs/codebase-structure.md`,
+  `docs/schema.md` và `docs/database-schema.md` cho thay đổi backend/schema.
+- Không ghi secret, dữ liệu cá nhân, raw third-party payload hoặc toàn bộ prompt
+  vào tài liệu, source code hay log.
+
+## Giới hạn kích thước file
+
+- Với backend, không để file source, test hoặc tài liệu vượt quá 400 dòng nếu có
+  thể tách nhỏ.
+- Khi file backend tiến gần hoặc vượt 400 dòng, tách theo trách nhiệm:
+  contract/schema, state, node, service, adapter/tool hoặc test case.
+- Với frontend, không áp dụng cứng giới hạn 400 dòng. Frontend phải được gom theo
+  tính năng và chức năng, giữ cho mỗi module/feature có ranh giới rõ ràng.
+- Nếu file frontend quá dài, khó đọc hoặc chứa quá nhiều trách nhiệm, phải đánh
+  giá refactor. Có thể hỏi lại người dùng trước khi thực hiện refactor lớn hoặc
+  thay đổi cấu trúc feature.
+- Không tách máy móc làm vỡ ranh giới module/feature; file mới vẫn phải nằm trong
+  đúng phạm vi và giữ public API rõ ràng.
+- Sau khi sửa, kiểm tra kích thước và mức độ tập trung trách nhiệm của các file
+  thay đổi; backend phải tuân thủ giới hạn 400 dòng, frontend phải tuân thủ ranh
+  giới tính năng/chức năng.
+
+## Checklist trước khi sửa
+
+1. Xác định module sở hữu behavior cần thay đổi.
+2. Đọc `public.py`, contract, graph, service, ports/adapters/tools và tests của
+   module đó.
+3. Kiểm tra API/orchestration/shared contract có thật sự cần sửa không.
+4. Đọc tài liệu backend và schema liên quan.
+5. Kiểm tra kích thước các file dự kiến sửa.
+
+## Checklist trước khi hoàn thành
+
+1. Chạy test sát module; chạy integration test nếu thay đổi root graph hoặc API.
+2. Chạy `python -m compileall src` và type/contract checks phù hợp nếu có.
+3. Kiểm tra success flow, error flow và boundary giữa các module.
+4. Cập nhật tài liệu và ngày sửa đổi khi contract, cấu trúc hoặc phạm vi thay đổi.
+5. Kiểm tra không có file thay đổi ngoài module nếu không có lý do cần thiết.
+6. Kiểm tra không có file source, test hoặc tài liệu vượt 400 dòng nếu có thể
+   tách nhỏ.
+7. Thêm ADR khi chọn provider hoặc quyết định kiến trúc khó đảo ngược.
+
+## Lệnh backend thường dùng
 
 ```bash
-# Frontend
-cd frontend
-npm run typecheck
-npm run build
-
-# Backend
 cd backend
-python -m compileall app
+pip install -e ".[dev]"
 uvicorn app.main:app --reload
-
-# Toàn bộ môi trường trên máy cá nhân
-docker compose up --build
+pytest
+python -m compileall src
 ```
 
-Backend đã có pytest cho Auth, Profile và contract Planner–Marketplace. Mọi
-thay đổi nghiệp vụ mới phải bổ sung test sát module; xem
-`docs/10-testing-strategy.md`.
+LangGraph Studio có thể load graph trong `backend/langgraph.json` sau khi cài
+LangGraph CLI.

@@ -1,0 +1,65 @@
+from app.modules.information_finder.normalization import (
+    normalize_answer_text,
+    select_relevant_excerpt,
+)
+
+
+NOISY_SOURCE = """
+Turn your device in landscape mode. Tiếng Việt English 中文 (中国) 한국어 Русский
+Đăng nhập Đăng ký Chọn điểm đến Nha Trang VinWonders Nha Trang Phú Quốc Hà Nội
+Bước tới nội dung Wikipedia Bách khoa toàn thư mở Tìm kiếm Nội dung 1 Tên gọi
+2 Địa lý 3 Lịch sử 9 Văn hóa [1]
+Những điều thú vị về Hà Nội khiến bạn thêm yêu mảnh đất nghìn năm văn hiến của
+dân tộc Việt Nam. Hà Nội có nhiều công trình văn hóa và khu phố cổ đặc sắc.
+"""
+
+
+def test_normalize_answer_text_removes_scraper_markers_and_collapses_whitespace():
+    assert (
+        normalize_answer_text("  Fact [1] [sửa | sửa mã nguồn] ### from\n  source. ")
+        == "Fact from source."
+    )
+
+
+def test_normalize_answer_text_removes_travel_agency_contact_promotions():
+    text = (
+        "Công ty du lịch BestPrice Số điện thoại hỗ trợ phone 1900 2605 "
+        "Tổng đài: 024 73072605 Lăng Bác nằm tại Quảng trường Ba Đình."
+    )
+
+    normalized = normalize_answer_text(text)
+
+    assert normalized == "Lăng Bác nằm tại Quảng trường Ba Đình."
+    assert "BestPrice" not in normalized
+    assert "1900 2605" not in normalized
+
+
+def test_relevant_excerpt_skips_navigation_prefix():
+    excerpt = select_relevant_excerpt(
+        NOISY_SOURCE,
+        "Những điều thú vị về Hà Nội",
+        title="Những điều thú vị về Hà Nội",
+        max_chars=220,
+    )
+
+    assert "Những điều thú vị về Hà Nội" in excerpt
+    assert "Đăng nhập" not in excerpt
+    assert "Bước tới nội dung" not in excerpt
+
+
+def test_relevant_excerpt_removes_scraped_ads_and_article_intro():
+    excerpt = select_relevant_excerpt(
+        (
+            "Qua bài viết này, chúng tôi giới thiệu các địa điểm nổi bật. "
+            "Discover flight with Traveloka Tue, 25 Aug 2026. "
+            "@Shutterstock Một buổi sáng ở bến cá. "
+            "Vũng Tàu có nhiều bãi biển và điểm tham quan trên núi."
+        ),
+        "Vũng Tàu có gì?",
+        title="Du lịch Vũng Tàu",
+        max_chars=280,
+    )
+
+    assert excerpt == "Vũng Tàu có nhiều bãi biển và điểm tham quan trên núi."
+    assert "Traveloka" not in excerpt
+    assert "Qua bài viết này" not in excerpt

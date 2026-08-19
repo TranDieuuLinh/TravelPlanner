@@ -2,61 +2,57 @@ name: TrungLinhLoi-Travel
 
 services:
   postgres:
-    # Existing development volumes may still contain the experimental
-    # `places.embedding` vector column. Keep a pgvector-capable PostgreSQL
-    # image so those volumes remain readable after the feature-code revert.
-    image: pgvector/pgvector:0.8.2-pg16
+    image: pgvector/pgvector:pg18
     environment:
-      POSTGRES_DB: vsf_travel
-      POSTGRES_USER: vsf
-      POSTGRES_PASSWORD: vsf
+      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-travelplanner}
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-travelplanner}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-travelplanner_local}
     ports:
-      - "5432:5432"
-    restart: unless-stopped
+      - "${LOCAL_POSTGRES_PORT:-55432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - travelplanner-postgres18:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vsf -d vsf_travel"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${LOCAL_POSTGRES_USER:-travelplanner} -d ${LOCAL_POSTGRES_DB:-travelplanner}",
+        ]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+    restart: unless-stopped
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:?Set PIP_INDEX_URL in backend/.env}
     env_file:
       - path: ./backend/.env
-        required: false
-    environment:
-      DATABASE_URL: postgresql+psycopg://vsf:vsf@postgres:5432/vsf_travel
-      BACKEND_CORS_ORIGINS: http://localhost:3000,http://localhost:3001
-      APP_ENV: local
-      GEMINI_MIN_INTERVAL_SECONDS: "0.0"
-      URL_IMPORT_JOB_TIMEOUT_SECONDS: "300"
-      PLACE_RESOLVER_PROVIDER: google_maps_scraper
-      ROUTE_PROVIDER: valhalla
-      VALHALLA_BASE_URL: http://valhalla:8002
-      OPENTRIPPLANNER_BASE_URL: http://opentripplanner:8080/otp/gtfs/v1
-      OPENTRIPPLANNER_SCHEDULE_STATUS: development_shifted_2018
-      GOOGLE_MAPS_SCRAPER_EXECUTABLE: ""
-      GOOGLE_MAPS_SCRAPER_WORK_DIR: /app/var/google-maps-scraper
-      GOOGLE_MAPS_SCRAPER_MAX_ALIAS_QUERIES: "2"
-      DATABASE_PLACE_RESOLVER_TOP_K: "5"
-      DATABASE_PLACE_RESOLVER_MINIMUM_SCORE: "0.82"
-      DATABASE_PLACE_RESOLVER_MINIMUM_MARGIN: "0.08"
+        required: true
     ports:
-      - "8000:8000"
-    restart: unless-stopped
+      - "${BACKEND_PORT:?Set BACKEND_PORT in backend/.env}:8000"
     volumes:
-      - ./backend/app:/app/app
-      - ./backend/var:/app/var
-      - ./database/golden_dataset:/database/golden_dataset:ro
+      - ./backend:/app
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+        "--reload-dir",
+        "/app/src",
+      ]
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
-      google-maps-scraper:
-        condition: service_started
+      valhalla:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -70,32 +66,29 @@ services:
       retries: 20
       start_period: 10s
 
-  google-maps-scraper:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.playwright
-    environment:
-      DISABLE_TELEMETRY: "1"
-      GOOGLE_MAPS_SCRAPER_WORK_DIR: /work
-      GOOGLE_MAPS_SCRAPER_CONCURRENCY: "2"
-      GOOGLE_MAPS_SCRAPER_STALE_ARTIFACT_SECONDS: "600"
-    volumes:
-      - ./backend/var/google-maps-scraper:/work
-    restart: unless-stopped
-
   valhalla:
     image: ghcr.io/valhalla/valhalla-scripted:latest
-    environment:
-      tile_urls: https://download.geofabrik.de/asia/vietnam-latest.osm.pbf
-      force_rebuild: "false"
-      server_threads: "2"
-      build_admins: "true"
-      build_time_zones: "true"
+    env_file:
+      - path: ./backend/.env
+        required: true
     ports:
-      - "8002:8002"
+      - "${VALHALLA_PORT:?Set VALHALLA_PORT in backend/.env}:8002"
     volumes:
       - ./routing-data/valhalla:/custom_files
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "http://localhost:8002/status",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   opentripplanner:
     image: docker.io/opentripplanner/opentripplanner:2.9.0
@@ -114,13 +107,14 @@ services:
           fi
         fi
         exec /docker-entrypoint.sh --load --serve
-    environment:
-      JAVA_TOOL_OPTIONS: -Xmx2500m
+    env_file:
+      - path: ./backend/.env
+        required: true
     ports:
-      - "8080:8080"
+      - "${OPENTRIPPLANNER_PORT:?Set OPENTRIPPLANNER_PORT in backend/.env}:8080"
     volumes:
       - ./routing-data/opentripplanner:/var/opentripplanner
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  travelplanner-postgres18:

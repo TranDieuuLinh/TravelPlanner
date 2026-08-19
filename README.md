@@ -1,138 +1,153 @@
-# VSF Travel Planner
+# TravelPlanner
 
-VSF Travel Planner biến nguồn cảm hứng du lịch thành lịch trình có thể sử dụng
-thực tế. Người dùng có thể dán URL video hoặc nội dung tham khảo, kiểm tra các
-địa điểm được hệ thống trích xuất, bổ sung ngày đi, ngân sách và ràng buộc, sau
-đó nhận Main Plan đã được kiểm tra cùng Backup Plan riêng khi cần.
+Cập nhật lần cuối: 2026-08-13.
 
-Sản phẩm đồng thời có Marketplace để creator chuyển nội dung và kinh nghiệm
-thực tế thành plan có version để xuất bản và bán. Buyer nhận một bản sao cá nhân
-có thể chỉnh sửa bằng cùng công cụ Planner, không làm thay đổi plan gốc của
-creator.
+TravelPlanner is a travel-planning product with a Next.js user frontend, a
+separate admin frontend, and a modular FastAPI/LangGraph backend.
 
-Luận điểm cốt lõi là: giá trị không nằm ở việc sinh ra một đoạn lịch trình bằng
-AI, mà ở toàn bộ chuỗi `URL -> ngữ cảnh có nguồn -> địa điểm đã xác nhận ->
-plan có cấu trúc -> kiểm tra tính khả thi -> plan có thể chỉnh sửa và sử dụng`.
-
-## Trạng thái hiện tại
-
-Repository này đang ở giai đoạn khởi tạo kỹ thuật, chưa phải một MVP hoàn chỉnh.
-
-- Frontend Next.js đã có đăng ký, đăng nhập bằng cookie, hồ sơ cá nhân và form
-  đăng ký creator kết nối backend thật.
-- Backend FastAPI đã có authentication, refresh session, CSRF, RBAC, hồ sơ,
-  creator application và lưu bằng SQLAlchemy.
-- Module lập kế hoạch đã có ranh giới cho các bước Explorer, Planner, Finder,
-  Check và Backup, nhưng vẫn dùng LLM giả lập và lưu plan trong bộ nhớ.
-- Danh mục Marketplace vẫn chỉ là endpoint minh họa; contract giao tiếp giữa
-  Marketplace và Planner đã được định nghĩa nhưng chưa có listing thật.
-- Bản đồ, nhập dữ liệu từ URL, chỉnh sửa plan, chế độ offline, listing, giao dịch
-  Marketplace, thanh toán, đánh giá và phân tích cho creator chưa được triển
-  khai.
-
-Xem [Phạm vi MVP](docs/04-mvp-scope.md) để biết ranh giới phát triển chính thức.
-
-## Cấu trúc kho mã
+The current backend is an architecture scaffold. It is designed around the
+flow:
 
 ```text
-VSF_TravelPlanner/
-├── README.md
-├── AGENTS.md
-├── docs/
-│   ├── 01-product-overview.md
-│   ├── 02-user-personas.md
-│   ├── 03-user-flows.md
-│   ├── 04-mvp-scope.md
-│   ├── 05-system-architecture.md
-│   ├── 06-domain-model.md
-│   ├── 07-api-contracts.md
-│   ├── 08-ai-planner-spec.md
-│   ├── 09-data-sources.md
-│   ├── 10-testing-strategy.md
-│   ├── 11-security-and-privacy.md
-│   ├── 12-roadmap.md
-│   ├── 12-roadmap-person-c.md
-│   ├── assets/
-│   ├── glossary.md
-│   └── decisions/
-├── frontend/
-├── admin-frontend/               # Console nội bộ quan sát planning runs
-├── backend/
-└── docker-compose.yml
+user request -> supervisor -> explorer/place checker -> itinerary planner
+                         -> information finder or plan editor
 ```
 
-## Chạy dự án trên máy cá nhân
+It is not yet a production travel-data system. Production-grade provider
+coverage, durable graph-state persistence, Marketplace workflows,
+anti-bot-resilient URL ingestion, and live routing still need implementations
+behind the module interfaces. Authentication now has a PostgreSQL-backed
+development flow; configure the auth migration before use. Explorer currently
+has bounded YouTube/social/website and image import adapters, but individual
+third-party sources may still block automated downloads.
 
-Docker Compose chạy các service backend gồm PostgreSQL, backend, sidecar Google
-Maps và hai routing service:
+## Repository structure
 
-```bash
-docker compose up --build
+```text
+travelplanner/
+├── backend/          # FastAPI + LangGraph backend
+│   ├── src/app/
+│   │   ├── api/       # HTTP schemas, dependencies, and routes
+│   │   ├── core/      # Shared configuration and errors
+│   │   ├── modules/   # Vertical feature modules
+│   │   ├── orchestration/ # Root graph and cross-module mapping
+│   │   └── shared/    # Contracts and persistence adapters
+│   └── tests/         # Backend integration tests
+├── frontend/         # User-facing Next.js application
+├── admin-frontend/    # Admin/control Next.js application
+│   ├── app/
+│   │   ├── (dashboard)/
+│   │   │   ├── observability/        # Local request/step diagnostics
+│   │   │   └── knowledge-graph/      # Self-built catalog (entity, alias, relationship)
+│   │   ├── features/
+│   │   │   ├── observability/        # Lightweight observability UI
+│   │   │   └── knowledge-graph/      # Knowledge graph feature module
+│   │   ├── components/               # Cross-feature UI primitives + observability shell
+│   │   ├── api/admin-session/        # Session probe used by the dashboard layout
+│   │   ├── login/                    # TravelPlanner admin login
+│   │   ├── layout.tsx                # Root metadata + globals
+│   │   └── page.tsx                  # Redirects to /observability
+│   └── lib/shared/                   # api-client, auth, format helpers
+├── packages/          # Shared frontend workspace packages
+│   └── api-client/    # Shared API errors and request helpers
+├── docs/              # Current codebase documentation
+├── routing-data/      # Optional routing engine data
+└── docker-compose.yml # Backend and optional routing service orchestration
 ```
 
-API và tài liệu API có tại `http://localhost:8000` và
-`http://localhost:8000/docs`. Backend tự chạy Alembic đến revision mới nhất
-trước khi nhận request. Dữ liệu PostgreSQL nằm trong volume `postgres_data`.
-Image sidecar tự cài package Playwright đã pin, Chromium và các thư viện hệ điều
-hành cần thiết khi build; không cần cài Playwright hoặc browser trên máy host.
-Frontend người dùng và Planning Control chạy riêng trên host bằng `npm run dev`.
-Valhalla chạy tại `http://localhost:8002`.
-OpenTripPlanner chạy tại `http://localhost:8080` khi đã chuẩn bị graph và feed
-theo `routing-data/README.md`; nếu chưa có dữ liệu, container vẫn được giữ ở
-trạng thái chờ và backend dùng fallback route.
+See [docs/codebase-structure.md](docs/codebase-structure.md) for the
+detailed backend module boundaries.
 
-Khi cần chạy backend trực tiếp trên host nhưng vẫn dùng PostgreSQL trong Docker:
+## Backend API
+
+The backend runs on port `8000`.
+
+- `GET /health` returns the service health status.
+- `POST /v1/explorer/invoke` runs Explorer extraction directly for testing.
+- `POST /v1/agent/invoke` invokes the root planning graph.
+- `POST /auth/login` and `POST /auth/register` create cookie sessions.
+- `GET /me` reads the current session; `POST /auth/logout` revokes it.
+
+The agent request uses camelCase fields `threadId`, `message`, `urls`, `images`,
+optional `forceRefresh`, `existingItinerary`, and `editOperation`. Explorer
+caches normalized URL artifacts in PostgreSQL `source_documents` when
+`DATABASE_URL` is configured; `forceRefresh: true` bypasses the cache lookup.
+
+## Run locally
+
+With Docker Compose:
 
 ```bash
-docker compose up -d postgres
+cp backend/.env.example backend/.env
+docker compose --env-file backend/.env up --build
+```
+
+The Compose backend mounts the entire `backend` working tree directly into the
+container and runs Uvicorn with reload enabled for development. After changing
+backend source or other files under `backend/`, the server sees the changes
+without rebuilding; rebuild when changing the Dockerfile, Python dependencies,
+base image, or system packages. This full-tree mount is for development only
+and should be replaced by an image-only deployment setup for production.
+
+Docker Compose loads all service environment variables from `backend/.env`.
+The `--env-file backend/.env` flag also makes Compose port interpolation use the
+same file. There are no service-level environment overrides; change values in
+that file and restart the affected service.
+
+Run the backend directly:
+
+```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-./scripts/migrate.sh
+pip install -e '.[dev]'
 uvicorn app.main:app --reload
 ```
 
-Chạy frontend riêng trên host:
+Run the user frontend:
 
 ```bash
 cd frontend
 npm install
-cp .env.local.example .env.local
 npm run dev
 ```
 
-Planning Control là một Next.js app riêng; khi chạy trên host, nó dùng
-`http://localhost:3001`:
+Run the admin frontend:
 
 ```bash
 cd admin-frontend
 npm install
-cp .env.example .env.local
 npm run dev
 ```
 
-Trong mục Golden dataset, admin có thể chạy từng case qua module runtime thật
-và xem effective input, actual output, duration, lỗi contract cùng mismatch so
-với golden projection. Các case dùng URL/LLM có thể gọi provider thật.
-
-## Kiểm thử
+Run checks for both frontends from the repository root:
 
 ```bash
-# Backend
-cd backend
-pytest
-
-# Frontend
-cd frontend
+npm install
 npm run typecheck
+npm test
 npm run build
 ```
 
-## Tài liệu dự án
+## Admin frontend
 
-Hãy bắt đầu với [AGENTS.md](AGENTS.md), sau đó đọc các tài liệu liên quan đến
-công việc cần thực hiện. Tài liệu luôn phân biệt rõ sản phẩm mục tiêu và hành vi
-đã tồn tại trong code. Khi code và tài liệu không thống nhất, cần kiểm tra code
-và cập nhật tài liệu liên quan trong cùng một thay đổi.
+The admin frontend provides a lightweight `/observability` console for local
+request traces, LangGraph steps, tool input/output previews, durations and
+errors. Records are kept in a bounded local JSON snapshot at
+`backend/logs/observability/` (up to 500 requests); this is development/admin
+diagnostics, not durable production monitoring. Tool previews are truncated and redact
+common secret fields such as API keys, tokens and passwords.
+
+## Verification
+
+```bash
+cd backend
+pytest
+
+cd ../frontend
+npm run typecheck
+npm run build
+
+cd ../admin-frontend
+npm run typecheck
+```

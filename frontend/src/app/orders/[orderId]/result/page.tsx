@@ -1,13 +1,15 @@
 "use client";
 
+import "@/styles/global/community.css";
+
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
+import { useAuth } from "@/features/auth/components/AuthProvider";
 import { PenguinMascot } from "@/components/PenguinMascot";
-import { APIError } from "@/lib/api";
-import { copyPlanForBuyer, getOrderDetail } from "@/lib/orders";
-import type { OrderDetail, PlanCopyResult } from "@/types/orders";
+import { APIError } from "@/shared/api/client";
+import { copyPlanForBuyer, getOrderDetail } from "@/features/orders/api";
+import type { OrderDetail, PlanCopyResult } from "@/features/orders/types";
 
 export default function OrderResultPage() {
   const params = useParams();

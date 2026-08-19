@@ -1,0 +1,2767 @@
+.plannerInteractionLock {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: rgba(238, 247, 244, .72);
+  cursor: wait;
+  overscroll-behavior: contain;
+  touch-action: none;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.plannerInteractionLockCard {
+  display: grid;
+  width: min(360px, 100%);
+  gap: 9px;
+  justify-items: center;
+  border: 1px solid rgba(54, 95, 90, .16);
+  border-radius: 18px;
+  padding: 24px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 18px 50px rgba(35, 73, 68, .16);
+  color: #294e4a;
+  text-align: center;
+}
+
+.plannerInteractionLockCard small {
+  max-width: 30rem;
+  color: #667a77;
+  line-height: 1.45;
+}
+
+.plannerInteractionLockSpinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid rgba(54, 95, 90, .18);
+  border-top-color: #365f5a;
+  border-radius: 50%;
+  animation: plannerInteractionLockSpin .7s linear infinite;
+}
+
+@keyframes plannerInteractionLockSpin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plannerInteractionLockSpinner { animation-duration: 1.4s; }
+}
+
+.tripProjectSidebar {
+  position: absolute;
+  z-index: 2001;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  width: min(280px, calc(100% - 24px));
+  min-width: 0;
+  height: 100%;
+  min-height: 680px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0;
+  border-right: 1px solid #ececec;
+  border-radius: 0;
+  padding: 12px 8px;
+  background: #f9f9f9;
+  box-shadow: 8px 0 24px rgba(0, 0, 0, .04);
+  transition: padding .2s ease;
+}
+
+.tripSidebarBackdrop {
+  position: absolute;
+  z-index: 2000;
+  inset: 0;
+  border: 0;
+  border-radius: 24px;
+  background: rgba(54, 95, 90, .18);
+  cursor: default;
+}
+
+.tripProjectSidebarHeader {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 4px 12px;
+}
+
+.tripProjectBrand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.tripProjectBrand > img {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+}
+
+.tripProjectBrand > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  white-space: nowrap;
+}
+
+.tripProjectBrand strong {
+  font-size: .75rem;
+  letter-spacing: -.02em;
+}
+
+.tripProjectBrand small {
+  color: #6b6b6b;
+  font-size: .52rem;
+  font-weight: 700;
+}
+
+.tripSidebarToggle {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #172033;
+}
+
+.tripSidebarToggle:hover,
+.tripSidebarToggle:focus-visible {
+  background: #ececec;
+  color: var(--ink);
+}
+
+.tripSidebarToggle svg,
+.sidebarNewChat svg,
+.tripProjectDelete svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.sidebarNewChat {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 10px 10px;
+  background: transparent;
+  color: var(--ink);
+  font-size: .68rem;
+  font-weight: 850;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sidebarNewChat:hover,
+.sidebarNewChat.active {
+  border-color: transparent;
+  background: #ececec;
+  color: var(--brand-dark);
+}
+
+.tripProjectList {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  margin-top: 22px;
+}
+
+.tripProjectSectionTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 7px;
+  color: #172033;
+}
+
+.tripProjectSectionTitle strong {
+  color: #6b6b6b;
+  font-size: .56rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.tripProjectSectionTitle small {
+  display: block;
+  min-width: 0;
+  height: auto;
+  background: transparent;
+  color: #8f8f8f;
+  font-size: .52rem;
+  font-weight: 800;
+}
+
+.tripProjectSectionTitle > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tripProjectDeleteAll {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: transparent;
+  color: #a43b3b;
+  font-size: .52rem;
+  font-weight: 800;
+}
+
+.tripProjectDeleteAll:hover,
+.tripProjectDeleteAll:focus-visible {
+  background: #f8e5e5;
+  color: #7d2424;
+}
+
+.tripProjectDeleteAll:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+.tripProjectList nav {
+  display: grid;
+  gap: 2px;
+  overflow-y: auto;
+  scrollbar-color: #667085 transparent;
+  scrollbar-width: thin;
+}
+
+.tripProjectItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center;
+  border-radius: 9px;
+  background: transparent;
+  color: #2f2f2f;
+}
+
+.tripProjectOpen {
+  display: block;
+  min-width: 0;
+  border: 0;
+  border-radius: 9px;
+  padding: 9px 4px 9px 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.tripProjectItem:hover {
+  background: #ececec;
+}
+
+.tripProjectItem.active {
+  background: #e7e7e7;
+  color: #171717;
+}
+
+.tripProjectOpen > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.tripProjectOpen strong,
+.tripProjectOpen small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tripProjectOpen strong {
+  color: inherit;
+  font-size: .63rem;
+  font-weight: 650;
+}
+
+.tripProjectOpen small {
+  color: #6b6b6b;
+  font-size: .49rem;
+}
+
+.tripProjectDelete {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  padding: 0;
+  background: transparent;
+  color: #6b6b6b;
+  opacity: 0;
+  transition: opacity .15s ease, background .15s ease, color .15s ease;
+}
+
+.tripProjectDelete svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tripProjectDelete:hover,
+.tripProjectDelete:focus-visible {
+  background: #dedede;
+  color: #171717;
+  opacity: 1;
+}
+
+.tripProjectItem:hover .tripProjectDelete,
+.tripProjectItem.active .tripProjectDelete,
+.tripProjectItem:focus-within .tripProjectDelete {
+  opacity: 1;
+}
+
+.tripProjectEmpty {
+  margin: 4px 10px 0;
+  color: var(--muted);
+  font-size: .6rem;
+  line-height: 1.55;
+}
+
+.plannerLayout {
+  min-width: 0;
+  grid-template-columns: minmax(270px, .75fr) minmax(460px, 1.35fr) minmax(350px, .9fr);
+  gap: 0;
+}
+
+.plannerLayout .panel {
+  border-top: 0;
+  border-color: rgba(54, 95, 90, .09);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.plannerChat {
+  position: relative;
+  min-height: 720px;
+  padding: 0;
+  background: var(--planner-assistant-background);
+}
+
+.plannerChat .panelHeading {
+  margin: 0;
+  padding: 19px 20px 14px;
+}
+
+.plannerChat .aiOrb {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.assistantMascotButton {
+  display: block;
+  flex: 0 0 auto;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+.assistantMascotButton:focus-visible {
+  outline: 3px solid rgba(54, 95, 90, .3);
+  outline-offset: 4px;
+}
+
+.plannerChat .assistantPenguinStage {
+  position: relative;
+  display: block;
+  width: 46px;
+  height: 46px;
+}
+
+.plannerChat .assistantPenguin {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  transform: translate(-2px, -2px);
+}
+
+.plannerChat .assistantPenguinSpeaking {
+  opacity: 0;
+}
+
+.plannerChat.is-collapsed .assistantPenguinIdle {
+  opacity: 0;
+}
+
+.plannerChat.is-collapsed .assistantPenguinSpeaking {
+  opacity: 1;
+}
+
+.plannerChat.is-collapsed .assistantMascotButton,
+.plannerChat.is-collapsed .plannerChatToggle {
+  transition: none !important;
+}
+
+.plannerChat.is-collapsed .assistantMascotButton:hover,
+.plannerChat.is-collapsed .assistantMascotButton:active {
+  transform: none !important;
+}
+
+.plannerChat.is-collapsed .plannerChatToggle:hover,
+.plannerChat.is-collapsed .plannerChatToggle:active {
+  transform: translate(25%, -25%) !important;
+}
+
+.plannerSidebarLauncher {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #e4e7f0;
+  border-radius: 13px;
+  background: #f6f7fb;
+  color: var(--brand-dark);
+}
+
+.plannerSidebarLauncher:hover,
+.plannerSidebarLauncher:focus-visible {
+  border-color: #e4e7f0;
+  background: #f6f7fb;
+}
+
+.plannerSidebarLauncher svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.plannerChat .aiOrb::after {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: #365f5a;
+  content: "";
+}
+
+.plannerChat .panelHeading strong {
+  font-size: .84rem;
+}
+
+.plannerChat .panelHeading small {
+  font-size: .61rem;
+}
+
+.assistantStatus {
+  position: absolute;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  clip: rect(0 0 0 0);
+}
+
+.plannerChat .chatMessages {
+  gap: 12px;
+  overflow-x: hidden;
+  padding: 10px 20px 14px;
+  scrollbar-color: #667085 transparent;
+  scrollbar-width: thin;
+}
+
+.plannerChat .chatMessageRow {
+  display: flex;
+  width: 100%;
+  align-items: flex-end;
+  gap: 7px;
+}
+
+.plannerChat .chatMessageRow.assistant {
+  justify-content: flex-start;
+}
+
+.plannerChat .chatMessageRow.user {
+  justify-content: flex-end;
+}
+
+.plannerChat .chatMessageAvatar {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  overflow: hidden;
+  place-items: center;
+}
+
+.plannerChat .chatMessageAvatar .penguinMascot {
+  display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+
+.plannerChat,
+.plannerChatSurface {
+  --planner-chat-bubble-size: 0.8125rem;
+  --planner-chat-line-height: 1.55;
+}
+
+.plannerChat .chatBubble {
+  min-width: 0;
+  max-width: 91%;
+  border: 1px solid transparent;
+  padding: 12px 14px;
+  font-size: var(--planner-chat-bubble-size, 0.8125rem);
+  line-height: var(--planner-chat-line-height, 1.55);
+  overflow-wrap: anywhere;
+  box-shadow: 0 5px 14px rgba(54, 95, 90, .045);
+  word-break: break-word;
+}
+
+.plannerChat .chatBubble.assistant {
+  max-width: calc(100% - 51px);
+  border-color: #e4e7f0;
+  background: #f6f7fb;
+  color: #365f5a;
+  font-size: var(--planner-chat-bubble-size, 0.8125rem);
+}
+
+.plannerChat .processingMessage {
+  display: grid;
+  align-items: initial;
+  gap: 6px;
+}
+
+.plannerChat .processingMessageTitle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.plannerChat .processingMessageTitle strong {
+  color: #365f5a;
+  font-size: var(--planner-chat-bubble-size, 0.8125rem);
+}
+
+.plannerChat .processingMessageTitle .processingElapsed {
+  margin-left: auto;
+  color: #365f5a;
+  font-size: .68rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.plannerChat .processingMessage > span {
+  color: #365f5a;
+  font-size: var(--planner-chat-bubble-size, 0.8125rem);
+  line-height: var(--planner-chat-line-height, 1.55);
+}
+
+.plannerChat .processingMessage > small {
+  color: #172033;
+  font-size: .68rem;
+  font-weight: 700;
+}
+
+.plannerChat .chatBubble.user {
+  max-width: 91%;
+  background: linear-gradient(145deg, #365f5a, #365f5a);
+  box-shadow: 0 8px 18px rgba(54, 95, 90, .13);
+  font-size: var(--planner-chat-bubble-size, 0.8125rem);
+}
+
+.plannerChat .promptSuggestions {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0 20px 13px;
+}
+
+.plannerChat .promptSuggestions::before {
+  margin-bottom: 1px;
+  color: #172033;
+  font-size: .53rem;
+  font-weight: 850;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  content: "Thử một ý tưởng";
+}
+
+.plannerChat .promptSuggestions button {
+  position: relative;
+  border-color: #e4e7f0;
+  border-radius: 12px;
+  padding: 9px 28px 9px 11px;
+  background: white;
+  color: #172033;
+  box-shadow: 0 3px 10px rgba(54, 95, 90, .025);
+}
+
+.plannerChat .promptSuggestions button::after {
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  color: #172033;
+  content: "↗";
+  transform: translateY(-50%);
+}
+
+.plannerChat .formError {
+  margin: 0 20px 10px;
+  border-radius: 10px;
+  padding: 9px 11px;
+  background: #f6f7fb;
+}
+
+.plannerChat .chatComposer {
+  gap: 8px;
+  border-top-color: #e4e7f0;
+  padding: 14px 16px 16px;
+}
+
+.plannerChat .composerBox {
+  border-color: #e4e7f0;
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.plannerChat .composerBox:focus-within {
+  background: white;
+  box-shadow: 0 0 0 3px rgba(54, 95, 90, .12), 0 8px 22px rgba(54, 95, 90, .07);
+}
+
+.plannerChat .composerBox textarea {
+  min-height: 48px;
+  font-size: .75rem;
+}
+
+
+.plannerChat .composerToolbar .attachButton {
+  border: 0;
+  padding: 6px 8px;
+  background: #f6f7fb;
+}
+
+.plannerChat .chatComposer .sendButton {
+  display: grid;
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  margin-left: auto;
+  place-items: center;
+  border-radius: 50%;
+  padding: 0;
+  background: #365f5a;
+  box-shadow: 0 8px 18px rgba(54, 95, 90, .24);
+}
+
+.plannerChat .chatComposer .sendButton svg {
+  width: 27px;
+  height: 27px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.plannerChat .chatComposer .sendButton:disabled {
+  background: #f6f7fb;
+  box-shadow: none;
+}
+
+.itinerary {
+  display: flex;
+  min-height: 720px;
+  flex-direction: column;
+  background: var(--planner-assistant-background);
+}
+
+.itineraryHeading {
+  min-height: 76px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 10px 22px;
+  background: transparent;
+}
+
+.itineraryHeading > div {
+  min-width: 0;
+  margin-left: -4px;
+}
+
+.itineraryHeading strong {
+  font-size: 1rem;
+  letter-spacing: -.015em;
+}
+
+.itineraryHeading small {
+  overflow: hidden;
+  font-size: .72rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planHeaderIcon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.planHeaderIcon img {
+  display: block;
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+}
+
+.statusPill {
+  position: relative;
+  padding: 8px 11px 8px 24px;
+}
+
+.statusPill::before {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+  transform: translateY(-50%);
+}
+
+.exploreResult {
+  min-height: 0;
+  flex: 1;
+  max-height: 638px;
+  gap: 8px;
+  padding: 6px 12px 12px;
+  background: transparent;
+  scrollbar-gutter: stable;
+}
+
+.exploreResult .tripSummaryCard {
+  display: none;
+}
+
+.tripSummaryIntro {
+  position: relative;
+  overflow: hidden;
+  min-height: 116px;
+  background:
+    radial-gradient(circle at 88% 20%, rgba(54, 95, 90, .2), transparent 7rem),
+    linear-gradient(135deg, #365f5a, #365f5a);
+}
+
+.tripSummaryIntro::after {
+  position: absolute;
+  right: -28px;
+  bottom: -50px;
+  width: 150px;
+  height: 100px;
+  border: 1px dashed rgba(255, 255, 255, .25);
+  border-radius: 50%;
+  content: "";
+}
+
+.tripSummaryIntro h3 {
+  font-size: 1.65rem;
+}
+
+.plannerMap {
+  top: 84px;
+  height: 720px;
+  min-height: 720px;
+}
+
+.plannerMapCanvasWrap {
+  background: var(--planner-surface-background);
+}
+
+.plannerMapCanvasWrap::after {
+  position: absolute;
+  z-index: 400;
+  top: 14px;
+  left: 50%;
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(54, 95, 90, .16);
+  content: "";
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.emptyPlan {
+  flex: 1;
+  min-height: 636px;
+  overflow: hidden;
+  background: transparent;
+}
+
+.explorerMascotCrew {
+  width: min(460px, 100%);
+}
+
+.explorerMascotArt {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 24px 28px rgba(54, 95, 90, .14));
+}
+
+@media (max-width: 1240px) {
+  .plannerLayout {
+    grid-template-columns: minmax(320px, .8fr) minmax(440px, 1.2fr);
+  }
+
+  .plannerMap {
+    height: 560px;
+    min-height: 560px;
+  }
+}
+
+@media (max-width: 900px) {
+  .plannerPage {
+    overflow-x: hidden;
+  }
+
+  .plannerWorkspace,
+  .plannerLayout,
+  .plannerLayout > *,
+  .plannerLayout .panel,
+  .itinerary,
+  .exploreResult,
+  .exploreResult > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .plannerLayout {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .plannerMap {
+    position: static;
+    grid-column: auto;
+  }
+
+  .exploreResult {
+    overflow-x: hidden;
+  }
+
+  .explorerDayCard,
+  .itineraryPlaceCard {
+    width: 100%;
+    max-width: 100%;
+  }
+
+}
+
+/* Itinerary panel — compact reference layout */
+.itinerary {
+  background: var(--planner-surface-background);
+}
+
+.itinerary .itineraryHeading {
+  min-height: 78px;
+  padding: 10px 18px;
+  border-bottom: 1px solid #e5efeb;
+  background: linear-gradient(180deg, #eef9f5 0%, #edf7f4 100%);
+}
+
+.plannerHistoryMenu--itinerary {
+  margin-left: auto;
+  margin-right: 8px;
+  flex: 0 0 38px;
+  border-color: #e3e9e7;
+  background: #fff;
+  color: #51615d;
+}
+
+.itinerary .planHeaderIcon {
+  width: 58px;
+  height: 58px;
+}
+
+.itinerary .planHeaderIcon img {
+  width: 54px;
+  height: 54px;
+}
+
+.itinerary .itineraryHeading > div {
+  margin-left: -3px;
+}
+
+.itinerary .itineraryHeading strong {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.itinerary .itineraryHeading small {
+  margin-top: 2px;
+  color: #66736f;
+  font-size: .72rem;
+}
+
+.itinerary .plannerSidebarLauncher {
+  width: 42px;
+  height: 42px;
+  margin-left: auto;
+  border-color: #d8ebe5;
+  border-radius: 13px;
+  background: rgba(255,255,255,.32);
+  color: #176b5c;
+  box-shadow: 0 4px 12px rgba(24,54,48,.03);
+}
+
+.itinerary .exploreResult {
+  gap: 0;
+  max-height: none;
+  padding: 0 16px 0 32px;
+  background: #ffffff;
+}
+
+.itinerary .tripPlanSection {
+  gap: 0 !important;
+  margin: 0;
+}
+
+.itinerary .dayTabList {
+  gap: 8px;
+  margin: 0 -10px;
+  width: calc(100% + 20px);
+  max-width: none;
+  border: 0;
+  border-bottom: 1px solid #e7ecea;
+  border-radius: 0;
+  padding: 9px 10px 11px;
+  background: #f5f8f7;
+  scroll-padding-inline: 10px;
+  scroll-snap-type: x proximity;
+}
+
+.itinerary .dayTabList button {
+  width: 112px;
+  min-width: 112px;
+  min-height: 52px;
+  flex: 0 0 112px;
+  scroll-snap-align: start;
+  border: 1px solid #dbe6e2;
+  border-radius: 18px;
+  padding: 0 14px;
+  background: #ffffff;
+  color: #53645f;
+  box-shadow: 0 3px 10px rgba(23, 32, 51,.045);
+}
+
+.itinerary .dayTabList button:first-child {
+  margin-left: 0;
+}
+
+.itinerary .dayTabList button:last-child {
+  margin-right: 0;
+}
+
+.itinerary .dayTabList button > small,
+.itinerary .dayTabDot {
+  display: none;
+}
+
+.itinerary .dayTabList button:hover:not(.active) {
+  border-color: #a9d2c8;
+  background: #edf8f4;
+  color: #155f52;
+  box-shadow: 0 5px 14px rgba(54, 95, 90,.1);
+}
+
+.itinerary .dayTabList button.active {
+  border-color: #0f6f60;
+  background: linear-gradient(135deg, #198f79 0%, #0f6f60 100%);
+  color: #ffffff;
+  box-shadow: 0 8px 18px rgba(15,111,96,.22), inset 0 1px 0 rgba(255,255,255,.2);
+}
+
+.itinerary .dayTabList button:focus-visible {
+  outline: 3px solid rgba(54, 95, 90,.24);
+  outline-offset: 2px;
+}
+
+.itinerary .dayTabLabel {
+  font-size: .66rem;
+  font-weight: 900;
+  letter-spacing: -.01em;
+}
+
+.itinerary .planDayPanels {
+  gap: 0;
+}
+
+.itinerary .explorerDayCard {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.itinerary .dayCardHeading {
+  min-height: 56px;
+  padding: 17px 2px 13px;
+  border-bottom: 0;
+  background: #ffffff;
+}
+
+.itinerary .dayCardHeading strong {
+  color: #25332f;
+  font-size: .72rem;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.itinerary .itineraryStops {
+  padding: 0;
+}
+
+.itinerary .itineraryStops::before {
+  top: 14px;
+  bottom: 28px;
+  left: 13px;
+  border-left: 1px dashed #bfd8d1;
+}
+
+.itinerary .itineraryStop {
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.itinerary .itineraryStopPin {
+  width: 10px;
+  height: 10px;
+  margin: auto 0;
+  border: 2px solid #ffffff;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px #70b8a8;
+}
+
+.itinerary .itineraryPlaceCard {
+  width: 100%;
+  justify-self: stretch;
+  column-gap: 14px;
+  row-gap: 10px;
+  border: 2px solid #abd8cc;
+  border-radius: 16px;
+  padding: 14px;
+  background: linear-gradient(135deg, #ffffff 58%, #f2fbf8 100%);
+  box-shadow: 0 10px 24px rgba(54, 95, 90,.1);
+}
+
+.itinerary .itineraryPlaceCard--withImage {
+  grid-template-columns: 144px minmax(0, 1fr);
+  column-gap: 2px;
+}
+
+.itinerary .itineraryPlaceImage {
+  width: 144px;
+  height: 144px;
+  min-height: 144px;
+  align-self: start;
+  border-radius: 12px;
+}
+
+.itinerary .itineraryPlaceContent {
+  position: relative;
+  align-content: start;
+  gap: 9px;
+}
+
+.itinerary .itineraryPlaceCard header > strong,
+.itinerary .itineraryPlaceCard header .placeMapButton strong {
+  color: #28332f;
+  font-size: .84rem;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.itinerary .itineraryStop:not(.itineraryStop--food) .itineraryStopPin {
+  width: 12px;
+  height: 12px;
+  margin: auto;
+  border-color: #ffffff;
+  background: #365f5a;
+  box-shadow: 0 0 0 3px #d8f1ea, 0 4px 10px rgba(54, 95, 90,.24);
+}
+
+.itinerary .itineraryStop:not(.itineraryStop--food) .itineraryPlaceCategory {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #dff4ee;
+  color: #126653;
+  font-weight: 900;
+}
+
+.itinerary .itineraryStop--food .itineraryPlaceCard {
+  width: calc(100% - 28px);
+  justify-self: start;
+  column-gap: 9px;
+  row-gap: 6px;
+  border: 1px solid #e0e8e5;
+  border-radius: 11px;
+  padding: 8px 9px;
+  background: #fbfcfb;
+  box-shadow: 0 2px 8px rgba(24,54,48,.025);
+}
+
+.itinerary .itineraryStop--food .itineraryPlaceCard--withImage {
+  grid-template-columns: 92px minmax(0, 1fr);
+}
+
+.itinerary .itineraryStop--food .itineraryPlaceImage {
+  width: 92px;
+  height: 92px;
+  min-height: 92px;
+  align-self: start;
+  border-radius: 8px;
+  opacity: .92;
+}
+
+.itinerary .itineraryStop--food .itineraryPlaceContent {
+  align-content: start;
+  gap: 5px;
+}
+
+.itinerary .itineraryStop--food .itineraryPlaceCard header > strong,
+.itinerary .itineraryStop--food .itineraryPlaceCard header .placeMapButton strong {
+  color: #4b5954;
+  font-size: .66rem;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.itinerary .itineraryActions {
+  gap: 1px;
+}
+
+.itinerary .itineraryDragHandle,
+.itinerary .itineraryActionButton {
+  width: 23px;
+  height: 23px;
+  color: #8a9a95;
+}
+
+.itinerary .itineraryStop--food .itineraryDragHandle,
+.itinerary .itineraryStop--food .itineraryActionButton {
+  width: 20px;
+  height: 20px;
+  color: #a3ada9;
+}
+
+.itinerary .itinerarySourceTag {
+  padding: 3px 6px;
+  font-size: .46rem;
+}
+
+.itinerary .itineraryStop--food .itinerarySourceTag {
+  padding: 2px 5px;
+  font-size: .42rem;
+}
+
+.itinerary .itinerarySourceTag--url {
+  border-color: #70c7b1;
+  background: #e7f8f2;
+  color: #13705e;
+}
+
+.itinerary .itinerarySourceTag--finder {
+  border-color: #ccd9e8;
+  background: #f2f6fb;
+  color: #4e6680;
+}
+
+.itinerary .itineraryPlaceCategory {
+  color: #66736f;
+  font-size: .52rem;
+}
+
+.itinerary .itineraryStop--food .itineraryPlaceCategory {
+  color: #87918d;
+  font-size: .46rem;
+}
+
+.itinerary .itineraryPlaceRating {
+  color: #65716d;
+  font-size: .49rem;
+}
+
+.itinerary .itineraryStop--food .itineraryPlaceRating {
+  color: #84908b;
+  font-size: .44rem;
+}
+
+.itinerary .itineraryPlaceRating > span {
+  color: #e39a1a;
+  font-size: .72rem;
+}
+
+.itinerary .itineraryStop--food .itineraryPlaceRating > span {
+  color: #d6a24c;
+  font-size: .62rem;
+}
+
+.itinerary .itineraryPlaceRating small {
+  color: #8b9692;
+  font-size: .46rem;
+}
+
+.itinerary .itineraryStop--food .itineraryPlaceRating small {
+  color: #9ca5a1;
+  font-size: .41rem;
+}
+
+.itinerary .itineraryStop--food .activityNotesDropdown {
+  border-color: #e5ebe8;
+  background: transparent;
+}
+
+.itinerary .itineraryStop--food .activityNotesTrigger,
+.itinerary .itineraryStop--food .activityNotesDropdown .activityNotesTrigger {
+  min-height: 31px;
+  padding: 5px 8px;
+}
+
+.itinerary .itineraryStop--food .activityNotesTrigger .activityNotesTitle {
+  font-size: .49rem;
+}
+
+.itinerary .activityNotesDropdown {
+  overflow: hidden;
+  border: 1px solid #d8e3df;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.itinerary .activityNotesDropdown:hover,
+.itinerary .activityNotesDropdown.isOpen {
+  border-color: #bedbd2;
+  box-shadow: none;
+}
+
+.itinerary .activityNotesTrigger,
+.itinerary .activityNotesDropdown .activityNotesTrigger {
+  grid-template-columns: minmax(0, 1fr) auto 12px;
+  min-height: 38px;
+  padding: 7px 10px;
+  color: #5d6e68;
+}
+
+.itinerary .activityNotesTrigger .activityNotesIcon {
+  display: none;
+}
+
+.itinerary .activityNotesTrigger .activityNotesTitle {
+  gap: 0;
+  font-size: .55rem;
+  font-weight: 850;
+}
+
+.itinerary .activityNotesCount {
+  color: #7c8985;
+  font-size: .47rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.itinerary .activityNotesChevron {
+  width: 10px;
+  height: 10px;
+}
+
+.itinerary .itineraryRoute {
+  width: calc(100% - 34px);
+  max-width: calc(100% - 34px);
+  grid-template-columns: 18px minmax(0,1fr) auto;
+  margin-left: 34px;
+  padding: 11px 4px 15px;
+  color: #68746f;
+  font-size: .5rem;
+}
+
+.itinerary .itineraryRouteDetails summary {
+  color: #5e6c67;
+  font-size: .49rem;
+}
+
+.itinerary .itineraryStop--food::after {
+  display: none;
+}
+
+@media (max-width: 520px) {
+  .itinerary .exploreResult {
+    padding-inline: 8px;
+  }
+
+  .itinerary .dayTabList {
+    width: calc(100% + 16px);
+    margin-inline: -8px;
+    padding-inline: 8px;
+    scroll-padding-inline: 8px;
+  }
+
+  .itinerary .dayTabList button {
+    width: 104px;
+    min-width: 104px;
+    flex-basis: 104px;
+  }
+
+  .itinerary .itineraryPlaceCard--withImage,
+  .itinerary .itineraryStop--food .itineraryPlaceCard--withImage {
+    grid-template-columns: 108px minmax(0,1fr);
+  }
+
+  .itinerary .itineraryPlaceImage {
+    width: 108px;
+    height: 120px;
+    min-height: 120px;
+  }
+
+  .itinerary .itineraryStop--food .itineraryPlaceCard {
+    width: calc(100% - 18px);
+  }
+
+  .itinerary .itineraryStop--food .itineraryPlaceCard--withImage {
+    grid-template-columns: 76px minmax(0,1fr);
+  }
+
+  .itinerary .itineraryStop--food .itineraryPlaceImage {
+    width: 76px;
+    height: 82px;
+    min-height: 82px;
+  }
+}
+
+/* Mindtrip-inspired Planner entry: compact trip facts above a modern chat and
+   a non-commerce inspiration feed. Once a plan exists, the established
+   itinerary + map workspace takes over again. */
+.plannerLayout.is-new-chat {
+  min-height: calc(100dvh - 64px);
+  height: calc(100dvh - 64px);
+  grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
+  grid-template-rows: minmax(0, 1fr);
+  place-items: stretch;
+  overflow: hidden;
+  padding: 0;
+  background: #fff;
+}
+
+.plannerEntryTopbar {
+  z-index: 10;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px clamp(14px, 2vw, 24px);
+  background: #fff;
+}
+
+.plannerNewChatMenu {
+  display: inline-grid;
+  width: max-content;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 2px 7px;
+  border: 0;
+  padding: 7px 8px;
+  background: transparent;
+  color: #151918;
+  text-align: left;
+}
+
+.plannerNewChatMenu strong { grid-row: 1 / 3; font-size: .82rem; }
+.plannerNewChatMenu span { align-self: end; color: #7b8582; font-size: .52rem; }
+.plannerNewChatMenu svg { align-self: start; width: 14px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.plannerNewChatMenu:hover,
+.plannerNewChatMenu:focus-visible { border-radius: 12px; background: #f3f5f4; }
+
+.plannerIntakeNav {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 790px;
+  overflow-x: auto;
+  border: 1px solid #e2e5e4;
+  border-radius: 999px;
+  padding: 3px;
+  background: #fafbfa;
+  box-shadow: 0 3px 12px rgba(27, 42, 38, .04);
+  scrollbar-width: none;
+}
+
+.plannerIntakeNav::-webkit-scrollbar { display: none; }
+
+.plannerIntakeNav button {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  flex: 1 1 0;
+  gap: 1px;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: transparent;
+  color: #77817e;
+  text-align: left;
+}
+
+.plannerIntakeNav button + button::before {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 1px;
+  background: #e5e8e7;
+  content: "";
+}
+
+.plannerIntakeNav button[aria-current="step"] { background: #fff; color: #1d2926; box-shadow: 0 2px 10px rgba(27, 42, 38, .09); }
+.plannerIntakeNav button[aria-current="step"]::before,
+.plannerIntakeNav button[aria-current="step"] + button::before { display: none; }
+.plannerIntakeNav button.is-filled { color: #315f58; }
+.plannerIntakeNav small { font-size: .58rem; font-weight: 780; white-space: nowrap; }
+.plannerIntakeNav strong { overflow: hidden; font-size: .51rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.plannerTopUrlButton {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-self: end;
+  gap: 8px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 17px;
+  background: #17211f;
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 850;
+}
+
+.plannerTopUrlButton svg { width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.plannerTopUrlButton:hover,
+.plannerTopUrlButton:focus-visible { background: #315f58; transform: translateY(-1px); }
+
+.plannerLayout.is-new-chat .plannerChat,
+.plannerLayout.is-new-chat .plannerChat[style] {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+}
+
+.plannerLayout.is-new-chat .plannerChat > .panelHeading { display: none; }
+.plannerLayout.is-new-chat .plannerChatContent { height: 100%; background: #fff; }
+.plannerLayout.is-new-chat .chatMessages { padding: clamp(28px, 6vh, 72px) clamp(24px, 6vw, 76px) 22px; }
+.plannerLayout.is-new-chat .chatBubble { font-size: var(--planner-chat-bubble-size, 0.8125rem); }
+.plannerLayout.is-new-chat .chatBubble.assistant { border: 0; background: #f2f4f3; box-shadow: none; }
+.plannerLayout.is-new-chat .chatBubble.user { background: #17211f; }
+.plannerLayout.is-new-chat .chatMessageAvatar {
+  width: 52px;
+  height: 52px;
+  flex-basis: 52px;
+  margin-left: -8px;
+}
+.plannerLayout.is-new-chat .chatMessageAvatar .penguinMascot {
+  width: 52px;
+  height: 52px;
+}
+.plannerLayout.is-new-chat .chatComposer { border-top: 0; padding: 10px clamp(20px, 4vw, 52px) 18px; background: #fff; }
+
+.plannerLayout.is-new-chat .composerBox {
+  border: 1px solid #d8dddb;
+  border-radius: 23px;
+  background: #fff;
+  box-shadow: 0 7px 26px rgba(31, 50, 45, .09);
+}
+
+.plannerLayout.is-new-chat .composerBox:focus-within { border-color: #7d9b94; box-shadow: 0 0 0 3px rgba(49, 95, 88, .09), 0 10px 32px rgba(31, 50, 45, .1); }
+.plannerLayout.is-new-chat .composerBox textarea { min-height: 58px; padding: 14px 17px 4px; font-size: .78rem; }
+.plannerLayout.is-new-chat .composerToolbar { min-height: 44px; padding: 3px 8px 7px; }
+.plannerLayout.is-new-chat .sourceActionButton { border-radius: 999px; }
+.plannerLayout.is-new-chat .sendButton { width: 38px; height: 38px; border-radius: 50%; background: #17211f; }
+
+.plannerDiscovery {
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  border-radius: 28px;
+  padding: 30px clamp(20px, 3vw, 42px) 48px;
+  background: #fafafa;
+  scrollbar-color: #c6ccca transparent;
+}
+
+.plannerDiscoveryHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+.plannerDiscoveryHeader > div { display: grid; gap: 2px; }
+.plannerDiscoveryHeader span { color: #78817f; font-size: .61rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.plannerDiscoveryHeader h2 { margin: 0; color: #161b1a; font-size: clamp(1.35rem, 2vw, 1.85rem); letter-spacing: -.04em; }
+.plannerDiscoveryHeader button { border: 0; padding: 7px 0; background: transparent; color: #27332f; font-size: .64rem; font-weight: 850; }
+
+.plannerDiscoveryNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  border: 1px solid #dbe7e3;
+  border-radius: 12px;
+  padding: 9px 11px;
+  background: #edf7f3;
+  color: #49625c;
+  font-size: .59rem;
+  line-height: 1.4;
+}
+
+.plannerDiscoveryNoticeDot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #3e776b; box-shadow: 0 0 0 4px rgba(62, 119, 107, .12); animation: plannerDiscoveryPulse 1.4s ease-in-out infinite; }
+@keyframes plannerDiscoveryPulse { 50% { opacity: .45; transform: scale(.8); } }
+
+.plannerDiscoveryGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.plannerDiscoveryCard { position: relative; min-height: 245px; overflow: hidden; border-radius: 20px; background: #dce3e0; color: #fff; box-shadow: 0 7px 20px rgba(26, 39, 35, .09); isolation: isolate; }
+.plannerDiscoveryCard.featured { grid-column: span 2; min-height: 300px; }
+.plannerDiscoveryCard img { position: absolute; z-index: -2; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform .4s ease; }
+.plannerDiscoveryCard:hover img { transform: scale(1.035); }
+.plannerDiscoveryShade { position: absolute; z-index: -1; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.05) 35%, rgba(8,15,13,.78) 100%); }
+.plannerDiscoveryCardTop { display: flex; align-items: center; justify-content: space-between; padding: 13px; }
+.plannerDiscoveryKind { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 6px 9px; background: rgba(19, 27, 25, .58); backdrop-filter: blur(8px); font-size: .55rem; font-weight: 800; }
+.plannerDiscoveryKind i { font-style: normal; font-size: .52rem; }
+.plannerDiscoveryCardTop button { display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 50%; background: rgba(19, 27, 25, .42); color: #fff; font-size: 1rem; backdrop-filter: blur(8px); }
+.plannerDiscoveryCopy { position: absolute; right: 0; bottom: 0; left: 0; padding: 18px; }
+.plannerDiscoveryCopy h3 { max-width: 28rem; margin-bottom: 6px; color: #fff; font-size: clamp(.82rem, 1.25vw, 1.05rem); line-height: 1.18; letter-spacing: -.025em; }
+.plannerDiscoveryCopy p { display: flex; gap: 5px; margin: 0; color: rgba(255,255,255,.78); font-size: .58rem; }
+
+.plannerBackgroundStage {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px clamp(24px, 5vw, 58px) 12px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 22%, rgba(224, 243, 237, .72), transparent 42%),
+    linear-gradient(180deg, #fbfdfc 0%, #f4faf7 100%);
+  text-align: center;
+}
+
+.plannerBackgroundStage::before {
+  position: absolute;
+  inset: 18px;
+  border: 1px solid rgba(54, 95, 90, .1);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, .28);
+  content: "";
+  pointer-events: none;
+}
+
+.plannerBackgroundStage > * {
+  z-index: 1;
+}
+
+.plannerLoadingJourney {
+  position: relative;
+  width: min(520px, 100%);
+  height: 292px;
+  margin-bottom: 22px;
+}
+.plannerLoadingThoughts {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: min(470px, 94%);
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 9px 16px rgba(42, 82, 75, .08));
+  transform: translateX(-50%);
+  animation: plannerLoadingThoughts 4.8s ease-in-out infinite;
+}
+.plannerLoadingRoute {
+  position: absolute;
+  top: 145px;
+  left: 0;
+  width: 100%;
+  height: 120px;
+  overflow: visible;
+  fill: none;
+  stroke: #b8d3cc;
+  stroke-dasharray: 7 9;
+  stroke-linecap: round;
+  stroke-width: 3;
+  animation: plannerLoadingRoute 1.5s linear infinite;
+}
+.plannerLoadingStop {
+  position: absolute;
+  top: 137px;
+  display: grid;
+  width: 126px;
+  justify-items: center;
+  gap: 8px;
+}
+.plannerLoadingStop--search { left: 0; animation: plannerLoadingStop 3.6s ease-in-out infinite; }
+.plannerLoadingStop--plan { top: 181px; left: 50%; animation: plannerLoadingStop 3.6s .6s ease-in-out infinite; transform: translateX(-50%); }
+.plannerLoadingStop--ready { right: 0; animation: plannerLoadingStop 3.6s 1.2s ease-in-out infinite; }
+.plannerLoadingMascot {
+  display: grid;
+  width: 104px;
+  height: 104px;
+  place-items: center;
+  border: 1px solid rgba(54, 95, 90, .1);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #fff 30%, #edf7f3);
+  box-shadow: 0 15px 34px rgba(42, 82, 75, .13), inset 0 0 0 7px rgba(255, 255, 255, .72);
+}
+.plannerLoadingMascot .penguinMascot { width: 88px; height: 88px; }
+.plannerLoadingStop--plan .plannerLoadingMascot {
+  width: 112px;
+  height: 112px;
+  background: linear-gradient(145deg, #fff7e8 15%, #edf7f3 88%);
+}
+.plannerLoadingStop--plan .penguinMascot { width: 98px; height: 98px; }
+.plannerLoadingStop small {
+  border: 1px solid rgba(54, 95, 90, .1);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(255, 255, 255, .92);
+  color: #527069;
+  box-shadow: 0 5px 14px rgba(42, 82, 75, .07);
+  font-size: .58rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.plannerLoadingSpark {
+  position: absolute;
+  color: #e5a94d;
+  font-size: 1rem;
+  animation: plannerLoadingSpark 1.8s ease-in-out infinite;
+}
+.plannerLoadingSpark--one { top: 18px; left: 30%; }
+.plannerLoadingSpark--two { right: 28%; bottom: 30px; animation-delay: .7s; }
+.plannerBackgroundCopy h2 { margin: 0; color: #16221f; font-size: clamp(1.05rem, 1.8vw, 1.35rem); line-height: 1.2; letter-spacing: -.025em; }
+.plannerBackgroundCopy p { max-width: 390px; margin: 9px auto 0; color: #74817d; font-size: .68rem; line-height: 1.55; }
+.plannerLoadingDots { display: inline-flex; width: 1.15em; justify-content: flex-start; }
+.plannerLoadingDots i { opacity: .18; font-style: normal; animation: plannerLoadingDot 1.4s ease-in-out infinite; }
+.plannerLoadingDots i:nth-child(2) { animation-delay: .18s; }
+.plannerLoadingDots i:nth-child(3) { animation-delay: .36s; }
+@keyframes plannerLoadingDot { 0%, 65%, 100% { opacity: .18; } 30% { opacity: 1; } }
+@keyframes plannerLoadingRoute { to { stroke-dashoffset: -32; } }
+@keyframes plannerLoadingStop {
+  0%, 100% { filter: saturate(.84); }
+  18% { filter: saturate(1.12); }
+  24% { transform: translateY(-7px) rotate(-1deg); }
+  34% { transform: translateY(0); }
+}
+@keyframes plannerLoadingSpark {
+  0%, 100% { opacity: .25; transform: scale(.7) rotate(0); }
+  50% { opacity: 1; transform: scale(1.2) rotate(45deg); }
+}
+@keyframes plannerLoadingThoughts {
+  0%, 100% { opacity: .86; transform: translateX(-50%) translateY(2px); }
+  50% { opacity: 1; transform: translateX(-50%) translateY(-3px); }
+}
+.plannerLoadingStop--plan { transform: translateX(-50%); }
+@keyframes plannerLoadingStopCenter {
+  0%, 100% { filter: saturate(.84); transform: translateX(-50%); }
+  18% { filter: saturate(1.12); }
+  24% { transform: translateX(-50%) translateY(-7px) rotate(1deg); }
+  34% { transform: translateX(-50%) translateY(0); }
+}
+.plannerLoadingStop--plan { animation-name: plannerLoadingStopCenter; }
+.plannerCancelJob { position: absolute; top: 18px; right: 18px; display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 50%; padding: 0; background: transparent; color: #89938f; }
+.plannerCancelJob svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.plannerCancelJob:hover,
+.plannerCancelJob:focus-visible { background: #f4f6f5; color: #263a35; outline: none; }
+
+.plannerLayout.is-planning .chatComposer { padding-top: 7px; }
+.plannerLayout.is-planning .composerHint::before { content: "Hỏi thêm · "; color: #315f58; font-weight: 850; }
+
+@media (max-width: 1100px) and (min-width: 901px) {
+  .plannerLayout.is-new-chat { grid-template-columns: minmax(340px, 46%) minmax(0, 54%); }
+  .plannerIntakeNav button { min-width: 66px; padding-inline: 9px; }
+  .plannerDiscoveryCard { min-height: 210px; }
+}
+
+@media (max-width: 1500px) and (min-width: 901px) {
+  .topbar.is-planner .accountCopy { display: none; }
+  .topbar.is-planner .accountLink.signedIn { padding-right: 4px; }
+  .topbar.is-planner .backgroundJobsDock { width: min(360px, calc(100vw - 48px)); }
+}
+
+@media (max-width: 1250px) and (min-width: 901px) {
+  .topbar.is-planner .topbarInner {
+    grid-template-columns: 1fr auto 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .plannerLayout.is-new-chat {
+    display: grid;
+    height: auto;
+    min-height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(560px, calc(100dvh - 128px)) auto;
+    overflow: visible;
+  }
+
+  .plannerEntryTopbar { position: sticky; top: var(--mobile-shell-top, 62px); padding: 7px 10px; }
+  .plannerNewChatMenu span { display: none; }
+  .plannerNewChatMenu strong { grid-row: auto; }
+  .plannerIntakeNav button { min-width: 66px; padding: 7px 9px; }
+  .plannerTopUrlButton { width: 42px; min-height: 42px; justify-content: center; padding: 0; font-size: 0; }
+  .plannerLayout.is-new-chat .plannerChat,
+  .plannerLayout.is-new-chat .plannerChat[style] { height: 100%; min-height: 560px; border-right: 0; border-bottom: 1px solid #e8eae9; }
+  .plannerLayout.is-new-chat .chatMessages { padding: 28px 18px 18px; }
+  .plannerLayout.is-new-chat .chatComposer { padding-inline: 12px; }
+  .plannerDiscovery { height: auto; max-height: none; padding: 24px 14px 100px; }
+  .plannerDiscoveryGrid { gap: 10px; }
+  .plannerDiscoveryCard,
+  .plannerDiscoveryCard.featured { min-height: 230px; border-radius: 16px; }
+  .plannerBackgroundStage { padding-inline: 18px; }
+}
+
+@media (max-width: 540px) {
+  .plannerIntakeNav { border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none; }
+  .plannerIntakeNav button { min-width: 61px; border-radius: 10px; padding: 6px 8px; }
+  .plannerIntakeNav button + button::before { display: none; }
+  .plannerDiscoveryGrid { grid-template-columns: minmax(0, 1fr); }
+  .plannerDiscoveryCard.featured { grid-column: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plannerLoadingDots i,
+  .plannerDiscoveryNoticeDot { animation: none; opacity: 1; }
+  .plannerDiscoveryCard img { transition: none; }
+}
+
+@media (max-width: 780px) {
+  .plannerPage {
+    min-height: calc(100vh - 128px);
+    min-height: calc(100dvh - 128px);
+    padding-block: 0;
+  }
+
+  .plannerLayout {
+    gap: 0;
+  }
+
+  .tripProjectSidebar {
+    width: min(280px, calc(100% - 16px));
+    min-height: 100%;
+    padding: 12px 10px;
+  }
+
+  .plannerChat {
+    height: calc(100dvh - 160px);
+    min-height: 0;
+  }
+
+  .itinerary {
+    min-height: 620px;
+  }
+
+  .emptyPlan {
+    min-height: 536px;
+  }
+
+  .plannerMap {
+    height: 500px;
+    min-height: 500px;
+  }
+}
+
+/* Final cascade for the two-column Planner entry; kept after legacy Planner
+   responsive rules so the entry state cannot fall back to the old centered card. */
+@media (min-width: 901px) {
+  .plannerLayout.is-new-chat {
+    display: grid;
+    width: 100%;
+    height: calc(100dvh - 64px);
+    min-height: calc(100dvh - 64px);
+    grid-template-columns: minmax(360px, 44%) minmax(0, 56%);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: none;
+    place-items: stretch;
+    overflow: hidden;
+    padding: 0;
+    background: #fff;
+  }
+
+  .plannerLayout.is-new-chat .plannerEntryTopbar--mobile { display: none; }
+  .plannerLayout.is-new-chat .plannerChat { grid-column: 1; grid-row: 1; }
+  .plannerLayout.is-new-chat .plannerDiscovery { grid-column: 2; grid-row: 1; }
+
+  .plannerLayout.is-new-chat .plannerChat,
+  .plannerLayout.is-new-chat .plannerChat[style] {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 1100px) and (min-width: 901px) {
+  .plannerLayout.is-new-chat { grid-template-columns: minmax(340px, 46%) minmax(0, 54%); }
+}
+
+@media (max-width: 900px) {
+  .plannerLayout.is-new-chat {
+    display: grid;
+    width: 100%;
+    height: auto;
+    min-height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px));
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(560px, calc(100dvh - 128px)) auto;
+    grid-template-areas: none;
+    place-items: stretch;
+    overflow: visible;
+    padding: 0;
+    background: #fff;
+  }
+
+  .plannerLayout.is-new-chat .plannerChat,
+  .plannerLayout.is-new-chat .plannerChat[style] {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: 100%;
+    min-height: 560px;
+    border: 0;
+    border-bottom: 1px solid #e8eae9;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .plannerLayout.is-new-chat .plannerEntryTopbar { grid-column: 1; grid-row: 1; }
+  .plannerLayout.is-new-chat .plannerChat { grid-column: 1; grid-row: 2; }
+  .plannerLayout.is-new-chat .plannerDiscovery { grid-column: 1; grid-row: 3; }
+}
+
+/* Initial planning state: keep the same chat-left and discovery-right entry
+   layout while the itinerary is prepared in the background. */
+/* Canonical processing state — strictly preserves layout, position, and dimensions */
+.plannerLayout:not(.is-new-chat) > .plannerChat[style*="--floating-chat-x"] {
+  position: fixed !important;
+  left: var(--floating-chat-x) !important;
+  top: var(--floating-chat-y) !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: var(--floating-chat-width) !important;
+  height: var(--floating-chat-height) !important;
+}
+
+.plannerChat.is-processing {
+  opacity: 0.96;
+  transition: opacity 0.2s ease;
+}
+
+.plannerChat.is-processing .chatComposer input,
+.plannerChat.is-processing .chatComposer textarea,
+.plannerChat.is-processing .plannerEntryComposer input,
+.plannerChat.is-processing .plannerEntryComposer textarea {
+  cursor: wait;
+}
+
+@media (max-width: 900px) {
+  .plannerPlanningCanvas {
+    padding: 24px 16px;
+  }
+
+  .plannerLoadingJourney { width: min(440px, 100%); height: 260px; }
+  .plannerLoadingThoughts { width: min(410px, 96%); }
+  .plannerLoadingStop { width: 104px; }
+  .plannerLoadingMascot { width: 88px; height: 88px; }
+  .plannerLoadingMascot .penguinMascot { width: 76px; height: 76px; }
+  .plannerLoadingRoute { top: 128px; }
+  .plannerLoadingStop { top: 120px; }
+  .plannerLoadingStop--plan { top: 158px; }
+  .plannerLoadingStop--plan .plannerLoadingMascot { width: 96px; height: 96px; }
+  .plannerLoadingStop--plan .penguinMascot { width: 84px; height: 84px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plannerLoadingRoute,
+  .plannerLoadingSpark,
+  .plannerLoadingStop,
+  .plannerLoadingThoughts,
+  .plannerLoadingDots i { animation: none; }
+}
+
+/* Compact source entry keeps URL import visible without competing with chat. */
+.plannerLayout.is-new-chat .urlImportDock {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 5px;
+  margin: 0 clamp(20px, 4vw, 52px);
+  padding: 0;
+}
+
+/* URLs are represented as compact attachments inside the shared composer. */
+.plannerEntryComposer {
+  position: relative;
+  z-index: 50;
+}
+.plannerChat {
+  overflow: visible;
+}
+.plannerEntryComposer .urlImportDock { display: none; }
+.plannerEntryComposer .composerBox { overflow: visible; }
+
+.urlChipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+  overflow: visible;
+}
+
+.urlChip {
+  position: relative;
+  display: inline-flex;
+  max-width: min(240px, 100%);
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #cfe0da;
+  border-radius: 999px;
+  padding: 4px 5px 4px 9px;
+  background: #f2f8f5;
+  color: #315f58;
+  font-size: .62rem;
+  font-weight: 800;
+}
+
+.urlChipIcon {
+  display: grid;
+  width: 21px;
+  height: 21px;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  color: #315f58;
+}
+.urlChipIcon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.urlChipIcon--youtube { color: #e53935; }
+.urlChipIcon--instagram { color: #c13584; }
+.urlChipIcon .sourceProviderIconTikTok path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.15;
+}
+.urlChipIcon .sourceProviderIconTikTokCyan { stroke: #25f4ee; }
+.urlChipIcon .sourceProviderIconTikTokRed { stroke: #fe2c55; }
+.urlChipIcon .sourceProviderIconTikTokBlack { stroke: #111; }
+.urlChipTooltip {
+  position: absolute;
+  z-index: 9999;
+  top: auto;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: block;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 48px));
+  border: 1px solid #d6e2de;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: #173c35;
+  color: #fff;
+  font-size: .62rem;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity .15s ease, transform .15s ease;
+}
+.urlChipTooltip::before {
+  position: absolute;
+  top: auto;
+  bottom: -5px;
+  left: 12px;
+  width: 8px;
+  height: 8px;
+  border-right: 1px solid #d6e2de;
+  border-bottom: 1px solid #d6e2de;
+  background: #173c35;
+  content: "";
+  transform: rotate(45deg);
+}
+.urlChip:hover .urlChipTooltip,
+.urlChip:focus-within .urlChipTooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+.urlChipTooltip--portal {
+  position: fixed;
+  top: auto;
+  bottom: auto;
+  z-index: 2147483647;
+  opacity: 1;
+  pointer-events: none;
+  transform: translateY(-100%);
+}
+.urlChipTooltip--portal::before { display: none; }
+.urlChipRemove {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  color: #66817b;
+  font-size: 1rem;
+  line-height: 1;
+}
+.urlChipRemove:hover:not(:disabled),
+.urlChipRemove:focus-visible { background: #dcece6; color: #173c35; }
+.urlChipRemove:disabled { cursor: wait; opacity: .5; }
+
+.urlImportControlIcon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: #66817b;
+}
+
+.urlImportControlIcon svg,
+.urlImportControl button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.urlImportControl {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid #cfdcd8;
+  border-radius: 13px;
+  padding: 3px;
+  background: #fff;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.urlImportControl:focus-within {
+  border-color: #668d84;
+  box-shadow: 0 0 0 3px rgba(49, 95, 88, .09);
+}
+
+.urlImportControl.has-error {
+  border-color: #d66a6d;
+  box-shadow: 0 0 0 3px rgba(214, 106, 109, .08);
+}
+
+.urlImportControl textarea {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  padding: 8px 4px;
+  background: transparent;
+  color: #1c2926;
+  font-size: .68rem;
+  line-height: 1.45;
+  resize: none;
+}
+
+.urlImportControl textarea::placeholder { color: #9aa6a2; }
+
+.urlImportControl button {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  border: 0;
+  border-radius: 10px;
+  padding: 0;
+  background: #244d45;
+  color: #fff;
+  justify-content: center;
+}
+
+.urlImportControl button:hover:not(:disabled),
+.urlImportControl button:focus-visible { background: #173c35; }
+.urlImportControl button:disabled { cursor: not-allowed; opacity: .45; }
+.urlImportError {
+  padding-inline: 4px;
+  color: #b2484d;
+  font-size: .54rem;
+  line-height: 1.35;
+}
+
+.plannerLayout.is-new-chat .chatComposer { padding-top: 10px; }
+
+@media (max-width: 540px) {
+  .plannerLayout.is-new-chat .urlImportDock { margin-inline: 12px; }
+}
+
+/* Planner intake — focused one-question flow. */
+.plannerEntryTopbar {
+  position: relative;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, .94);
+}
+
+.plannerIntakeNav {
+  position: relative;
+  z-index: 2;
+  width: max-content;
+  max-width: 100%;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid #e2e4e3;
+  border-radius: 999px;
+  padding: 0;
+  background: #fff;
+  box-shadow: none;
+}
+
+.plannerIntakePeekaboo > small {
+  display: block;
+  min-width: 0;
+}
+
+.plannerIntakeNav button {
+  display: block;
+  min-width: auto;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 0;
+  padding: 8px 14px;
+  color: #818483;
+  text-align: center;
+  transition: background .18s ease, color .18s ease;
+}
+
+.plannerIntakeNav button + button::before {
+  display: block;
+  top: 7px;
+  bottom: 7px;
+  background: #e5e7e6;
+}
+
+.plannerIntakeNav button[aria-current="step"]::before,
+.plannerIntakeNav button[aria-current="step"] + button::before {
+  display: block;
+}
+
+.plannerIntakeNav button:hover:not(:disabled),
+.plannerIntakeNav button:focus-visible {
+  background: #f3f6f5;
+  color: #244c46;
+}
+
+.plannerIntakeNav button[aria-current="step"] {
+  background: #eef4f2;
+  color: #173e38;
+  box-shadow: none;
+}
+
+.plannerIntakeNav button.is-filled {
+  background: #e8f4f0;
+  color: #1f5b50;
+  box-shadow: inset 0 0 0 1px rgba(54, 95, 90, .08);
+}
+
+.plannerIntakeNav button.is-filled .plannerIntakeCopy {
+  font-weight: 400;
+}
+
+.plannerIntakeCopy {
+  font-size: .78rem;
+  font-weight: 400;
+  letter-spacing: -.01em;
+  white-space: nowrap;
+}
+
+.guidedIntakeOverlay {
+  position: fixed;
+  z-index: 2500;
+  inset: 64px 0 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: rgba(20, 38, 34, .35);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: guidedOverlayIn .18s ease-out;
+}
+
+.guidedIntakeDialog {
+  position: relative;
+  display: grid;
+  width: min(760px, 100%);
+  min-height: 430px;
+  grid-template-columns: 238px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .8);
+  border-radius: 28px;
+  background: #fff;
+  box-shadow: 0 30px 90px rgba(17, 39, 34, .25);
+  animation: guidedDialogIn .24s cubic-bezier(.2, .8, .2, 1);
+}
+
+.guidedIntakeMascot {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 43%, rgba(255,255,255,.92) 0 4.5rem, transparent 4.6rem),
+    linear-gradient(155deg, #dcefe9 0%, #b8dcd2 100%);
+}
+
+.guidedIntakeMascot::before,
+.guidedIntakeMascot::after {
+  position: absolute;
+  width: 170px;
+  height: 170px;
+  border: 1px solid rgba(49, 95, 88, .13);
+  border-radius: 50%;
+  content: "";
+}
+
+.guidedIntakeMascot::before { top: -75px; left: -80px; }
+.guidedIntakeMascot::after { right: -95px; bottom: -60px; width: 210px; height: 210px; }
+.guidedIntakeMascot img { position: relative; z-index: 2; width: 142px; height: 142px; object-fit: contain; filter: drop-shadow(0 15px 15px rgba(33, 73, 65, .15)); }
+
+.guidedIntakeSpark {
+  position: absolute;
+  z-index: 3;
+  color: #315f58;
+  font-weight: 900;
+}
+
+.guidedIntakeSparkOne { top: 27%; right: 20%; font-size: 1.25rem; }
+.guidedIntakeSparkTwo { bottom: 28%; left: 18%; font-size: 2rem; }
+
+.guidedIntakeDialogBody {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  padding: 46px 44px 38px;
+}
+
+.guidedIntakeClose {
+  position: absolute;
+  z-index: 4;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #f2f5f3;
+  color: #54706a;
+}
+
+.guidedIntakeClose:hover,
+.guidedIntakeClose:focus-visible { background: #e7efec; color: #244c46; }
+.guidedIntakeClose svg { width: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
+
+.guidedIntakeDialog h2 {
+  max-width: 440px;
+  margin: 0;
+  color: #172b27;
+  font-size: clamp(1.45rem, 3vw, 2rem);
+  line-height: 1.14;
+  letter-spacing: -.045em;
+}
+
+.guidedIntakeDialogBody > p {
+  margin: 10px 0 22px;
+  color: #788783;
+  font-size: .69rem;
+  line-height: 1.5;
+}
+
+.guidedIntakeDialog form { display: grid; gap: 13px; }
+.guidedIntakeAnswer {
+  position: relative;
+}
+
+.guidedIntakeAnswer input {
+  width: 100%;
+  min-height: 54px;
+  border: 1px solid #cedbd7;
+  border-radius: 14px;
+  padding: 0 122px 0 16px;
+  outline: 0;
+  background: #fbfdfc;
+  color: #1c312d;
+  font: inherit;
+  font-size: .76rem;
+  box-shadow: none;
+}
+
+.guidedIntakeAnswer input:focus {
+  border-color: #5f8b81;
+  box-shadow: 0 0 0 4px rgba(49, 95, 88, .1);
+}
+
+.guidedIntakeAnswer .guidedIntakeUpdate {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+}
+
+.guidedIntakeActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.guidedIntakeUpdate {
+  display: inline-flex;
+  min-width: 104px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 18px;
+  background: #263c37;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: .68rem;
+  font-weight: 800;
+  transition: background .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.guidedIntakeUpdate:hover:not(:disabled),
+.guidedIntakeUpdate:focus-visible {
+  background: #315f58;
+  box-shadow: 0 6px 16px rgba(38, 60, 55, .18);
+  transform: translateY(-1px);
+}
+
+.guidedIntakeUpdate:focus-visible {
+  outline: 3px solid rgba(49, 95, 88, .2);
+  outline-offset: 3px;
+}
+
+.guidedIntakeUpdate:disabled {
+  cursor: default;
+  opacity: .42;
+}
+
+.guidedIntakeDialog.isDestination {
+  width: min(650px, 100%);
+  min-height: 270px;
+  grid-template-columns: 190px minmax(0, 1fr);
+  border-color: #e6e9e8;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(17, 39, 34, .18);
+}
+
+.guidedIntakeDialog.isDestination .guidedIntakeMascot {
+  overflow: visible;
+  background: #fff;
+}
+
+.guidedIntakeDialog.isDestination .guidedIntakeMascot::before,
+.guidedIntakeDialog.isDestination .guidedIntakeMascot::after { display: none; }
+
+.guidedIntakeDialog.isDestination .guidedIntakeMascot img {
+  width: 150px;
+  height: 150px;
+  filter: drop-shadow(0 12px 12px rgba(33, 73, 65, .12));
+}
+
+.guidedIntakeDialog.isDestination .guidedIntakeDialogBody {
+  padding: 48px 48px 42px 10px;
+}
+
+.guidedIntakeDialog.isDestination h2 {
+  margin-bottom: 18px;
+  color: #202725;
+  font-size: clamp(1.55rem, 3vw, 1.9rem);
+}
+
+.guidedIntakeDialog.isDestination form { gap: 0; }
+.guidedIntakeDialog.isDestination .guidedIntakeAnswer input {
+  min-height: 56px;
+  padding: 0 122px 0 18px;
+  border-color: #d8dddb;
+  border-radius: 28px;
+  background: #fff;
+  font-size: .82rem;
+}
+
+.guidedIntakeDialog.isDates,
+.guidedIntakeDialog.isTravelers {
+  width: min(780px, 100%);
+  min-height: 390px;
+  grid-template-columns: 190px minmax(0, 1fr);
+}
+
+.guidedIntakeDialog.isDates .guidedIntakeDialogBody,
+.guidedIntakeDialog.isTravelers .guidedIntakeDialogBody {
+  padding: 44px 42px 34px 22px;
+}
+
+.guidedDatePicker,
+.guidedTravelerPicker {
+  margin-top: 20px;
+}
+
+.guidedDateFields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+}
+
+.guidedDateFields label {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.guidedDateFields label > span {
+  color: #667773;
+  font-size: .66rem;
+  font-weight: 780;
+}
+
+.guidedDateFields input {
+  width: 100%;
+  min-width: 0;
+  height: 54px;
+  border: 1px solid #cedbd7;
+  border-radius: 14px;
+  padding: 0 12px;
+  outline: 0;
+  background: #fbfdfc;
+  color: #1c312d;
+  color-scheme: light;
+  font: inherit;
+  font-size: .72rem;
+}
+
+.guidedDateFields input:focus {
+  border-color: #5f8b81;
+  box-shadow: 0 0 0 4px rgba(49, 95, 88, .1);
+}
+
+.guidedDateArrow {
+  padding-bottom: 17px;
+  color: #81908c;
+  font-size: .65rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.guidedTravelerRows {
+  display: grid;
+}
+
+.guidedTravelerRow {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid #e5e9e7;
+}
+
+.guidedTravelerRow:first-child { border-top: 1px solid #e5e9e7; }
+.guidedTravelerRow > span { display: grid; gap: 3px; }
+.guidedTravelerRow strong { color: #202725; font-size: .78rem; }
+.guidedTravelerRow small { color: #858e8b; font-size: .63rem; }
+
+.guidedCounter {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 38px 34px 38px;
+  align-items: center;
+  gap: 6px;
+}
+
+.guidedCounter button {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid #d8dddb;
+  border-radius: 50%;
+  background: #fff;
+  color: #1f2927;
+}
+
+.guidedCounter button:hover:not(:disabled),
+.guidedCounter button:focus-visible {
+  border-color: #6f978e;
+  background: #f2f7f5;
+}
+
+.guidedCounter button:disabled { color: #b6bdbb; cursor: default; opacity: .55; }
+.guidedCounter button svg { width: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
+.guidedCounter output { color: #17211f; font-size: .9rem; text-align: center; }
+
+.guidedIntakeUrlHandoff {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: #315f58;
+  font-size: .61rem;
+  font-weight: 820;
+}
+
+.guidedIntakeUrlHandoff svg { width: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
+.guidedIntakeUrlHandoff:hover { color: #173e38; text-decoration: underline; text-underline-offset: 3px; }
+
+@keyframes guidedOverlayIn { from { opacity: 0; } }
+@keyframes guidedDialogIn { from { opacity: 0; transform: translateY(12px) scale(.985); } }
+
+@media (max-width: 640px) {
+  .plannerEntryTopbar { padding: 8px 10px; }
+  .plannerIntakeNav { border-radius: 999px; }
+  .plannerIntakeNav button { min-width: auto; padding: 7px 10px; }
+  .guidedIntakeOverlay { inset: var(--mobile-shell-top, 62px) 0 var(--mobile-shell-bottom, 66px); padding: 12px; align-items: end; }
+  .guidedIntakeDialog { width: 100%; min-height: 0; max-height: 88dvh; grid-template-columns: 1fr; grid-template-rows: 116px auto; overflow-y: auto; border-radius: 24px; }
+  .guidedIntakeMascot img { width: 104px; height: 104px; }
+  .guidedIntakeMascot::before { top: -115px; }
+  .guidedIntakeMascot::after { bottom: -150px; }
+  .guidedIntakeDialogBody { padding: 25px 22px 22px; }
+  .guidedIntakeDialog h2 { font-size: 1.45rem; }
+  .guidedIntakeDialogBody > p { margin-bottom: 17px; }
+  .guidedIntakeDialog.isDestination {
+    min-height: 230px;
+    grid-template-columns: 108px minmax(0, 1fr);
+    grid-template-rows: 1fr;
+    overflow: hidden;
+    border-radius: 24px;
+  }
+  .guidedIntakeDialog.isDestination .guidedIntakeMascot img { width: 112px; height: 112px; }
+  .guidedIntakeDialog.isDestination .guidedIntakeDialogBody { padding: 52px 24px 38px 0; }
+  .guidedIntakeDialog.isDestination h2 { margin-bottom: 14px; font-size: 1.35rem; }
+  .guidedIntakeDialog.isDates,
+  .guidedIntakeDialog.isTravelers {
+    grid-template-columns: 1fr;
+    grid-template-rows: 82px auto;
+    max-height: calc(100dvh - var(--mobile-shell-top, 62px) - var(--mobile-shell-bottom, 66px) - 24px);
+    overflow-y: auto;
+  }
+  .guidedIntakeDialog.isDates .guidedIntakeMascot,
+  .guidedIntakeDialog.isTravelers .guidedIntakeMascot { display: none; }
+  .guidedIntakeDialog.isDates .guidedIntakeDialogBody,
+  .guidedIntakeDialog.isTravelers .guidedIntakeDialogBody { padding: 28px 22px 22px; }
+  .guidedDatePicker,
+  .guidedTravelerPicker { margin-top: 16px; }
+}
+
+@media (max-width: 390px) {
+  .guidedIntakeDialog.isDestination {
+    min-height: 290px;
+    grid-template-columns: 1fr;
+    grid-template-rows: 112px auto;
+  }
+  .guidedIntakeDialog.isDestination .guidedIntakeDialogBody { padding: 0 22px 28px; }
+  .guidedIntakeDialog.isDestination h2 { text-align: center; }
+  .guidedIntakeDialog.isDates,
+  .guidedIntakeDialog.isTravelers {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+  }
+  .guidedIntakeDialog.isDates .guidedIntakeDialogBody,
+  .guidedIntakeDialog.isTravelers .guidedIntakeDialogBody { padding: 26px 18px 20px; }
+  .guidedIntakeDialog.isDates h2,
+  .guidedIntakeDialog.isTravelers h2 { padding-right: 34px; text-align: left; }
+  .guidedDateFields { grid-template-columns: 1fr; }
+  .guidedDateArrow { padding: 0; transform: rotate(90deg); }
+  .guidedTravelerRow { min-height: 64px; }
+  .guidedCounter { grid-template-columns: 36px 28px 36px; gap: 4px; }
+  .guidedCounter button { width: 36px; height: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guidedIntakeOverlay,
+  .guidedIntakeDialog { animation: none; }
+}
+
+@media (min-width: 1241px) {
+  .plannerLayout {
+    grid-template-areas: "assistant map explorer";
+  }
+
+  .plannerChat {
+    grid-area: assistant;
+  }
+
+  .plannerMap {
+    grid-area: map;
+  }
+
+  .itinerary {
+    grid-area: explorer;
+  }
+
+  .plannerLayout .panel + .panel {
+    border-left: 0;
+  }
+
+  .plannerPage {
+    height: calc(100vh - 64px);
+    height: calc(100dvh - 64px);
+    min-height: 0;
+    overflow: hidden;
+    padding-block: 0;
+  }
+
+  .plannerLayout,
+  .tripProjectSidebar,
+  .plannerChat,
+  .itinerary,
+  .plannerMap {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .exploreResult,
+  .emptyPlan {
+    min-height: 0;
+  }
+
+  .exploreResult {
+    max-height: none;
+    height: auto;
+    padding-right: 12px;
+    background: var(--planner-surface-background);
+  }
+
+  .emptyPlan {
+    height: auto;
+  }
+}
+
+@media (max-width: 500px) {
+  .plannerChat .panelHeading {
+    padding-inline: 16px;
+  }
+
+  .placeProviderMetricGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .plannerChat .chatMessages,
+  .plannerChat .promptSuggestions {
+    padding-inline: 16px;
+  }
+
+  .plannerChat .chatComposer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .emptyPlan {
+    padding-inline: 18px;
+  }
+
+  .itineraryHeading {
+    min-height: 76px;
+    padding-inline: 16px;
+  }
+
+  .planHeaderIcon,
+  .planHeaderIcon img {
+    width: 50px;
+    height: 50px;
+  }
+
+  .explorerMascotCrew {
+    width: min(350px, 100%);
+  }
+}
+
+
+/* Lovable Explore port */
+.marketExplorePage {
+  min-height: 100%;
+  background: #ffffff;
+}
+
+.marketExploreHero {
+  margin-top: 40px;
+  padding-block: 0;
+}
+
+.marketExploreHero > div {
+  overflow: hidden;
+  border-radius: 28px;
+  padding: 50px 40px 48px;
+  background: linear-gradient(135deg, #365f5a, #365f5a);
+  color: white;
+}

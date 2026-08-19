@@ -1,0 +1,4737 @@
+{
+  "generatedAt": "2026-08-17T15:43:38.839867+00:00",
+  "source": "deterministic fixture pool; places + food + entertainment merged before Beam Search",
+  "liveData": false,
+  "day": 1,
+  "candidateCount": 15,
+  "beamWidth": 128,
+  "maxStopsPerDay": 10,
+  "distanceQ3Meters": null,
+  "reviewQ2": 100.0,
+  "ranking": "Beam day_sort_key descending; worst5 are the reverse of the lowest-ranked kept terminals",
+  "branchCountKept": 128,
+  "best5": [
+    {
+      "rank": 1,
+      "beamScore": 667.5500000000001,
+      "costPerPerson": 0,
+      "selectedIds": [
+        "travelplace_4",
+        "travelplace_5",
+        "drink_food",
+        "fill_restaurant_1",
+        "lunch_restaurant",
+        "travelplace_6",
+        "travelplace_3",
+        "fill_restaurant_2"
+      ],
+      "counts": {
+        "restaurant": 3,
+        "travelplace": 4,
+        "drinkDessert": 1,
+        "entertainment": 0
+      },
+      "nodes": [
+        {
+          "placeId": "fill_restaurant_2",
+          "startMinute": 480,
+          "endMinute": 525,
+          "mealType": "breakfast",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_2",
+            "name": "Fill Restaurant 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_6",
+          "startMinute": 525,
+          "endMinute": 570,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_6",
+            "name": "Travelplace 6",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "lunch_restaurant",
+          "startMinute": 705,
+          "endMinute": 765,
+          "mealType": "lunch",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "lunch_restaurant",
+            "name": "Lunch Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "lunch"
+            ]
+          }
+        },
+        {
+          "placeId": "drink_food",
+          "startMinute": 1065,
+          "endMinute": 1125,
+          "mealType": "dinner",
+          "kind": "drink_dessert",
+          "candidate": {
+            "placeId": "drink_food",
+            "name": "Drink Food",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "drink_dessert",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "fill_restaurant_1",
+          "startMinute": 1125,
+          "endMinute": 1185,
+          "mealType": null,
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_1",
+            "name": "Fill Restaurant 1",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_5",
+          "startMinute": 1185,
+          "endMinute": 1260,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_5",
+            "name": "Travelplace 5",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_4",
+          "startMinute": 1260,
+          "endMinute": 1320,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_4",
+            "name": "Travelplace 4",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_3",
+          "startMinute": 1320,
+          "endMinute": 1365,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_3",
+            "name": "Travelplace 3",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        }
+      ],
+      "legs": [
+        {
+          "from": "fill_restaurant_2",
+          "to": "travelplace_6",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_6",
+          "to": "lunch_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "lunch_restaurant",
+          "to": "drink_food",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "drink_food",
+          "to": "fill_restaurant_1",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "fill_restaurant_1",
+          "to": "travelplace_5",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_5",
+          "to": "travelplace_4",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_4",
+          "to": "travelplace_3",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "beamScore": 667.5500000000001,
+      "costPerPerson": 0,
+      "selectedIds": [
+        "travelplace_4",
+        "travelplace_5",
+        "drink_food",
+        "fill_restaurant_1",
+        "lunch_restaurant",
+        "travelplace_6",
+        "fill_restaurant_2",
+        "travelplace_1"
+      ],
+      "counts": {
+        "restaurant": 3,
+        "travelplace": 4,
+        "drinkDessert": 1,
+        "entertainment": 0
+      },
+      "nodes": [
+        {
+          "placeId": "fill_restaurant_2",
+          "startMinute": 480,
+          "endMinute": 525,
+          "mealType": "breakfast",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_2",
+            "name": "Fill Restaurant 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_6",
+          "startMinute": 525,
+          "endMinute": 570,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_6",
+            "name": "Travelplace 6",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "lunch_restaurant",
+          "startMinute": 705,
+          "endMinute": 765,
+          "mealType": "lunch",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "lunch_restaurant",
+            "name": "Lunch Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "lunch"
+            ]
+          }
+        },
+        {
+          "placeId": "drink_food",
+          "startMinute": 1065,
+          "endMinute": 1125,
+          "mealType": "dinner",
+          "kind": "drink_dessert",
+          "candidate": {
+            "placeId": "drink_food",
+            "name": "Drink Food",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "drink_dessert",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "fill_restaurant_1",
+          "startMinute": 1125,
+          "endMinute": 1185,
+          "mealType": null,
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_1",
+            "name": "Fill Restaurant 1",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_5",
+          "startMinute": 1185,
+          "endMinute": 1260,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_5",
+            "name": "Travelplace 5",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_4",
+          "startMinute": 1260,
+          "endMinute": 1320,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_4",
+            "name": "Travelplace 4",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_1",
+          "startMinute": 1320,
+          "endMinute": 1380,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_1",
+            "name": "Travelplace 1",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        }
+      ],
+      "legs": [
+        {
+          "from": "fill_restaurant_2",
+          "to": "travelplace_6",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_6",
+          "to": "lunch_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "lunch_restaurant",
+          "to": "drink_food",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "drink_food",
+          "to": "fill_restaurant_1",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "fill_restaurant_1",
+          "to": "travelplace_5",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_5",
+          "to": "travelplace_4",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_4",
+          "to": "travelplace_1",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "beamScore": 667.5500000000001,
+      "costPerPerson": 0,
+      "selectedIds": [
+        "travelplace_4",
+        "travelplace_5",
+        "drink_food",
+        "fill_restaurant_1",
+        "lunch_restaurant",
+        "travelplace_6",
+        "travelplace_3",
+        "fill_restaurant_2"
+      ],
+      "counts": {
+        "restaurant": 3,
+        "travelplace": 4,
+        "drinkDessert": 1,
+        "entertainment": 0
+      },
+      "nodes": [
+        {
+          "placeId": "fill_restaurant_2",
+          "startMinute": 480,
+          "endMinute": 525,
+          "mealType": "breakfast",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_2",
+            "name": "Fill Restaurant 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_6",
+          "startMinute": 525,
+          "endMinute": 570,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_6",
+            "name": "Travelplace 6",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "lunch_restaurant",
+          "startMinute": 705,
+          "endMinute": 765,
+          "mealType": "lunch",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "lunch_restaurant",
+            "name": "Lunch Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "lunch"
+            ]
+          }
+        },
+        {
+          "placeId": "drink_food",
+          "startMinute": 1065,
+          "endMinute": 1125,
+          "mealType": "dinner",
+          "kind": "drink_dessert",
+          "candidate": {
+            "placeId": "drink_food",
+            "name": "Drink Food",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "drink_dessert",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "fill_restaurant_1",
+          "startMinute": 1125,
+          "endMinute": 1185,
+          "mealType": null,
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_1",
+            "name": "Fill Restaurant 1",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_5",
+          "startMinute": 1185,
+          "endMinute": 1260,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_5",
+            "name": "Travelplace 5",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_3",
+          "startMinute": 1260,
+          "endMinute": 1305,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_3",
+            "name": "Travelplace 3",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_4",
+          "startMinute": 1305,
+          "endMinute": 1365,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_4",
+            "name": "Travelplace 4",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        }
+      ],
+      "legs": [
+        {
+          "from": "fill_restaurant_2",
+          "to": "travelplace_6",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_6",
+          "to": "lunch_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "lunch_restaurant",
+          "to": "drink_food",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "drink_food",
+          "to": "fill_restaurant_1",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "fill_restaurant_1",
+          "to": "travelplace_5",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_5",
+          "to": "travelplace_3",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_3",
+          "to": "travelplace_4",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        }
+      ]
+    },
+    {
+      "rank": 4,
+      "beamScore": 667.5500000000001,
+      "costPerPerson": 0,
+      "selectedIds": [
+        "travelplace_5",
+        "travelplace_2",
+        "drink_food",
+        "fill_restaurant_1",
+        "lunch_restaurant",
+        "travelplace_6",
+        "travelplace_3",
+        "fill_restaurant_2"
+      ],
+      "counts": {
+        "restaurant": 3,
+        "travelplace": 4,
+        "drinkDessert": 1,
+        "entertainment": 0
+      },
+      "nodes": [
+        {
+          "placeId": "fill_restaurant_2",
+          "startMinute": 480,
+          "endMinute": 525,
+          "mealType": "breakfast",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_2",
+            "name": "Fill Restaurant 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_6",
+          "startMinute": 525,
+          "endMinute": 570,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_6",
+            "name": "Travelplace 6",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "lunch_restaurant",
+          "startMinute": 705,
+          "endMinute": 765,
+          "mealType": "lunch",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "lunch_restaurant",
+            "name": "Lunch Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "lunch"
+            ]
+          }
+        },
+        {
+          "placeId": "drink_food",
+          "startMinute": 1065,
+          "endMinute": 1125,
+          "mealType": "dinner",
+          "kind": "drink_dessert",
+          "candidate": {
+            "placeId": "drink_food",
+            "name": "Drink Food",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "drink_dessert",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "fill_restaurant_1",
+          "startMinute": 1125,
+          "endMinute": 1185,
+          "mealType": null,
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_1",
+            "name": "Fill Restaurant 1",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_5",
+          "startMinute": 1185,
+          "endMinute": 1260,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_5",
+            "name": "Travelplace 5",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_3",
+          "startMinute": 1260,
+          "endMinute": 1305,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_3",
+            "name": "Travelplace 3",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_2",
+          "startMinute": 1305,
+          "endMinute": 1380,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_2",
+            "name": "Travelplace 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        }
+      ],
+      "legs": [
+        {
+          "from": "fill_restaurant_2",
+          "to": "travelplace_6",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_6",
+          "to": "lunch_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "lunch_restaurant",
+          "to": "drink_food",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "drink_food",
+          "to": "fill_restaurant_1",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "fill_restaurant_1",
+          "to": "travelplace_5",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_5",
+          "to": "travelplace_3",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_3",
+          "to": "travelplace_2",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        }
+      ]
+    },
+    {
+      "rank": 5,
+      "beamScore": 667.5500000000001,
+      "costPerPerson": 0,
+      "selectedIds": [
+        "travelplace_5",
+        "drink_food",
+        "fill_restaurant_1",
+        "lunch_restaurant",
+        "travelplace_6",
+        "travelplace_3",
+        "fill_restaurant_2",
+        "travelplace_1"
+      ],
+      "counts": {
+        "restaurant": 3,
+        "travelplace": 4,
+        "drinkDessert": 1,
+        "entertainment": 0
+      },
+      "nodes": [
+        {
+          "placeId": "fill_restaurant_2",
+          "startMinute": 480,
+          "endMinute": 525,
+          "mealType": "breakfast",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_2",
+            "name": "Fill Restaurant 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_6",
+          "startMinute": 525,
+          "endMinute": 570,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_6",
+            "name": "Travelplace 6",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "lunch_restaurant",
+          "startMinute": 705,
+          "endMinute": 765,
+          "mealType": "lunch",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "lunch_restaurant",
+            "name": "Lunch Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "lunch"
+            ]
+          }
+        },
+        {
+          "placeId": "drink_food",
+          "startMinute": 1065,
+          "endMinute": 1125,
+          "mealType": "dinner",
+          "kind": "drink_dessert",
+          "candidate": {
+            "placeId": "drink_food",
+            "name": "Drink Food",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "drink_dessert",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "fill_restaurant_1",
+          "startMinute": 1125,
+          "endMinute": 1185,
+          "mealType": null,
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_1",
+            "name": "Fill Restaurant 1",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_5",
+          "startMinute": 1185,
+          "endMinute": 1260,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_5",
+            "name": "Travelplace 5",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_3",
+          "startMinute": 1260,
+          "endMinute": 1305,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_3",
+            "name": "Travelplace 3",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_1",
+          "startMinute": 1305,
+          "endMinute": 1365,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_1",
+            "name": "Travelplace 1",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        }
+      ],
+      "legs": [
+        {
+          "from": "fill_restaurant_2",
+          "to": "travelplace_6",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_6",
+          "to": "lunch_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "lunch_restaurant",
+          "to": "drink_food",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "drink_food",
+          "to": "fill_restaurant_1",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "fill_restaurant_1",
+          "to": "travelplace_5",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_5",
+          "to": "travelplace_3",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_3",
+          "to": "travelplace_1",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        }
+      ]
+    }
+  ],
+  "worst5": [
+    {
+      "rank": 128,
+      "beamScore": 667.5500000000001,
+      "costPerPerson": 0,
+      "selectedIds": [
+        "breakfast_restaurant",
+        "travelplace_4",
+        "travelplace_2",
+        "drink_food",
+        "lunch_restaurant",
+        "travelplace_6",
+        "travelplace_3",
+        "fill_restaurant_2"
+      ],
+      "counts": {
+        "restaurant": 3,
+        "travelplace": 4,
+        "drinkDessert": 1,
+        "entertainment": 0
+      },
+      "nodes": [
+        {
+          "placeId": "fill_restaurant_2",
+          "startMinute": 480,
+          "endMinute": 525,
+          "mealType": "breakfast",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_2",
+            "name": "Fill Restaurant 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_6",
+          "startMinute": 525,
+          "endMinute": 570,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_6",
+            "name": "Travelplace 6",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "lunch_restaurant",
+          "startMinute": 705,
+          "endMinute": 765,
+          "mealType": "lunch",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "lunch_restaurant",
+            "name": "Lunch Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "lunch"
+            ]
+          }
+        },
+        {
+          "placeId": "drink_food",
+          "startMinute": 1065,
+          "endMinute": 1125,
+          "mealType": "dinner",
+          "kind": "drink_dessert",
+          "candidate": {
+            "placeId": "drink_food",
+            "name": "Drink Food",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "drink_dessert",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "breakfast_restaurant",
+          "startMinute": 1125,
+          "endMinute": 1185,
+          "mealType": null,
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "breakfast_restaurant",
+            "name": "Breakfast Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_2",
+          "startMinute": 1185,
+          "endMinute": 1260,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_2",
+            "name": "Travelplace 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_4",
+          "startMinute": 1260,
+          "endMinute": 1320,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_4",
+            "name": "Travelplace 4",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_3",
+          "startMinute": 1320,
+          "endMinute": 1365,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_3",
+            "name": "Travelplace 3",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        }
+      ],
+      "legs": [
+        {
+          "from": "fill_restaurant_2",
+          "to": "travelplace_6",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_6",
+          "to": "lunch_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "lunch_restaurant",
+          "to": "drink_food",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "drink_food",
+          "to": "breakfast_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "breakfast_restaurant",
+          "to": "travelplace_2",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_2",
+          "to": "travelplace_4",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_4",
+          "to": "travelplace_3",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        }
+      ]
+    },
+    {
+      "rank": 127,
+      "beamScore": 667.5500000000001,
+      "costPerPerson": 0,
+      "selectedIds": [
+        "breakfast_restaurant",
+        "travelplace_5",
+        "travelplace_2",
+        "drink_food",
+        "lunch_restaurant",
+        "travelplace_6",
+        "travelplace_3",
+        "fill_restaurant_2"
+      ],
+      "counts": {
+        "restaurant": 3,
+        "travelplace": 4,
+        "drinkDessert": 1,
+        "entertainment": 0
+      },
+      "nodes": [
+        {
+          "placeId": "fill_restaurant_2",
+          "startMinute": 480,
+          "endMinute": 525,
+          "mealType": "breakfast",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_2",
+            "name": "Fill Restaurant 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_6",
+          "startMinute": 525,
+          "endMinute": 570,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_6",
+            "name": "Travelplace 6",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "lunch_restaurant",
+          "startMinute": 705,
+          "endMinute": 765,
+          "mealType": "lunch",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "lunch_restaurant",
+            "name": "Lunch Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "lunch"
+            ]
+          }
+        },
+        {
+          "placeId": "drink_food",
+          "startMinute": 1065,
+          "endMinute": 1125,
+          "mealType": "dinner",
+          "kind": "drink_dessert",
+          "candidate": {
+            "placeId": "drink_food",
+            "name": "Drink Food",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "drink_dessert",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "breakfast_restaurant",
+          "startMinute": 1125,
+          "endMinute": 1185,
+          "mealType": null,
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "breakfast_restaurant",
+            "name": "Breakfast Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_2",
+          "startMinute": 1185,
+          "endMinute": 1260,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_2",
+            "name": "Travelplace 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_5",
+          "startMinute": 1260,
+          "endMinute": 1335,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_5",
+            "name": "Travelplace 5",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_3",
+          "startMinute": 1335,
+          "endMinute": 1380,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_3",
+            "name": "Travelplace 3",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        }
+      ],
+      "legs": [
+        {
+          "from": "fill_restaurant_2",
+          "to": "travelplace_6",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_6",
+          "to": "lunch_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "lunch_restaurant",
+          "to": "drink_food",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "drink_food",
+          "to": "breakfast_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "breakfast_restaurant",
+          "to": "travelplace_2",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_2",
+          "to": "travelplace_5",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_5",
+          "to": "travelplace_3",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        }
+      ]
+    },
+    {
+      "rank": 126,
+      "beamScore": 667.5500000000001,
+      "costPerPerson": 0,
+      "selectedIds": [
+        "breakfast_restaurant",
+        "travelplace_2",
+        "drink_food",
+        "lunch_restaurant",
+        "travelplace_6",
+        "travelplace_3",
+        "fill_restaurant_2",
+        "travelplace_1"
+      ],
+      "counts": {
+        "restaurant": 3,
+        "travelplace": 4,
+        "drinkDessert": 1,
+        "entertainment": 0
+      },
+      "nodes": [
+        {
+          "placeId": "fill_restaurant_2",
+          "startMinute": 480,
+          "endMinute": 525,
+          "mealType": "breakfast",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_2",
+            "name": "Fill Restaurant 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_6",
+          "startMinute": 525,
+          "endMinute": 570,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_6",
+            "name": "Travelplace 6",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "lunch_restaurant",
+          "startMinute": 705,
+          "endMinute": 765,
+          "mealType": "lunch",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "lunch_restaurant",
+            "name": "Lunch Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "lunch"
+            ]
+          }
+        },
+        {
+          "placeId": "drink_food",
+          "startMinute": 1065,
+          "endMinute": 1125,
+          "mealType": "dinner",
+          "kind": "drink_dessert",
+          "candidate": {
+            "placeId": "drink_food",
+            "name": "Drink Food",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "drink_dessert",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "breakfast_restaurant",
+          "startMinute": 1125,
+          "endMinute": 1185,
+          "mealType": null,
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "breakfast_restaurant",
+            "name": "Breakfast Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_3",
+          "startMinute": 1185,
+          "endMinute": 1230,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_3",
+            "name": "Travelplace 3",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_1",
+          "startMinute": 1230,
+          "endMinute": 1290,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_1",
+            "name": "Travelplace 1",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_2",
+          "startMinute": 1290,
+          "endMinute": 1365,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_2",
+            "name": "Travelplace 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        }
+      ],
+      "legs": [
+        {
+          "from": "fill_restaurant_2",
+          "to": "travelplace_6",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_6",
+          "to": "lunch_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "lunch_restaurant",
+          "to": "drink_food",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "drink_food",
+          "to": "breakfast_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "breakfast_restaurant",
+          "to": "travelplace_3",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_3",
+          "to": "travelplace_1",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_1",
+          "to": "travelplace_2",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        }
+      ]
+    },
+    {
+      "rank": 125,
+      "beamScore": 667.5500000000001,
+      "costPerPerson": 0,
+      "selectedIds": [
+        "breakfast_restaurant",
+        "travelplace_4",
+        "drink_food",
+        "lunch_restaurant",
+        "travelplace_6",
+        "travelplace_3",
+        "fill_restaurant_2",
+        "travelplace_1"
+      ],
+      "counts": {
+        "restaurant": 3,
+        "travelplace": 4,
+        "drinkDessert": 1,
+        "entertainment": 0
+      },
+      "nodes": [
+        {
+          "placeId": "fill_restaurant_2",
+          "startMinute": 480,
+          "endMinute": 525,
+          "mealType": "breakfast",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_2",
+            "name": "Fill Restaurant 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_6",
+          "startMinute": 525,
+          "endMinute": 570,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_6",
+            "name": "Travelplace 6",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "lunch_restaurant",
+          "startMinute": 705,
+          "endMinute": 765,
+          "mealType": "lunch",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "lunch_restaurant",
+            "name": "Lunch Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "lunch"
+            ]
+          }
+        },
+        {
+          "placeId": "drink_food",
+          "startMinute": 1065,
+          "endMinute": 1125,
+          "mealType": "dinner",
+          "kind": "drink_dessert",
+          "candidate": {
+            "placeId": "drink_food",
+            "name": "Drink Food",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "drink_dessert",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "breakfast_restaurant",
+          "startMinute": 1125,
+          "endMinute": 1185,
+          "mealType": null,
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "breakfast_restaurant",
+            "name": "Breakfast Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_3",
+          "startMinute": 1185,
+          "endMinute": 1230,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_3",
+            "name": "Travelplace 3",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_1",
+          "startMinute": 1230,
+          "endMinute": 1290,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_1",
+            "name": "Travelplace 1",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_4",
+          "startMinute": 1290,
+          "endMinute": 1350,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_4",
+            "name": "Travelplace 4",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        }
+      ],
+      "legs": [
+        {
+          "from": "fill_restaurant_2",
+          "to": "travelplace_6",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_6",
+          "to": "lunch_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "lunch_restaurant",
+          "to": "drink_food",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "drink_food",
+          "to": "breakfast_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "breakfast_restaurant",
+          "to": "travelplace_3",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_3",
+          "to": "travelplace_1",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_1",
+          "to": "travelplace_4",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        }
+      ]
+    },
+    {
+      "rank": 124,
+      "beamScore": 667.5500000000001,
+      "costPerPerson": 0,
+      "selectedIds": [
+        "breakfast_restaurant",
+        "travelplace_5",
+        "drink_food",
+        "lunch_restaurant",
+        "travelplace_6",
+        "travelplace_3",
+        "fill_restaurant_2",
+        "travelplace_1"
+      ],
+      "counts": {
+        "restaurant": 3,
+        "travelplace": 4,
+        "drinkDessert": 1,
+        "entertainment": 0
+      },
+      "nodes": [
+        {
+          "placeId": "fill_restaurant_2",
+          "startMinute": 480,
+          "endMinute": 525,
+          "mealType": "breakfast",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "fill_restaurant_2",
+            "name": "Fill Restaurant 2",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_6",
+          "startMinute": 525,
+          "endMinute": 570,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_6",
+            "name": "Travelplace 6",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "lunch_restaurant",
+          "startMinute": 705,
+          "endMinute": 765,
+          "mealType": "lunch",
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "lunch_restaurant",
+            "name": "Lunch Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "lunch"
+            ]
+          }
+        },
+        {
+          "placeId": "drink_food",
+          "startMinute": 1065,
+          "endMinute": 1125,
+          "mealType": "dinner",
+          "kind": "drink_dessert",
+          "candidate": {
+            "placeId": "drink_food",
+            "name": "Drink Food",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "drink_dessert",
+            "supportedMeals": [
+              "breakfast",
+              "lunch",
+              "dinner"
+            ]
+          }
+        },
+        {
+          "placeId": "breakfast_restaurant",
+          "startMinute": 1125,
+          "endMinute": 1185,
+          "mealType": null,
+          "kind": "restaurant",
+          "candidate": {
+            "placeId": "breakfast_restaurant",
+            "name": "Breakfast Restaurant",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_near",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": [],
+            "venueType": "restaurant",
+            "supportedMeals": [
+              "breakfast"
+            ]
+          }
+        },
+        {
+          "placeId": "travelplace_3",
+          "startMinute": 1185,
+          "endMinute": 1230,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_3",
+            "name": "Travelplace 3",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 45,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_1",
+          "startMinute": 1230,
+          "endMinute": 1290,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_1",
+            "name": "Travelplace 1",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 60,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        },
+        {
+          "placeId": "travelplace_5",
+          "startMinute": 1290,
+          "endMinute": 1365,
+          "mealType": null,
+          "kind": "travelplace",
+          "candidate": {
+            "placeId": "travelplace_5",
+            "name": "Travelplace 5",
+            "coordinates": {
+              "latitude": 21.0287,
+              "longitude": 105.8522
+            },
+            "address": "Hanoi",
+            "priority": "special_experience",
+            "notes": null,
+            "tags": [
+              "local_experience",
+              "culture"
+            ],
+            "styles": [],
+            "audience": {
+              "adultOnly": null,
+              "kidSuitable": null
+            },
+            "imageUrls": [],
+            "rating": 4.7,
+            "reviewCount": 100,
+            "durationMinutes": 75,
+            "openingHours": null,
+            "preferredTimeWindows": [],
+            "sourceKind": "generic",
+            "offeredActivityIds": [],
+            "timeSource": "unknown",
+            "price": {
+              "cost": 0.0,
+              "currency": "VND"
+            },
+            "relationships": []
+          }
+        }
+      ],
+      "legs": [
+        {
+          "from": "fill_restaurant_2",
+          "to": "travelplace_6",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_6",
+          "to": "lunch_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "lunch_restaurant",
+          "to": "drink_food",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "drink_food",
+          "to": "breakfast_restaurant",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "breakfast_restaurant",
+          "to": "travelplace_3",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_3",
+          "to": "travelplace_1",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        },
+        {
+          "from": "travelplace_1",
+          "to": "travelplace_5",
+          "rawMinutes": 0,
+          "safeMinutes": 0,
+          "distanceMeters": 0,
+          "transportCostPerPerson": 0,
+          "matrix": {
+            "durationSeconds": 0,
+            "distanceMeters": 0,
+            "reachable": true,
+            "foodToFood": true
+          }
+        }
+      ]
+    }
+  ]
+}

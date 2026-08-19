@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM mcr.microsoft.com/playwright/python:v1.62.0-noble
 
 WORKDIR /app
 
@@ -6,21 +6,18 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip \
-    for attempt in 1 2 3; do \
-        python -m pip install \
-            --disable-pip-version-check \
-            --retries 10 \
-            --timeout 120 \
-            -r requirements.txt && exit 0; \
-        if [ "$attempt" -eq 3 ]; then exit 1; fi; \
-        echo "pip install failed (attempt $attempt/3); retrying..."; \
-    done
+COPY pyproject.toml README.md ./
+COPY src ./src
 
-COPY . .
+ARG PIP_INDEX_URL
 
-RUN sed -i 's/\r$//' /app/scripts/docker-entrypoint.sh \
-    && chmod +x /app/scripts/docker-entrypoint.sh
+RUN python -m pip install --no-cache-dir \
+    --index-url "${PIP_INDEX_URL}" \
+    --retries 10 \
+    --timeout 120 \
+    "."
 
-CMD ["/app/scripts/docker-entrypoint.sh"]
+ENV PYTHONPATH=/app/src
+EXPOSE 8000
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

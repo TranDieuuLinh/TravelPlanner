@@ -1,0 +1,53 @@
+{
+  "inputADM": "Hanoi",
+  "places": [
+    {
+      "name": "Independence Palace",
+      "addressHint": null,
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "input",
+          "evidenceType": "raw_prompt",
+          "sourceUrl": null,
+          "evidence": "Tôi muốn thăm Dinh Độc Lập khi ở Hà Nội",
+          "sourceTimeHint": null,
+          "addressHint": null,
+          "observedAt": null
+        }
+      ]
+    },
+    {
+      "name": "West Lake",
+      "addressHint": null,
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "input",
+          "evidenceType": "raw_prompt",
+          "sourceUrl": null,
+          "evidence": "Tôi cũng muốn đi Hồ Tây",
+          "sourceTimeHint": null,
+          "addressHint": null,
+          "observedAt": null
+        }
+      ]
+    }
+  ],
+  "inputItems": [],
+  "urlNotes": null,
+  "days": 2,
+  "budget": {
+    "level": "medium",
+    "targetAmount": null,
+    "currency": "VND",
+    "source": "raw_prompt"
+  },
+  "people": {
+    "adults": 2,
+    "children": 0,
+    "infants": 0
+  },
+  "shortPreferences": [],
+  "shortAvoids": []
+}

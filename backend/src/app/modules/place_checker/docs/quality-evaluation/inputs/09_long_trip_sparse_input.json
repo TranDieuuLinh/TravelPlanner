@@ -1,0 +1,44 @@
+{
+  "inputADM": "Hanoi",
+  "places": [
+    {
+      "name": "Ho Chi Minh's Mausoleum",
+      "addressHint": null,
+      "confidence": 0.95,
+      "sourcePlaces": [
+        {
+          "origin": "input",
+          "evidenceType": "raw_prompt",
+          "sourceUrl": null,
+          "evidence": "Tôi muốn thăm Lăng Bác",
+          "sourceTimeHint": null,
+          "addressHint": null,
+          "observedAt": null
+        }
+      ]
+    }
+  ],
+  "inputItems": [],
+  "urlNotes": null,
+  "days": 7,
+  "budget": {
+    "level": "low",
+    "targetAmount": null,
+    "currency": "VND",
+    "source": "raw_prompt"
+  },
+  "people": {
+    "adults": 2,
+    "children": 0,
+    "infants": 0
+  },
+  "shortPreferences": [
+    "history",
+    "culture",
+    "outdoor",
+    "local_food"
+  ],
+  "shortAvoids": [
+    "nightlife"
+  ]
+}

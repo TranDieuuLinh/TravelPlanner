@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { login, AdminUser } from "../../lib/api";
+import { login } from "../../lib/shared/auth";
 
 export default function LoginScreen() {
   const [email, setEmail] = useState("");
@@ -17,7 +17,7 @@ export default function LoginScreen() {
     setError("");
     try {
       await login(email, password);
-      router.push("/runs");
+      router.push("/observability");
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Không thể đăng nhập."
@@ -30,7 +30,7 @@ export default function LoginScreen() {
   return (
     <main className="loginPage">
       <section className="loginStory">
-        <div className="brandMark">VSF</div>
+        <div className="brandMark">TravelPlanner</div>
         <p className="eyebrow">Planning control</p>
         <h1>Nhìn xuyên suốt từng quyết định của lịch trình.</h1>
         <p className="loginLead">
@@ -50,7 +50,7 @@ export default function LoginScreen() {
         <form onSubmit={submit} className="loginCard">
           <p className="eyebrow">Khu vực hạn chế</p>
           <h2>Đăng nhập quản trị</h2>
-          <p>Dùng tài khoản VSF có role admin.</p>
+          <p>Dùng tài khoản TravelPlanner có role admin.</p>
           <label>
             Email
             <input
@@ -58,7 +58,7 @@ export default function LoginScreen() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               autoComplete="email"
-              placeholder="admin@vsf.travel"
+              placeholder="admin@travelplanner.local"
               required
             />
           </label>

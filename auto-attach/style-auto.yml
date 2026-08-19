@@ -1,0 +1,608 @@
+# Auto-attach rules for connecting entities to Style nodes through Has_Style.
+# Matching is performed against normalized canonical names and aliases.
+# A match creates a pending candidate; manual review is reserved for ambiguous
+# or exceptional names.
+
+version: "0.1.0"
+relationship: Has_Style
+
+# Global exclusions are evaluated before every Style rule.
+# They prevent generic service/office entities from receiving travel styles.
+global_exclude_keywords:
+  - "cơm văn phòng"
+  - "trung tâm tư vấn"
+  - "trung tâm khởi nghiệp"
+  - "trung tâm hỗ trợ doanh nghiệp"
+  - "trung tâm dịch vụ việc làm"
+  - "trung tâm hành chính"
+  - "trung tâm hành chính công"
+  - "trung tâm nghiên cứu"
+  - "trung tâm đào tạo"
+  - "trung tâm giáo dục"
+  - "trung tâm bảo trợ"
+  - "trung tâm công tác xã hội"
+  - "văn phòng đại diện"
+  - "văn phòng giao dịch"
+  - "phòng giao dịch"
+  - "trụ sở"
+  - "chi nhánh ngân hàng"
+  - "cơ quan hành chính"
+  - "ủy ban nhân dân"
+  - "sở kế hoạch và đầu tư"
+  - "sở lao động"
+  - "phòng tư pháp"
+  - "phòng công chứng"
+  - "tòa án"
+
+styles:
+  # ---------------------------------------------------------------------------
+  # Meal styles
+  # ---------------------------------------------------------------------------
+  - id: style_breakfast
+    name: "Ăn sáng"
+    style_group: meal
+    entity_types: [FoodItem, Restaurant, DrinkDessert]
+    keywords:
+      - phở
+      - bánh mì
+      - xôi
+      - cháo
+      - bún
+      - miến
+      - bánh cuốn
+      - bánh ướt
+      - bánh bao
+      - cơm tấm
+      - hủ tiếu
+      - mì quảng
+      - bún bò
+      - bún riêu
+      - bún chả
+      - bánh canh
+      - trứng
+      - trứng ốp la
+      - trứng chiên
+      - sữa đậu nành
+      - sữa tươi
+      - cà phê sáng
+      - cà phê
+      - trà
+    time_duration: PT45M
+    time_windows: [{start: "06:00", end: "10:00"}]
+    match_overrides:
+      - priority: 100
+        names: ["cà phê sáng", "breakfast cafe"]
+        properties:
+          time_duration: PT60M
+          time_windows:
+            - {start: "06:00", end: "07:00"}
+
+  - id: style_lunch
+    name: "Ăn trưa"
+    style_group: meal
+    entity_types: [FoodItem, Restaurant, DrinkDessert]
+    keywords:
+      - phở
+      - cơm
+      - cơm tấm
+      - cơm rang
+      - cơm chiên
+      - cơm niêu
+      - bún
+      - bún chả
+      - bún bò
+      - bún riêu
+      - bún thịt nướng
+      - mì
+      - mì quảng
+      - hủ tiếu
+      - bánh canh
+      - bánh cuốn
+      - bánh mì
+      - lẩu
+      - buffet
+      - món Việt
+      - món Huế
+      - món miền Tây
+      - món chay
+    time_duration: PT45M
+    time_windows: [{start: "11:00", end: "13:00"}]
+
+  - id: style_dinner
+    name: "Ăn tối"
+    style_group: meal
+    entity_types: [FoodItem, Restaurant, DrinkDessert]
+    keywords:
+      - phở
+      - cơm
+      - cơm tấm
+      - cơm niêu
+      - cơm chiên
+      - bún
+      - bún chả
+      - bún bò
+      - bún đậu
+      - mì
+      - lẩu
+      - nướng
+      - BBQ
+      - buffet
+      - hải sản
+      - steak
+      - pizza
+      - pasta
+      - sushi
+      - sashimi
+      - món Việt
+      - món chay
+    time_duration: PT60M
+    time_windows: [{start: "18:00", end: "20:00"}]
+
+  - id: style_drinking
+    name: "Ăn nhậu"
+    style_group: nightlife
+    entity_types: [FoodItem, DrinkItem, Restaurant, DrinkDessert]
+    keywords:
+      - bia
+      - beer
+      - craft beer
+      - rượu
+      - soju
+      - sake
+      - lẩu
+      - nướng
+      - BBQ
+      - hải sản
+      - đồ nướng
+      - đồ nhậu
+      - mồi nhậu
+      - ốc
+      - chân gà
+      - lòng nướng
+      - nem chua
+      - khô mực
+      - khô gà
+      - xúc xích
+      - tapas
+    time_duration: PT180M
+    time_windows: [{start: "18:00", end: "22:00"}]
+  # ---------------------------------------------------------------------------
+  # Visit and sightseeing styles
+  # ---------------------------------------------------------------------------
+  - id: style_visit_pass_by
+    name: "Ghé qua"
+    style_group: sightseeing
+    entity_types: [TravelPlace]
+    keywords:
+      - đền
+      - đình
+      - chùa
+      - tháp
+      - cổng thành
+      - cổng làng
+      - tượng đài
+      - tượng
+      - bia đá
+      - cầu
+      - phố cổ
+      - con phố
+      - quảng trường
+      - hồ
+      - bến
+      - bưu điện
+      - nhà hát
+      - ga tàu
+      - chợ
+    exact_names:
+      - tháp rùa
+      - chùa một cột
+      - đền ngọc sơn
+      - cầu long biên
+      - quảng trường ba đình
+    time_duration: PT30M
+    time_windows:
+      - {start: "08:00", end: "10:00"}
+      - {start: "14:00", end: "17:00"}
+
+  - id: style_sightseeing
+    name: "Tham quan"
+    style_group: sightseeing
+    entity_types: [TravelPlace]
+    keywords:
+      - lăng
+      - bảo tàng
+      - di tích
+      - khu di tích
+      - di sản
+      - danh thắng
+      - cung điện
+      - hoàng thành
+      - thành cổ
+      - kinh thành
+      - nhà tù
+      - làng cổ
+      - làng nghề
+      - công viên
+      - vườn quốc gia
+      - khu du lịch
+      - thác
+      - hang động
+      - động
+      - vịnh
+      - đảo
+      - bãi biển
+      - núi
+    exact_names:
+      - lăng bác
+      - lăng hồ chí minh
+      - hoàng thành thăng long
+      - văn miếu quốc tử giám
+      - bảo tàng dân tộc học việt nam
+      - bảo tàng lịch sử quốc gia
+      - nhà tù hỏa lò
+      - địa đạo củ chi
+      - vịnh hạ long
+      - phố cổ hội an
+      - cố đô huế
+      - dinh độc lập
+    time_duration: PT120M
+    time_windows:
+      - {start: "08:00", end: "10:00"}
+      - {start: "14:00", end: "17:00"}
+
+  - id: style_culture_entertainment
+    name: "Văn hóa & Giải trí"
+    style_group: culture
+    entity_types: [TravelPlace, ActivityItem]
+    keywords:
+      - bảo tàng
+      - triển lãm
+      - nhà hát
+      - sân khấu
+      - rạp hát
+      - ca nhạc
+      - hòa nhạc
+      - nhạc sống
+      - biểu diễn
+      - múa rối
+      - múa rối nước
+      - kịch
+      - opera
+      - nghệ thuật
+      - văn hóa
+      - lễ hội
+      - workshop
+      - lớp học
+      - trình diễn
+      - gallery
+      - art space
+    time_duration: PT90M
+    time_windows:
+      - {start: "10:00", end: "12:00"}
+      - {start: "16:00", end: "22:00"}
+
+  # ---------------------------------------------------------------------------
+  # Recreation and outdoor styles
+  # ---------------------------------------------------------------------------
+  - id: style_play_entertainment
+    name: "Vui chơi & Giải trí"
+    style_group: entertainment
+    entity_types: [TravelPlace, ActivityItem]
+    keywords:
+      - karaoke
+      - bida
+      - bowling
+      - bi-a
+      - game center
+      - khu vui chơi
+      - công viên giải trí
+      - amusement park
+      - thủy cung
+      - rạp chiếu phim
+      - cinema
+      - phim
+      - escape room
+      - board game
+      - trampoline
+      - leo núi trong nhà
+      - karting
+      - đua xe
+      - bắn cung
+      - bắn súng
+      - paintball
+      - vườn thú
+      - circus
+      - xiếc
+    time_duration: PT120M
+    time_windows:
+      - {start: "14:00", end: "17:00"}
+      - {start: "20:00", end: "23:00"}
+    match_overrides:
+      - names: ["bắn cung", "bắn súng", "paintball"]
+        properties:
+          time_duration: PT90M
+          time_windows:
+            - {start: "08:00", end: "18:00"}
+      - names: ["karting", "đua xe", "trampoline", "leo núi trong nhà"]
+        properties:
+          time_duration: PT120M
+          time_windows:
+            - {start: "09:00", end: "21:00"}
+      - names: ["bowling", "bida", "bi-a", "game center", "escape room", "board game"]
+        properties:
+          time_duration: PT120M
+          time_windows:
+            - {start: "10:00", end: "23:00"}
+      - names: ["khu vui chơi", "thủy cung", "vườn thú"]
+        properties:
+          time_duration: PT180M
+          time_windows:
+            - {start: "08:00", end: "18:00"}
+
+  - id: style_nightlife
+    name: "Cuộc sống về đêm"
+    style_group: nightlife
+    entity_types: [TravelPlace, DrinkItem, DrinkDessert, ActivityItem]
+    keywords:
+      - bar
+      - pub
+      - rooftop
+      - lounge
+      - club
+      - nightclub
+      - beer club
+      - cocktail
+      - speakeasy
+      - karaoke
+      - nhạc sống
+      - live music
+      - night market
+      - chợ đêm
+      - phố đi bộ
+      - phố bia
+      - jazz
+      - dj
+      - dance
+      - khiêu vũ
+      - casino
+      - night tour
+      - tour đêm
+    exact_names:
+      - phố đi bộ hồ gươm
+      - phố bia tạ hiện
+      - chợ đêm phố cổ
+    time_duration: PT120M
+    time_windows:
+      - {start: "20:00", end: "23:59"}
+      - {start: "00:00", end: "03:00"}
+    match_overrides:
+      - priority: 100
+        names: ["karaoke"]
+        properties:
+          time_duration: PT120M
+          time_windows:
+            - {start: "19:00", end: "22:00"}
+      - priority: 90
+        names: ["chợ đêm", "night market", "phố đi bộ", "phố bia"]
+        properties:
+          time_duration: PT120M
+          time_windows:
+            - {start: "17:00", end: "23:00"}
+      - priority: 80
+        names: ["bar", "pub", "rooftop", "lounge", "club", "cocktail"]
+        properties:
+          time_duration: PT120M
+          time_windows:
+            - {start: "18:00", end: "23:59"}
+            - {start: "00:00", end: "03:00"}
+      - priority: 110
+        names: ["cocktail"]
+        properties:
+          time_duration: PT120M
+          time_windows:
+            - {start: "18:00", end: "23:59"}
+
+  - id: style_outdoor_experience
+    name: "Ngoài trời & Trải nghiệm"
+    style_group: outdoor
+    entity_types: [TravelPlace, ActivityItem]
+    keywords:
+      - hồ
+      - sông
+      - biển
+      - bãi biển
+      - đảo
+      - vịnh
+      - núi
+      - đồi
+      - thác
+      - hang
+      - hang động
+      - rừng
+      - vườn quốc gia
+      - công viên
+      - quảng trường
+      - đi bộ
+      - trekking
+      - hiking
+      - leo núi
+      - cắm trại
+      - camping
+      - picnic
+      - chèo thuyền
+      - kayak
+      - lướt sóng
+      - lặn biển
+      - câu cá
+      - đạp xe
+      - xe đạp
+      - zipline
+      - dù lượn
+      - ngắm hoàng hôn
+      - ngắm bình minh
+    exact_names:
+      - hồ gươm
+      - hồ tây
+      - công viên thống nhất
+      - vườn quốc gia ba vì
+    time_duration: PT60M
+    time_windows:
+      - {start: "06:00", end: "10:00"}
+      - {start: "15:00", end: "22:00"}
+    match_overrides:
+      - names: ["trekking", "hiking", "leo núi", "cắm trại", "camping", "picnic"]
+        properties:
+          time_duration: PT180M
+          time_windows:
+            - {start: "05:00", end: "17:00"}
+      - names: ["chèo thuyền", "kayak", "lướt sóng", "lặn biển", "câu cá"]
+        properties:
+          time_duration: PT120M
+          time_windows:
+            - {start: "06:00", end: "17:00"}
+      - names: ["đạp xe", "xe đạp", "zipline", "dù lượn"]
+        properties:
+          time_duration: PT120M
+          time_windows:
+            - {start: "06:00", end: "18:00"}
+      - names: ["ngắm bình minh"]
+        properties:
+          time_duration: PT60M
+          time_windows:
+            - {start: "05:00", end: "08:00"}
+      - names: ["ngắm hoàng hôn"]
+        properties:
+          time_duration: PT60M
+          time_windows:
+            - {start: "16:00", end: "20:00"}
+
+  # ---------------------------------------------------------------------------
+  # Food, drink, shopping and wellness
+  # ---------------------------------------------------------------------------
+  - id: style_food_relaxation
+    name: "Ẩm thực & Thư giãn"
+    style_group: food_relaxation
+    entity_types: [FoodItem, DrinkItem, DrinkDessert, Restaurant, ActivityItem]
+    keywords:
+      - cà phê
+      - coffee
+      - trà
+      - tea
+      - trà sữa
+      - bánh ngọt
+      - dessert
+      - tráng miệng
+      - kem
+      - chè
+      - yogurt
+      - sữa chua
+      - nước ép
+      - sinh tố
+      - brunch
+      - bakery
+      - tiệm bánh
+      - cafe sân vườn
+      - cafe sách
+      - cafe thú cưng
+      - nhà hàng
+      - fine dining
+      - afternoon tea
+      - nem rán
+      - nem chua rán
+    time_duration: PT60M
+    time_windows:
+      - {start: "14:00", end: "17:00"}
+      - {start: "20:00", end: "22:00"}
+
+  - id: style_shopping_discovery
+    name: "Mua sắm & Khám phá"
+    style_group: shopping
+    entity_types: [TravelPlace, ProductItem]
+    keywords:
+      - chợ
+      - chợ đêm
+      - chợ nổi
+      - trung tâm thương mại
+      - shopping mall
+      - mall
+      - cửa hàng
+      - shop
+      - boutique
+      - phố mua sắm
+      - phố cổ
+      - siêu thị
+      - cửa hàng tiện lợi
+      - outlet
+      - đồ lưu niệm
+      - quà lưu niệm
+      - đặc sản
+      - thủ công mỹ nghệ
+      - làng nghề
+      - gốm
+      - lụa
+      - tơ tằm
+      - tranh
+      - đồ cổ
+      - thời trang
+      - mỹ phẩm
+      - sách
+      - vinyl
+      - phụ kiện
+    time_duration: PT90M
+    time_windows:
+      - {start: "09:00", end: "12:00"}
+      - {start: "16:00", end: "22:00"}
+
+  - id: style_relaxation_self_care
+    name: "Thư giãn & Chăm sóc bản thân"
+    style_group: wellness
+    entity_types: [Accommodation, TravelPlace, Restaurant, DrinkDessert, ActivityItem, ProductItem, DrinkItem]
+    keywords:
+      - spa
+      - massage
+      - foot massage
+      - gội đầu dưỡng sinh
+      - dưỡng sinh
+      - xông hơi
+      - sauna
+      - bồn tắm
+      - onsen
+      - tắm khoáng
+      - yoga
+      - thiền
+      - meditation
+      - pilates
+      - gym
+      - fitness
+      - chăm sóc da
+      - facial
+      - nail
+      - làm móng
+      - salon
+      - hair salon
+      - làm tóc
+      - barber
+      - làm đẹp
+      - detox
+      - retreat
+      - resort
+      - nghỉ dưỡng
+    time_duration: PT90M
+    time_windows:
+      - {start: "09:00", end: "12:00"}
+      - {start: "14:00", end: "22:00"}
+
+rule_defaults:
+  match_mode: normalized_name_or_alias
+  case_sensitive: false
+  accent_sensitive: false
+  keyword_match: contains
+  exclude_match: contains
+  apply_global_exclusions_before_style_match: true
+  auto_attach_status: pending
+  source: attach_auto.yml
+  require_manual_review_for:
+    - exact_name_override
+    - ambiguous_name
+    - conflicting_style
+    - low_match_confidence

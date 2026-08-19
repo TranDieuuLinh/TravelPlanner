@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { APIError } from "@/lib/api";
+import { useAuth } from "@/features/auth/components/AuthProvider";
+import { defaultRouteForUser } from "@/features/auth/lib/redirects";
+import { APIError } from "@/shared/api/client";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -18,7 +19,7 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!loading && user) router.replace("/profile");
+    if (!loading && user) router.replace(defaultRouteForUser(user));
   }, [loading, router, user]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -48,8 +49,8 @@ export default function RegisterPage() {
 
     setBusy(true);
     try {
-      await register(fullName, email, password);
-      router.replace("/profile");
+      const registeredUser = await register(fullName, email, password);
+      router.replace(defaultRouteForUser(registeredUser));
     } catch (reason) {
       if (reason instanceof APIError) {
         setError(Object.values(reason.fieldErrors)[0] ?? reason.message);
@@ -65,7 +66,7 @@ export default function RegisterPage() {
     <main className="authPage">
       <section className="authPanel" aria-labelledby="register-title">
         <div className="authHeading">
-          <span className="eyebrow">Bắt đầu với VSF</span>
+          <span className="eyebrow">Bắt đầu với TravelPlanner</span>
           <h1 id="register-title">Tạo tài khoản</h1>
           <p>Một tài khoản dùng chung cho Planner và Marketplace.</p>
         </div>

@@ -1,0 +1,753 @@
+.topbar {
+  position: sticky;
+  z-index: 50;
+  top: 0;
+  border-bottom: 1px solid rgba(54, 95, 90, 0.08);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .7);
+  backdrop-filter: blur(22px) saturate(150%);
+}
+.topbarInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  height: 64px;
+  margin: auto;
+  padding: 0 28px;
+}
+.brand { display: flex; align-items: center; width: fit-content; margin-top: 0; color: #172c29; font-size: 1.02rem; }
+.brand h2 { margin: 0; font-size: 1.08rem; font-weight: 900; letter-spacing: -.045em; line-height: 1; }
+.brand h2 span { color: var(--brand); }
+.brandCluster { display: flex; align-items: center; justify-self: start; gap: 10px; }
+.plannerHistoryMenu {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.plannerHistoryMenu svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.8; }
+.plannerHistoryMenu:hover,
+.plannerHistoryMenu:focus-visible { border-color: var(--line); background: var(--surface-soft); color: var(--brand-dark); outline: 0; }
+.brandMascot {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  object-fit: contain;
+}
+.brand strong {
+  color: #172c29;
+  font-weight: 900;
+  letter-spacing: -0.045em;
+}
+.brand strong span { color: var(--brand); }
+.desktopNav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.navItem {
+  position: relative;
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  border-radius: 10px;
+  padding: 8px 13px;
+  color: #65716d;
+  font-size: .76rem;
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: -.01em;
+  transition: background .18s ease, color .18s ease;
+}
+.navItem::after {
+  position: absolute;
+  right: 13px;
+  bottom: 2px;
+  left: 13px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--brand);
+  content: "";
+  opacity: 0;
+  transform: scaleX(.45);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.navItem:hover { background: #f5f7f6; color: var(--brand-dark); }
+.navItem.active {
+  background: transparent;
+  color: var(--brand-dark);
+}
+.navItem.active::after { opacity: 1; transform: scaleX(1); }
+.navItem.active:hover { background: #f5f7f6; color: var(--brand-dark); }
+.newTrip { justify-self: end; display: flex; min-height: 42px; align-items: center; gap: 8px; border: 1px solid var(--ink); border-radius: 13px; padding: 9px 14px; background: var(--ink); color: white; box-shadow: 0 8px 20px rgba(54, 95, 90, .13); font-size: .74rem; font-weight: 850; letter-spacing: -.01em; }
+.newTrip svg { width: 17px; height: 17px; flex: 0 0 auto; fill: #365f5a; }
+.newTrip:hover { border-color: #365f5a; background: #365f5a; box-shadow: 0 11px 25px rgba(54, 95, 90, .18); }
+.shellActions { justify-self: end; display: flex; align-items: center; gap: 10px; }
+.topbar.is-planner .topbarInner {
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  column-gap: 24px;
+  padding-right: 28px;
+  padding-left: 28px;
+}
+
+@media (min-width: 781px) {
+  .topbarInner {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .shellActions {
+    display: contents;
+  }
+
+  .desktopNav {
+    grid-column: 2;
+    justify-self: center;
+  }
+
+  .topbarInner > .shellActions > .accountLink,
+  .topbarInner > .shellActions > .accountMenu {
+    grid-column: 3;
+    justify-self: end;
+  }
+
+  .topbarInner > .shellActions > .landingHeaderActions {
+    grid-column: 3;
+    justify-self: end;
+  }
+}
+
+.topbar.is-planner {
+  border-bottom: 0;
+  box-shadow: none;
+}
+
+.topbar.is-planner .backgroundJobsDock { width: min(360px, calc(100vw - 48px)); }
+.accountMenu { position: relative; }
+.accountMenu > summary { list-style: none; }
+.accountMenu > summary::-webkit-details-marker { display: none; }
+.accountMenuTrigger {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 3px;
+  border-radius: 12px;
+  padding: 4px 6px 4px 4px;
+  color: #71807b;
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease;
+}
+.accountMenuTrigger:hover,
+.accountMenuTrigger:focus-visible,
+.accountMenu[open] .accountMenuTrigger { background: #f3f6f5; color: var(--brand-dark); outline: 0; }
+.accountMenuChevron { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; transition: transform .18s ease; }
+.accountMenu[open] .accountMenuChevron { transform: rotate(180deg); }
+.accountMenuPopover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  display: grid;
+  width: 220px;
+  gap: 3px;
+  border: 1px solid rgba(54, 95, 90, .1);
+  border-radius: 14px;
+  padding: 6px;
+  background: rgba(255, 255, 255, .98);
+  box-shadow: 0 16px 42px rgba(23, 32, 51, .13);
+  backdrop-filter: blur(18px);
+}
+.accountMenuIdentity { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: center; gap: 10px; border-bottom: 1px solid var(--line); margin-bottom: 3px; padding: 8px 7px 11px; }
+.accountMenuIdentity strong { overflow: hidden; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
+.accountMenuItem { display: flex; width: 100%; min-height: 38px; align-items: center; justify-content: space-between; border: 0; border-radius: 9px; padding: 9px 10px; background: transparent; color: #4e5d59; font-size: .72rem; font-weight: 750; text-align: left; }
+.accountMenuItem:hover,
+.accountMenuItem:focus-visible { background: #f3f6f5; color: var(--brand-dark); outline: 0; }
+.accountMenuLogout svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.accountLink { display: flex; min-height: 38px; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 11px; padding: 7px 11px; background: white; font-size: .74rem; font-weight: 800; transition: border-color .18s ease, background .18s ease; }
+.landingHeaderActions { display: flex; align-items: center; gap: 8px; }
+.accountLink.signedIn { min-width: 0; max-width: 168px; border: 0; padding: 4px 7px 4px 4px; background: transparent; }
+.accountLink.signedIn:hover, .accountLink.signedIn:focus-visible { background: var(--brand-soft); }
+.shellAccountAvatar { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--brand); color: white; font-size: .72rem; font-weight: 850; }
+.accountCopy { min-width: 0; }
+.accountCopy strong { display: block; max-width: 118px; overflow: hidden; font-size: .7rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.logoutButton { display: grid; width: 34px; height: 34px; min-height: 0; place-items: center; border: 0; border-left: 1px solid rgba(54, 95, 90, .1); border-radius: 0 10px 10px 0; padding: 0; background: transparent; color: #63706c; }
+.logoutButton svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.logoutButton:hover, .logoutButton:focus-visible { background: #f6f7fb; color: #365f5a; transform: none !important; }
+.navItem:focus-visible, .newTrip:focus-visible, .accountLink:focus-visible, .logoutButton:focus-visible, .accountMenuTrigger:focus-visible { outline: 3px solid rgba(54, 95, 90, .2); outline-offset: 2px; }
+.backgroundJobsDock { position: fixed; z-index: 1900; top: 76px; right: 24px; width: min(360px, calc(100vw - 48px)); animation: backgroundJobsDockIn .2s ease-out both; }
+.backgroundJobsPanel { position: relative; }
+.backgroundJobsPanel > summary { display: grid; grid-template-columns: 12px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 40px; border: 1px solid rgba(54, 95, 90, .11); border-radius: 12px; padding: 9px 11px; background: rgba(255, 255, 255, .9); cursor: pointer; list-style: none; }
+.backgroundJobsPanel > summary::-webkit-details-marker { display: none; }
+.backgroundJobsPanel > summary strong { overflow: hidden; font-size: .69rem; text-overflow: ellipsis; white-space: nowrap; }
+.backgroundJobsPanel > summary:hover, .backgroundJobsPanel > summary:focus-visible, .backgroundJobsPanel[open] > summary { border-color: rgba(54, 95, 90, .32); background: var(--brand-soft); outline: 0; }
+.backgroundJobIcon, .backgroundJobPulse { width: 8px; height: 8px; border-radius: 50%; background: #172033; }
+.backgroundJobPulse { background: var(--brand); box-shadow: 0 0 0 0 rgba(54, 95, 90, .36); animation: backgroundJobPulse 1.7s infinite; }
+.backgroundJobsChevron { color: var(--muted); font-size: .8rem; transition: transform .18s ease; }
+.backgroundJobsPanel[open] .backgroundJobsChevron { transform: rotate(180deg); }
+.backgroundJobsList { position: absolute; top: calc(100% + 10px); right: 0; width: min(520px, calc(100vw - 36px)); max-height: min(520px, calc(100dvh - 92px)); overflow-y: auto; border: 1px solid rgba(54, 95, 90, .11); border-radius: 15px; padding: 5px; background: rgba(255, 255, 255, .98); box-shadow: 0 15px 42px rgba(54, 95, 90, .14); backdrop-filter: blur(16px); }
+.backgroundJobsListHeader { position: sticky; z-index: 1; top: -5px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding: 10px 8px; background: rgba(255, 255, 255, .98); }
+.backgroundJobsListHeader > strong { font-size: .66rem; }
+.backgroundJobsListHeader > button { border: 0; border-radius: 8px; padding: 6px 8px; background: #e4e7f0; color: #172033; font-size: .55rem; font-weight: 850; }
+.backgroundJobsListHeader > button:hover, .backgroundJobsListHeader > button:focus-visible { background: #f6f7fb; color: #365f5a; }
+.backgroundJobsListHeader > button:disabled { cursor: wait; opacity: .5; }
+.backgroundJobRow { overflow: hidden; border-radius: 10px; }
+.backgroundJobRow + .backgroundJobRow { border-top: 1px solid #e4e7f0; }
+.backgroundJobRow > summary { display: grid; grid-template-columns: 22px minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 11px 8px; cursor: pointer; list-style: none; }
+.backgroundJobRow > summary::-webkit-details-marker { display: none; }
+.backgroundJobRow > summary:hover { background: #ffffff; }
+.backgroundJobRowChevron { color: #172033; font-size: .72rem; transition: transform .18s ease; }
+.backgroundJobRow[open] .backgroundJobRowChevron { transform: rotate(180deg); }
+.backgroundJobState { display: grid; width: 20px; height: 20px; place-items: center; border: 2px solid #f6f7fb; border-radius: 50%; color: white; font-size: .62rem; font-weight: 900; }
+.backgroundJobRow.queued .backgroundJobState { border-color: #e4e7f0; background: #e4e7f0; color: var(--brand-dark); animation: backgroundJobQueued 1.7s ease-in-out infinite; }
+.backgroundJobRow.running .backgroundJobState { border-color: var(--brand); border-top-color: transparent; animation: backgroundJobSpin .8s linear infinite; }
+.backgroundJobRow.succeeded .backgroundJobState { border-color: var(--brand); background: var(--brand); }
+.backgroundJobRow.failed .backgroundJobState { border-color: var(--danger); background: var(--danger); }
+.backgroundJobCopy { display: grid; min-width: 0; gap: 2px; }
+.backgroundJobCopy strong { overflow: hidden; font-size: .66rem; text-overflow: ellipsis; white-space: nowrap; }
+.backgroundJobCopy small { color: var(--muted); font-size: .59rem; }
+.backgroundJobDetails { display: grid; gap: 10px; border-top: 1px solid #f6f7fb; padding: 10px 12px 12px 42px; background: #ffffff; }
+.backgroundJobMeta { display: grid; gap: 8px; }
+.backgroundJobMeta > span { display: grid; gap: 2px; }
+.backgroundJobMeta small { color: #172033; font-size: .5rem; font-weight: 750; text-transform: uppercase; }
+.backgroundJobMeta strong { color: #365f5a; font-size: .58rem; }
+.backgroundJobTimingGroup { display: grid; gap: 5px; }
+.backgroundJobTimingGroup > strong { color: #365f5a; font-size: .59rem; }
+.backgroundJobTimingGroup ol { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.backgroundJobTimingGroup li { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: start; gap: 7px; color: #172033; font-size: .55rem; }
+.backgroundJobTimingGroup b { color: #365f5a; font-weight: 850; white-space: nowrap; }
+.backgroundJobTimingStepIndex { display: grid; width: 17px; height: 17px; place-items: center; border-radius: 50%; background: #f6f7fb; color: #365f5a; font-size: .47rem; font-weight: 900; }
+.backgroundJobTimingStepCopy { display: grid; gap: 2px; min-width: 0; }
+.backgroundJobTimingStepCopy > small { overflow-wrap: anywhere; color: #172033; font-size: .47rem; line-height: 1.35; }
+.backgroundJobTimingSubsteps { display: grid; gap: 2px; margin-top: 2px; padding-left: 7px; border-left: 2px solid #e4e7f0; }
+.backgroundJobTimingSubsteps > span { display: flex; justify-content: space-between; gap: 8px; color: #52606d; font-size: .48rem; }
+.backgroundJobTimingSubsteps b { font-size: .47rem; }
+.backgroundJobTimingDuration { display: grid; justify-items: end; gap: 1px; font-variant-numeric: tabular-nums; }
+.backgroundJobTimingDuration small { color: #52606d; font-size: .45rem; font-weight: 800; }
+.backgroundJobTiming { display: grid; gap: 12px; }
+.backgroundJobTimingTotal { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 2px; }
+.backgroundJobTimingTotal span { color: #52606d; font-size: .52rem; font-weight: 850; text-transform: uppercase; }
+.backgroundJobTimingTotal strong { color: #365f5a; font-size: .72rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.backgroundJobPipeline { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.backgroundJobPipelineStep { position: relative; display: grid; grid-template-columns: 24px minmax(0,1fr); gap: 8px; padding-bottom: 12px; }
+.backgroundJobPipelineStep:last-child { padding-bottom: 0; }
+.backgroundJobPipelineStep:not(:last-child)::before { position: absolute; top: 22px; bottom: 0; left: 10px; width: 2px; background: #e4e7f0; content: ""; }
+.backgroundJobPipelineIndex { z-index: 1; display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: #365f5a; color: #ffffff; font-size: .53rem; font-weight: 900; }
+.backgroundJobPipelineStep.running .backgroundJobPipelineIndex { background: #e4e7f0; color: #365f5a; }
+.backgroundJobPipelineStep > section { min-width: 0; border: 1px solid #e4e7f0; border-radius: 10px; padding: 9px; background: #ffffff; }
+.backgroundJobPipelineStep > section > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.backgroundJobPipelineStep > section > header > span { display: grid; min-width: 0; gap: 3px; }
+.backgroundJobPipelineStep > section > header strong { color: #172033; font-size: .61rem; }
+.backgroundJobPipelineStep > section > header small { color: #52606d; font-size: .49rem; line-height: 1.4; }
+.backgroundJobPipelineStep > section > header > b { color: #365f5a; font-size: .57rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.backgroundJobStepDetails { margin-top: 7px; border-top: 1px solid #f0f1f5; padding-top: 6px; color: #172033; }
+.backgroundJobStepDetails > summary { cursor: pointer; color: #365f5a; font-size: .51rem; font-weight: 850; list-style-position: inside; }
+.backgroundJobStepDetails > div { display: grid; gap: 10px; margin-top: 8px; }
+.backgroundJobTimingOverview { display: grid; gap: 8px; border: 1px solid #e4e7f0; border-radius: 10px; padding: 10px; background: #f6f7fb; }
+.backgroundJobTimingOverview > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.backgroundJobTimingOverview > header strong { color: #172033; font-size: .64rem; text-transform: uppercase; }
+.backgroundJobTimingOverview > header b { color: #365f5a; font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.backgroundJobTimingBars { display: grid; gap: 5px; }
+.backgroundJobTimingBars > span { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; overflow: hidden; border-radius: 8px; padding: 7px 8px; background: #ffffff; }
+.backgroundJobTimingBars > span::before { position: absolute; inset: 0 auto 0 0; width: var(--share); background: rgba(54, 95, 90, .12); content: ""; }
+.backgroundJobTimingBars b, .backgroundJobTimingBars small { position: relative; z-index: 1; }
+.backgroundJobTimingBars b { overflow: hidden; color: #172033; font-size: .56rem; text-overflow: ellipsis; white-space: nowrap; }
+.backgroundJobTimingBars small { color: #365f5a; font-size: .52rem; font-weight: 850; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.backgroundJobSlowStages { display: grid; gap: 4px; }
+.backgroundJobSlowStages > small { color: #52606d; font-size: .48rem; font-weight: 850; text-transform: uppercase; }
+.backgroundJobSlowStages > span { display: flex; justify-content: space-between; gap: 10px; border-radius: 7px; padding: 5px 7px; background: #ffffff; color: #172033; font-size: .5rem; line-height: 1.3; }
+.backgroundJobSlowStages b { color: #365f5a; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.backgroundJobTimingSummary { display: grid; gap: 8px; border: 1px solid #f6f7fb; border-radius: 10px; padding: 9px; background: #ffffff; }
+.backgroundJobTimingSummary > header, .backgroundJobSourceTiming > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.backgroundJobTimingSummary > header strong, .backgroundJobSourceTiming > header strong { color: #365f5a; font-size: .61rem; }
+.backgroundJobTimingSummary > header b, .backgroundJobSourceTiming > header b { color: #365f5a; font-size: .59rem; white-space: nowrap; }
+.backgroundJobTimingChips { display: flex; flex-wrap: wrap; gap: 5px; }
+.backgroundJobTimingChips span { border-radius: 999px; padding: 4px 7px; background: #e4e7f0; color: #365f5a; font-size: .52rem; font-weight: 800; }
+.backgroundJobProviderSection { display: grid; gap: 5px; }
+.backgroundJobProviderSection > strong { color: #365f5a; font-size: .56rem; }
+.backgroundJobProviders { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 5px; margin: 0; }
+.backgroundJobProviders div { min-width: 0; border-radius: 8px; padding: 6px; background: #ffffff; }
+.backgroundJobProviders div.resolved { background: #f6f7fb; }
+.backgroundJobProviders dt { overflow: hidden; color: #365f5a; font-size: .52rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.backgroundJobProviders dd { margin: 2px 0 0; color: #172033; font-size: .48rem; }
+.backgroundJobProviders dd b { color: #365f5a; }
+.backgroundJobProviderAttempts { color: #172033; font-size: .52rem; }
+.backgroundJobProviderAttempts summary { cursor: pointer; font-weight: 800; }
+.backgroundJobProviderAttemptList { display: grid; gap: 4px; margin-top: 5px; }
+.backgroundJobProviderAttemptList > div { display: grid; gap: 5px; padding: 7px; border-radius: 7px; background: #ffffff; }
+.backgroundJobAttemptHeader, .backgroundJobAttemptMeta, .backgroundJobAttemptQueries { min-width: 0; }
+.backgroundJobAttemptHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.backgroundJobAttemptHeader span { color: #365f5a; font-size: .48rem; font-weight: 800; white-space: nowrap; }
+.backgroundJobAttemptMeta { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 5px; }
+.backgroundJobAttemptMeta span { display: grid; gap: 1px; border-radius: 6px; padding: 4px 5px; background: #f6f7fb; color: #172033; }
+.backgroundJobAttemptMeta b, .backgroundJobAttemptQueries b { color: #52606d; font-size: .43rem; text-transform: uppercase; }
+.backgroundJobAttemptQueries { display: grid; gap: 2px; color: #172033; overflow-wrap: anywhere; }
+.backgroundJobProviderAttemptList strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.backgroundJobSourceTiming { display: grid; gap: 6px; border-top: 1px solid #f6f7fb; padding-top: 8px; }
+.backgroundJobSourceTiming > small { color: #172033; font-size: .5rem; line-height: 1.4; }
+.backgroundJobTimingPending { border-style: dashed; }
+.backgroundJobTimingPending p, .backgroundJobTimingPending > small { margin: 0; color: #172033; font-size: .52rem; line-height: 1.45; }
+.backgroundJobError { margin: 0; color: #365f5a; font-size: .57rem; line-height: 1.4; }
+.backgroundJobActions { display: flex; flex-wrap: wrap; gap: 7px; }
+.backgroundJobActions > button, .backgroundJobActions > .backgroundJobOpenChat { border: 0; border-radius: 8px; padding: 7px 9px; background: var(--brand-soft); color: var(--brand-dark); font-size: .57rem; font-weight: 850; text-decoration: none; }
+.backgroundJobActions > .backgroundJobDelete { background: #f6f7fb; color: #365f5a; }
+.backgroundJobActions > button:disabled { cursor: wait; opacity: .45; }
+@keyframes backgroundJobPulse { 70% { box-shadow: 0 0 0 7px rgba(54, 95, 90, 0); } 100% { box-shadow: 0 0 0 0 rgba(54, 95, 90, 0); } }
+@keyframes backgroundJobQueued { 50% { border-color: var(--brand); background: var(--brand-soft); } }
+@keyframes backgroundJobSpin { to { transform: rotate(360deg); } }
+@keyframes backgroundJobsDockIn { from { opacity: 0; transform: translateY(-8px); } }
+@media (prefers-reduced-motion: reduce) {
+  .backgroundJobsDock, .backgroundJobPulse, .backgroundJobRow.queued .backgroundJobState, .backgroundJobRow.running .backgroundJobState { animation: none; }
+}
+
+/* Phone planner: launch into the map and reveal the complete itinerary in a
+   swipeable bottom sheet. Both surfaces keep their own day filter in reach. */
+.mobileItineraryHandle,
+.mobileMapDayTabs {
+  display: none;
+}
+
+@media (max-width: 780px) {
+  .plannerPage:has(.plannerLayout:not(.is-new-chat)) {
+    width: 100%;
+    height: calc(100dvh - var(--mobile-shell-top) - var(--mobile-shell-bottom));
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .plannerLayout:not(.is-new-chat),
+  .plannerLayout:not(.is-new-chat) > .plannerMap {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .plannerLayout:not(.is-new-chat) {
+    position: relative;
+    display: block;
+    overflow: hidden;
+  }
+
+  .plannerLayout:not(.is-new-chat) > .plannerMap {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    max-width: none;
+  }
+
+  .plannerLayout:not(.is-new-chat) > .mobileItinerarySheet {
+    position: absolute;
+    z-index: 1000;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    width: 100%;
+    max-width: none;
+    height: calc(100% - 18px);
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid rgba(39, 67, 62, .12);
+    border-bottom: 0;
+    border-radius: 24px 24px 0 0;
+    background: #fff;
+    box-shadow: 0 -14px 42px rgba(24, 49, 45, .18);
+    transform: translateY(calc(100% - 126px));
+    transition: transform .32s cubic-bezier(.22, 1, .36, 1);
+    will-change: transform;
+  }
+
+  .plannerLayout:not(.is-new-chat) > .mobileItinerarySheet.is-expanded {
+    transform: translateY(0);
+  }
+
+  .mobileItineraryHandle {
+    display: grid;
+    min-height: 42px;
+    flex: 0 0 42px;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    border: 0;
+    border-bottom: 1px solid #edf0ef;
+    padding: 5px 16px 7px;
+    background: #fff;
+    color: #55716b;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .mobileItineraryHandle:active { cursor: grabbing; }
+  .mobileItineraryHandle > span {
+    grid-column: 2;
+    grid-row: 1;
+    width: 42px;
+    height: 5px;
+    align-self: start;
+    border-radius: 999px;
+    background: #bdc9c6;
+  }
+  .mobileItineraryHandle strong {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    font-size: .64rem;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .mobileItineraryHandle svg {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
+  }
+
+  .mobileItinerarySheet .itineraryHeading {
+    min-height: 84px;
+    flex: 0 0 84px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .mobileItinerarySheet .exploreResult {
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 32px;
+  }
+
+  .mobileItinerarySheet .dayTabList {
+    position: sticky;
+    z-index: 20;
+    top: 0;
+    box-shadow: 0 8px 18px rgba(23, 32, 51, .07);
+  }
+
+  .mobileMapDayTabs {
+    position: absolute;
+    z-index: 700;
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    padding: 3px;
+    border: 1px solid rgba(54, 95, 90, .12);
+    border-radius: 15px;
+    background: rgba(255, 255, 255, .94);
+    box-shadow: 0 10px 28px rgba(32, 69, 63, .16);
+    scrollbar-width: none;
+    backdrop-filter: blur(14px) saturate(140%);
+  }
+  .mobileMapDayTabs::-webkit-scrollbar { display: none; }
+  .mobileMapDayTabs button {
+    display: inline-flex;
+    min-width: max-content;
+    min-height: 36px;
+    align-items: center;
+    gap: 5px;
+    border: 0;
+    border-radius: 12px;
+    padding: 0 10px;
+    background: transparent;
+    color: #60736e;
+    font-size: .68rem;
+    font-weight: 850;
+    white-space: nowrap;
+  }
+  .mobileMapDayTabs button > span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--day-color, #365f5a);
+  }
+  .mobileMapDayTabs button.active {
+    background: #365f5a;
+    color: #fff;
+    box-shadow: 0 5px 13px rgba(41, 75, 71, .2);
+  }
+  .mobileMapDayTabs button.active > span { background: #fff; }
+  .mobileMapDayTabs button.is-unscheduled { color: #98562f; }
+  .mobileMapDayTabs button.is-unscheduled.active { background: #a85e35; color: #fff; }
+
+  .plannerLayout:not(.is-new-chat) .plannerMapCanvas .maplibregl-ctrl-top-right {
+    top: 60px;
+  }
+  .plannerLayout:not(.is-new-chat) .mapTravelControls {
+    bottom: 138px;
+  }
+
+  .plannerLayout:not(.is-new-chat) > .plannerChat.is-collapsed {
+    position: fixed;
+    z-index: 1200;
+    right: 12px;
+    bottom: calc(var(--mobile-shell-bottom) + 134px);
+    width: 68px;
+    min-width: 68px;
+    height: 68px;
+    min-height: 68px;
+  }
+  .plannerLayout:not(.is-new-chat) > .plannerChat.is-collapsed .panelHeading {
+    width: 68px;
+    height: 68px;
+    min-height: 68px;
+  }
+  .plannerLayout:not(.is-new-chat) > .plannerChat.is-collapsed .plannerChatToggle {
+    width: 62px;
+    height: 62px;
+  }
+}
+
+/* Narrow phones need a genuinely mobile itinerary composition. Cards become
+   vertical media cards instead of squeezing four desktop columns together. */
+@media (max-width: 480px) {
+  .mobileItinerarySheet .itineraryHeading {
+    min-height: 96px;
+    flex-basis: 96px;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .mobileItinerarySheet .planHeaderIcon,
+  .mobileItinerarySheet .planHeaderIcon img {
+    width: 42px;
+    height: 42px;
+  }
+
+  .mobileItinerarySheet .itineraryHeading > div,
+  .mobileItinerarySheet .itineraryHeadingCopy,
+  .mobileItinerarySheet .itineraryIntakePeekaboo,
+  .mobileItinerarySheet .itineraryIntakePeekaboo > small {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .mobileItinerarySheet .itineraryHeading strong {
+    font-size: 1rem;
+    line-height: 1.2;
+  }
+
+  .mobileItinerarySheet .itineraryIntakePeekaboo > small {
+    display: block;
+    overflow: visible;
+  }
+
+  .mobileItinerarySheet .plannerIntakeNav {
+    width: 100%;
+    max-width: 100%;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 2px 1px 5px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .mobileItinerarySheet .plannerIntakeNav::-webkit-scrollbar,
+  .mobileItinerarySheet .dayTabList::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobileItinerarySheet .plannerIntakeNav button {
+    min-width: max-content;
+    min-height: 32px;
+    flex: 0 0 auto;
+    border: 1px solid #dce7e3;
+    border-radius: 999px;
+    padding: 5px 10px;
+    background: #f3f8f6;
+    font-size: .65rem;
+  }
+
+  .mobileItinerarySheet .plannerIntakeNav button + button::before {
+    display: none;
+  }
+
+  .mobileItinerarySheet .exploreResult {
+    width: 100%;
+    padding: 0 10px 28px;
+  }
+
+  .mobileItinerarySheet .tripPlanSection {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 0;
+  }
+
+  .mobileItinerarySheet .dayTabList {
+    width: calc(100% + 20px);
+    max-width: none;
+    gap: 14px;
+    margin-inline: -10px;
+    padding: 8px 12px;
+    overflow-x: auto;
+    scroll-padding-inline: 12px;
+    overscroll-behavior-x: contain;
+  }
+
+  .mobileItinerarySheet .dayTabList button {
+    min-width: max-content;
+    min-height: 42px;
+    flex: 0 0 auto;
+    padding-inline: 6px;
+  }
+
+  .mobileItinerarySheet .dayTabList .dayTabUnscheduled {
+    margin-left: 0;
+  }
+
+  .mobileItinerarySheet .regionStoryPanel,
+  .mobileItinerarySheet .explorerDayCard {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .mobileItinerarySheet .regionStoryPanel {
+    margin-inline: 0;
+    padding: 14px;
+  }
+
+  .mobileItinerarySheet .dayCardHeading {
+    min-height: 0;
+    padding: 12px 10px;
+  }
+
+  .mobileItinerarySheet .itineraryStops {
+    width: 100%;
+    padding: 0;
+  }
+
+  .mobileItinerarySheet .itineraryItemDragWrapper,
+  .mobileItinerarySheet .itineraryStop,
+  .mobileItinerarySheet .itineraryPlaceCard {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .mobileItinerarySheet .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag),
+  .mobileItinerarySheet .itineraryStop--food .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    gap: 0;
+    padding: 10px;
+  }
+
+  .mobileItinerarySheet .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceOrder {
+    position: absolute;
+    z-index: 5;
+    top: 18px;
+    left: 18px;
+    display: grid;
+    width: 30px;
+    height: 30px;
+    margin: 0;
+    place-items: center;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .94);
+    box-shadow: 0 4px 12px rgba(23, 32, 51, .15);
+    font-size: .8rem;
+  }
+
+  .mobileItinerarySheet .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceMedia {
+    width: 100%;
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
+  }
+
+  .mobileItinerarySheet .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) .itineraryPlaceImage,
+  .mobileItinerarySheet .itineraryStop--food .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) .itineraryPlaceImage {
+    width: 100%;
+    height: clamp(138px, 48vw, 180px);
+    min-height: 138px;
+    border-radius: 13px;
+  }
+
+  .mobileItinerarySheet .itineraryPlaceCard--withImage:not(.itineraryPlaceCard--withDrag) > .itineraryPlaceContent {
+    width: 100%;
+    min-width: 0;
+    grid-column: 1;
+    grid-row: 2;
+    gap: 8px;
+    /* Reserve a distinct footer row for note and quick-action controls. The
+       previous zero bottom padding placed them on top of long place names. */
+    padding: 12px 2px 64px;
+  }
+
+  .mobileItinerarySheet .itineraryPlaceTitle,
+  .mobileItinerarySheet .itineraryPlaceTitle > strong,
+  .mobileItinerarySheet .itineraryPlaceTitle > .placeMapButton,
+  .mobileItinerarySheet .itineraryPlaceTitle > .placeMapButton strong {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow: visible;
+    font-size: .92rem;
+    line-height: 1.35;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .mobileItinerarySheet .itineraryPlaceQuickActions {
+    position: static;
+    top: auto;
+    right: auto;
+    width: 100%;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 5px;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .mobileItinerarySheet .itineraryPlaceContent:has(> .itineraryNoteActionButton) {
+    padding-bottom: 42px;
+  }
+
+  .mobileItinerarySheet .itineraryRoute {
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    padding-inline: 6px;
+  }
+
+  .mobileItinerarySheet .itineraryRouteToolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .mobileItinerarySheet .itineraryRouteLink {
+    grid-column: 1 / -1;
+  }
+
+  .mobileItinerarySheet .itineraryRouteMapButton,
+  .mobileItinerarySheet .itineraryRouteChoicesButton {
+    min-height: 40px;
+    padding-inline: 10px;
+  }
+}
+
+/* Trip collaboration concept. This is intentionally scoped to the Planner so
+   it cannot be confused with the public country community pages. */
