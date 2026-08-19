@@ -8,14 +8,35 @@ export { APIError } from "@travelplanner/api-client";
 export type { APIErrorBody } from "@travelplanner/api-client";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const ACCESS_TOKEN_KEY = "travelplanner_access_token";
+const REFRESH_TOKEN_KEY = "travelplanner_refresh_token";
 
-function getCookie(name: string): string | undefined {
-  if (typeof document === "undefined") return undefined;
-  const prefix = `${encodeURIComponent(name)}=`;
-  return document.cookie
-    .split("; ")
-    .find((item) => item.startsWith(prefix))
-    ?.slice(prefix.length);
+let accessToken: string | null = null;
+
+function readAccessToken(): string | null {
+  if (accessToken) return accessToken;
+  if (typeof window === "undefined") return null;
+  accessToken = window.localStorage.getItem(ACCESS_TOKEN_KEY);
+  return accessToken;
+}
+
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+  if (typeof window === "undefined") return;
+  if (token) window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
+  else window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+}
+
+export function getRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+export function setTokens(access: string | null, refresh: string | null): void {
+  setAccessToken(access);
+  if (typeof window === "undefined") return;
+  if (refresh) window.localStorage.setItem(REFRESH_TOKEN_KEY, refresh);
+  else window.localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 let refreshSessionPromise: Promise<boolean> | null = null;
@@ -29,28 +50,31 @@ type NavigatorWithLocks = Navigator & {
   };
 };
 
-async function performSessionRefresh(observedCsrf?: string): Promise<boolean> {
-  const csrf = getCookie("travelplanner_csrf");
-  if (!csrf) return false;
-
-  // Another tab may have refreshed while this request was waiting for the
-  // browser-wide lock. Its new cookies are already available to this tab, so
-  // retry the original request instead of rotating the token a second time.
-  if (observedCsrf && csrf !== observedCsrf) return true;
+async function performSessionRefresh(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
 
   try {
     const response = await fetch(`${apiBase}/auth/refresh`, {
       method: "POST",
-      credentials: "include",
-      headers: { "X-CSRF-Token": decodeURIComponent(csrf) }
+      credentials: "omit",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken })
     });
-    return response.ok;
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) setTokens(null, null);
+      return false;
+    }
+    const body = await response.json() as { accessToken?: string; refreshToken?: string };
+    if (!body.accessToken || !body.refreshToken) return false;
+    setTokens(body.accessToken, body.refreshToken);
+    return true;
   } catch {
     return false;
   }
 }
 
-async function refreshSession(observedCsrf?: string): Promise<boolean> {
+async function refreshSession(): Promise<boolean> {
   if (refreshSessionPromise) return refreshSessionPromise;
 
   refreshSessionPromise = (async () => {
@@ -59,10 +83,10 @@ async function refreshSession(observedCsrf?: string): Promise<boolean> {
       : undefined;
     if (locks) {
       return locks.request("travelplanner-auth-refresh", () =>
-        performSessionRefresh(observedCsrf)
+        performSessionRefresh()
       );
     }
-    return performSessionRefresh(observedCsrf);
+    return performSessionRefresh();
   })().finally(() => {
     refreshSessionPromise = null;
   });
@@ -76,18 +100,15 @@ export async function apiFetch<T>(
   retryAuth = true
 ): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
-  const observedCsrf = getCookie("travelplanner_csrf");
   const headers = jsonRequestHeaders(init);
-  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
-    const csrf = getCookie("travelplanner_csrf");
-    if (csrf) headers.set("X-CSRF-Token", decodeURIComponent(csrf));
-  }
+  const token = readAccessToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
 
   let response: Response;
   try {
     response = await fetch(`${apiBase}${path}`, {
       ...init,
-      credentials: "include",
+      credentials: "omit",
       headers
     });
   } catch {
@@ -101,7 +122,7 @@ export async function apiFetch<T>(
     response.status === 401 &&
     retryAuth &&
     !isAuthRoute &&
-    await refreshSession(observedCsrf)
+    await refreshSession()
   ) {
     return apiFetch<T>(path, init, false);
   }

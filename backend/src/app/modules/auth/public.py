@@ -7,9 +7,15 @@ from app.modules.auth.router import router
 from fastapi import HTTPException, Request
 
 
+def bearer_token(request: Request) -> str | None:
+    value = request.headers.get("Authorization", "")
+    scheme, _, token = value.partition(" ")
+    return token.strip() if scheme.casefold() == "bearer" and token.strip() else None
+
+
 async def require_current_user(request: Request) -> AuthUser:
     user = await request.app.state.auth_service.user(
-        request.cookies.get("travelplanner_session")
+        bearer_token(request)
     )
     if not user:
         raise HTTPException(
@@ -21,7 +27,7 @@ async def require_current_user(request: Request) -> AuthUser:
 
 async def require_admin(request: Request) -> AuthUser:
     user = await request.app.state.auth_service.user(
-        request.cookies.get("travelplanner_session")
+        bearer_token(request)
     )
     if not user:
         raise HTTPException(
@@ -48,12 +54,19 @@ def build_auth_service(settings: Settings) -> AuthService:
             parts = item.split("|", 3)
             if len(parts) == 4 and all(parts):
                 bootstrap_users.append(tuple(parts))
-    return AuthService(repository, bootstrap_users)
+    return AuthService(
+        repository,
+        bootstrap_users,
+        jwt_secret=settings.auth_jwt_secret,
+        access_token_ttl_seconds=settings.auth_access_token_ttl_seconds,
+        refresh_token_ttl_seconds=settings.auth_refresh_token_ttl_seconds,
+    )
 
 
 __all__ = [
     "AuthUser",
     "build_auth_service",
+    "bearer_token",
     "require_admin",
     "require_current_user",
     "router",

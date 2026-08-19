@@ -35,6 +35,14 @@ class RegisterInput(AuthModel):
 
 class LoginResponse(AuthModel):
     user: AuthUser
+    access_token: str
+    refresh_token: str
+    token_type: str = "Bearer"
+    expires_in: int
+
+
+class RefreshInput(AuthModel):
+    refresh_token: str | None = None
 
 
 class ProfileUpdateInput(AuthModel):

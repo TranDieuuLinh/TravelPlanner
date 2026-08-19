@@ -65,8 +65,12 @@ The backend runs on port `8000`.
 - `GET /health` returns the service health status.
 - `POST /v1/explorer/invoke` runs Explorer extraction directly for testing.
 - `POST /v1/agent/invoke` invokes the root planning graph.
-- `POST /auth/login` and `POST /auth/register` create cookie sessions.
-- `GET /me` reads the current session; `POST /auth/logout` revokes it.
+- `POST /auth/login` and `POST /auth/register` return a short-lived JWT
+  access token and a rotating refresh token. The frontend sends the refresh
+  token explicitly to rotate the pair.
+- Protected endpoints use `Authorization: Bearer <accessToken>`;
+  `POST /auth/refresh` rotates the pair and `POST /auth/logout` revokes the
+  refresh session.
 
 The agent request uses camelCase fields `threadId`, `message`, `urls`, `images`,
 optional `forceRefresh`, `existingItinerary`, and `editOperation`. Explorer
