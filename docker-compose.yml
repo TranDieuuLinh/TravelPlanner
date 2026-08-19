@@ -1,3 +1,5 @@
+name: TrungLinhLoi-Travel
+
 services:
   postgres:
     image: pgvector/pgvector:pg18
