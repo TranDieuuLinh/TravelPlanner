@@ -4,15 +4,21 @@ import test from "node:test";
 const originalDocument = globalThis.document;
 const originalFetch = globalThis.fetch;
 const originalNavigator = globalThis.navigator;
+const originalWindow = globalThis.window;
 
 function setBrowserGlobals({ fetch, locks }) {
   Object.defineProperty(globalThis, "document", {
     configurable: true,
-    value: { cookie: "travelplanner_csrf=csrf-token" },
+    value: { cookie: "" },
   });
   Object.defineProperty(globalThis, "navigator", {
     configurable: true,
     value: locks ? { locks } : {},
+  });
+  const storage = new Map([["travelplanner_refresh_token", "refresh-token"]]);
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { localStorage: { getItem: (key) => storage.get(key) ?? null, setItem() {}, removeItem() {} } },
   });
   globalThis.fetch = fetch;
 }
@@ -26,6 +32,10 @@ function restoreBrowserGlobals() {
     configurable: true,
     value: originalNavigator,
   });
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: originalWindow,
+  });
   globalThis.fetch = originalFetch;
 }
 
@@ -38,7 +48,7 @@ test("concurrent 401 responses share one refresh request", async () => {
         refreshCount += 1;
         await new Promise((resolve) => setTimeout(resolve, 20));
         authenticated = true;
-        return new Response(JSON.stringify({ user: {} }), { status: 200 });
+        return new Response(JSON.stringify({ accessToken: "access-token", refreshToken: "refresh-token-2" }), { status: 200 });
       }
       return authenticated
         ? new Response(JSON.stringify({ ok: true }), { status: 200 })
@@ -62,20 +72,19 @@ test("concurrent 401 responses share one refresh request", async () => {
   }
 });
 
-test("a waiting tab reuses cookies rotated by the lock holder", async () => {
+test("browser lock serializes a token refresh", async () => {
   let refreshCount = 0;
   let protectedRequestCount = 0;
   setBrowserGlobals({
     locks: {
       async request(_name, callback) {
-        globalThis.document.cookie = "travelplanner_csrf=rotated-token";
         return callback();
       },
     },
     async fetch(url) {
       if (String(url).endsWith("/auth/refresh")) {
         refreshCount += 1;
-        return new Response(JSON.stringify({ user: {} }), { status: 200 });
+        return new Response(JSON.stringify({ accessToken: "access-token", refreshToken: "refresh-token-2" }), { status: 200 });
       }
       protectedRequestCount += 1;
       return protectedRequestCount === 1
@@ -89,7 +98,7 @@ test("a waiting tab reuses cookies rotated by the lock holder", async () => {
   try {
     const { apiFetch } = await import(`./client.ts?cross-tab=${Date.now()}`);
     await apiFetch("/trip-chats");
-    assert.equal(refreshCount, 0);
+    assert.equal(refreshCount, 1);
     assert.equal(protectedRequestCount, 2);
   } finally {
     restoreBrowserGlobals();

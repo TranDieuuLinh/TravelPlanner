@@ -25,7 +25,7 @@ quan hệ graph. Hint `entertainment` hoặc `wellness` chỉ truy vấn
 | `POST /v1/plans/current-location-route` | `CurrentLocationRouteRequest` | Một `TransportLeg` có geometry Valhalla/fallback |
 | `POST /v1/plans/day-directions` | `DayDirectionsRequest` | Danh sách `TransportLeg` nối origin với các điểm theo thứ tự |
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
-| `GET /v1/plans/places/search?query=&destination=&topK=` | Session cookie, query text and optional destination | Danh sách địa điểm chuẩn hóa để thêm thủ công vào lịch trình |
+| `GET /v1/plans/places/search?query=&destination=&topK=` | `Authorization: Bearer <accessToken>`, query text and optional destination | Danh sách địa điểm chuẩn hóa để thêm thủ công vào lịch trình |
 | `POST /v1/trip-chats/{chatId}/plan/unscheduled-places/confirm` | Multipart địa điểm gốc, match đã chọn, ngày đích và `expectedRevision` | `TripChat` sau khi thêm stop và xóa entry chưa xếp nguyên tử |
 | `DELETE /v1/trip-chats/{chatId}/plan/unscheduled-places` | Multipart địa điểm gốc và `expectedRevision` | `TripChat` sau khi xóa entry chưa xếp |
 | `POST /v1/trip-chats/{chatId}/plan/items` | Multipart item fields và `expectedRevision` | `TripChat` sau khi thêm địa điểm vào ngày đã chọn |
@@ -34,12 +34,13 @@ quan hệ graph. Hint `entertainment` hoặc `wellness` chỉ truy vấn
 | `PATCH /v1/trip-chats/{chatId}/plan/accommodation` | `expectedRevision` và các trường nơi lưu trú cần sửa, gồm `personalNotes` | `TripChat` với accommodation và route reference đã cập nhật |
 | `DELETE /v1/trip-chats/{chatId}/plan/accommodation` | `expectedRevision` | `TripChat` đã bỏ accommodation, transfer leg và phần chi phí lưu trú |
 | `PUT /v1/trip-chats/{chatId}/plan/days/{day}/transport-legs/{legIndex}/selection` | `expectedRevision` và transport option đã chuẩn hóa | `TripChat` với `selectedTransport` đã lưu trên leg |
-| `POST /auth/login` | `LoginInput` | `LoginResponse` + cookies |
-| `POST /auth/register` | `RegisterInput` | `LoginResponse` + cookies |
-| `GET /me` | Session cookie | `AuthUser` |
-| `GET /v1/trip-chats?limit=&offset=` | Session cookie | Danh sách `TripChatSummary` phân trang, mặc định 30 |
-| `GET /v1/trip-chats/bootstrap?chatId=` | Session cookie | `TripChatBootstrap` gồm recent summaries và full active chat |
-| `POST /auth/logout` | Session + CSRF cookie | `204 No Content` |
+| `POST /auth/login` | `LoginInput` | `LoginResponse` (`accessToken`, `refreshToken`) |
+| `POST /auth/register` | `RegisterInput` | `LoginResponse` (`accessToken`, `refreshToken`) |
+| `POST /auth/refresh` | `RefreshInput` body | Rotated `LoginResponse` with a new access/refresh pair |
+| `GET /me` | `Authorization: Bearer <accessToken>` | `AuthUser` |
+| `GET /v1/trip-chats?limit=&offset=` | `Authorization: Bearer <accessToken>` | Danh sách `TripChatSummary` phân trang, mặc định 30 |
+| `GET /v1/trip-chats/bootstrap?chatId=` | `Authorization: Bearer <accessToken>` | `TripChatBootstrap` gồm recent summaries và full active chat |
+| `POST /auth/logout` | `RefreshInput` body | `204 No Content` and refresh-session revocation |
 | `GET /admin/observability/status` | Admin session | Local observability counters and retention limit |
 | `GET /admin/observability/traces` | Admin session + `page`, `limit` | Recent agent requests; each summary includes `observationCount` and `entryPoint` |
 | `GET /admin/observability/observations` | Admin session + `page`, `limit`, optional `traceId` | Recent chain, LLM, tool and database spans with bounded redacted summaries; `traceId` isolates one request |

@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +29,31 @@ class Settings(BaseSettings):
         "creator@example.com|Creator Demo|Password123!|creator,"
         "admin@travelplanner.local|TravelPlanner Admin|Password123!|admin"
     )
+    auth_jwt_secret: str = Field(
+        default="development-only-change-this-jwt-secret",
+        validation_alias=AliasChoices("AUTH_JWT_SECRET", "JWT_SECRET"),
+    )
+    auth_access_token_ttl_seconds: int = Field(
+        default=900,
+        ge=60,
+        le=86400,
+        validation_alias=AliasChoices("AUTH_ACCESS_TOKEN_TTL_SECONDS"),
+    )
+    auth_refresh_token_ttl_seconds: int = Field(
+        default=604800,
+        ge=3600,
+        le=2592000,
+        validation_alias=AliasChoices("AUTH_REFRESH_TOKEN_TTL_SECONDS"),
+    )
+
+    @model_validator(mode="after")
+    def validate_auth_secret(self) -> "Settings":
+        if self.app_env == "production" and (
+            len(self.auth_jwt_secret) < 32
+            or self.auth_jwt_secret in {"change-me", "development-only-change-this-jwt-secret"}
+        ):
+            raise ValueError("AUTH_JWT_SECRET must be a random secret of at least 32 characters in production")
+        return self
     langfuse_enabled: bool = False
     # LANGFUSE_BASE_URL is the SDK v4 name. Keep LANGFUSE_HOST as a
     # backward-compatible fallback for existing deployments.

@@ -1,12 +1,14 @@
 from fastapi.testclient import TestClient
 
+from app.core.config import Settings
 from app.main import create_app
 from app.modules.auth.adapters.in_memory import InMemoryUserRepository
 from app.modules.auth.service import AuthService
 
 
 def client(*, with_demo_admin: bool = False) -> TestClient:
-    app = create_app()
+    # Keep auth API tests isolated from a developer's cloud DATABASE_URL.
+    app = create_app(Settings(app_env="test", database_url=None))
     app.state.auth_service = AuthService(
         InMemoryUserRepository(),
         bootstrap_users=(
@@ -18,7 +20,7 @@ def client(*, with_demo_admin: bool = False) -> TestClient:
     return TestClient(app)
 
 
-def test_register_login_session_and_logout_flow() -> None:
+def test_register_login_bearer_refresh_and_logout_flow() -> None:
     with client() as http:
         registered = http.post(
             "/auth/register",
@@ -30,16 +32,23 @@ def test_register_login_session_and_logout_flow() -> None:
         )
         assert registered.status_code == 200
         assert registered.json()["user"]["email"] == "new@example.com"
-        assert "travelplanner_session" in registered.cookies
-        csrf = registered.cookies["travelplanner_csrf"]
+        access_token = registered.json()["accessToken"]
+        assert registered.json()["refreshToken"]
+        refresh_token = registered.json()["refreshToken"]
 
-        current = http.get("/me")
+        current = http.get("/me", headers={"Authorization": f"Bearer {access_token}"})
         assert current.status_code == 200
         assert current.json()["fullName"] == "Nguyen Traveller"
 
-        logged_out = http.post("/auth/logout", headers={"X-CSRF-Token": csrf})
+        refreshed = http.post("/auth/refresh", json={"refreshToken": refresh_token})
+        assert refreshed.status_code == 200
+        assert refreshed.json()["accessToken"] != access_token
+        access_token = refreshed.json()["accessToken"]
+        logged_out = http.post("/auth/logout", json={"refreshToken": refreshed.json()["refreshToken"]})
         assert logged_out.status_code == 204
-        assert http.get("/me").status_code == 401
+        # Access JWTs are short-lived and stateless; logout revokes refresh
+        # rotation and the frontend immediately discards this access token.
+        assert http.get("/me", headers={"Authorization": f"Bearer {access_token}"}).status_code == 200
 
 
 def test_login_rejects_invalid_credentials_and_register_validates_password() -> None:
@@ -59,7 +68,7 @@ def test_login_rejects_invalid_credentials_and_register_validates_password() -> 
         assert invalid_register.json()["detail"]["fieldErrors"]["password"]
 
 
-def test_demo_admin_can_login_and_csrf_is_required_for_refresh() -> None:
+def test_demo_admin_can_login_and_refresh_requires_a_token() -> None:
     with client(with_demo_admin=True) as http:
         logged_in = http.post(
             "/auth/login",
@@ -67,4 +76,4 @@ def test_demo_admin_can_login_and_csrf_is_required_for_refresh() -> None:
         )
         assert logged_in.status_code == 200
         assert logged_in.json()["user"]["role"] == "admin"
-        assert http.post("/auth/refresh").status_code == 403
+        assert http.post("/auth/refresh").status_code == 401

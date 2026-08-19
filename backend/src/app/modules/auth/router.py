@@ -5,6 +5,7 @@ from app.modules.auth.contract import (
     CreatorApplicationInput,
     LoginInput,
     LoginResponse,
+    RefreshInput,
     ProfileUpdateInput,
     RegisterInput,
 )
@@ -13,8 +14,6 @@ from app.modules.auth.service import AuthService
 
 
 router = APIRouter(tags=["authentication"])
-SESSION_COOKIE = "travelplanner_session"
-CSRF_COOKIE = "travelplanner_csrf"
 
 
 def _raise(error: AuthError) -> None:
@@ -24,18 +23,10 @@ def _raise(error: AuthError) -> None:
     )
 
 
-def _set_session(response: Response, token: str, csrf_token: str) -> None:
-    response.set_cookie(SESSION_COOKIE, token, httponly=True, max_age=604800, samesite="lax")
-    response.set_cookie(CSRF_COOKIE, csrf_token, httponly=False, max_age=604800, samesite="lax")
-
-
-def _clear_session(response: Response) -> None:
-    response.delete_cookie(SESSION_COOKIE)
-    response.delete_cookie(CSRF_COOKIE)
-
-
-def _csrf(request: Request) -> str | None:
-    return request.headers.get("X-CSRF-Token")
+def _bearer(request: Request) -> str | None:
+    value = request.headers.get("Authorization", "")
+    scheme, _, token = value.partition(" ")
+    return token.strip() if scheme.casefold() == "bearer" and token.strip() else None
 
 
 def _service(request: Request) -> AuthService:
@@ -45,49 +36,51 @@ def _service(request: Request) -> AuthService:
 @router.post("/auth/login", response_model=LoginResponse)
 async def login(payload: LoginInput, request: Request, response: Response) -> LoginResponse:
     try:
-        user, token, csrf_token = await _service(request).login(payload.email, payload.password)
+        user, access_token, refresh_token, csrf_token = await _service(request).login(payload.email, payload.password)
     except AuthError as error:
         _raise(error)
-    _set_session(response, token, csrf_token)
-    return LoginResponse(user=user)
+    response.headers["Cache-Control"] = "no-store"
+    return LoginResponse(user=user, access_token=access_token, refresh_token=refresh_token, expires_in=_service(request).access_token_ttl_seconds)
 
 
 @router.post("/auth/register", response_model=LoginResponse)
 async def register(payload: RegisterInput, request: Request, response: Response) -> LoginResponse:
     try:
-        user, token, csrf_token = await _service(request).register(payload.full_name, payload.email, payload.password)
+        user, access_token, refresh_token, csrf_token = await _service(request).register(payload.full_name, payload.email, payload.password)
     except AuthError as error:
         _raise(error)
-    _set_session(response, token, csrf_token)
-    return LoginResponse(user=user)
+    response.headers["Cache-Control"] = "no-store"
+    return LoginResponse(user=user, access_token=access_token, refresh_token=refresh_token, expires_in=_service(request).access_token_ttl_seconds)
 
 
-@router.post("/auth/refresh", status_code=204)
-async def refresh(request: Request, response: Response) -> Response:
+@router.post("/auth/refresh", response_model=LoginResponse)
+async def refresh(request: Request, response: Response, payload: RefreshInput | None = None) -> LoginResponse:
     try:
-        user, token, csrf_token = await _service(request).refresh(request.cookies.get(SESSION_COOKIE), _csrf(request))
+        body_token = payload.refresh_token if payload else None
+        if not body_token:
+            raise AuthError("Thiếu refresh token.", status_code=401, code="INVALID_REFRESH_TOKEN")
+        user, access_token, rotated_refresh_token, _ = await _service(request).refresh(
+            body_token, require_csrf=False
+        )
     except AuthError as error:
         _raise(error)
-    del user
-    _set_session(response, token, csrf_token)
-    response.status_code = 204
-    return response
+    response.headers["Cache-Control"] = "no-store"
+    return LoginResponse(user=user, access_token=access_token, refresh_token=rotated_refresh_token, expires_in=_service(request).access_token_ttl_seconds)
 
 
 @router.post("/auth/logout", status_code=204)
-async def logout(request: Request, response: Response) -> Response:
+async def logout(request: Request, response: Response, payload: RefreshInput | None = None) -> Response:
     try:
-        await _service(request).logout(request.cookies.get(SESSION_COOKIE), _csrf(request))
+        await _service(request).logout(payload.refresh_token if payload else None, require_csrf=False)
     except AuthError as error:
         _raise(error)
-    _clear_session(response)
     response.status_code = 204
     return response
 
 
 @router.get("/me", response_model=AuthUser)
 async def current_user(request: Request) -> AuthUser:
-    user = await _service(request).user(request.cookies.get(SESSION_COOKIE))
+    user = await _service(request).user(_bearer(request))
     if not user:
         _raise(AuthError("Chưa đăng nhập.", status_code=401, code="UNAUTHENTICATED"))
     return user
@@ -97,8 +90,8 @@ async def current_user(request: Request) -> AuthUser:
 async def update_profile(payload: ProfileUpdateInput, request: Request) -> AuthUser:
     try:
         return await _service(request).update_profile(
-            request.cookies.get(SESSION_COOKIE),
-            _csrf(request),
+            _bearer(request),
+            None,
             full_name=payload.full_name,
             avatar_url=payload.avatar_url,
             bio=payload.bio,
@@ -112,8 +105,8 @@ async def update_profile(payload: ProfileUpdateInput, request: Request) -> AuthU
 async def creator_application(payload: CreatorApplicationInput, request: Request) -> AuthUser:
     try:
         return await _service(request).update_profile(
-            request.cookies.get(SESSION_COOKIE),
-            _csrf(request),
+            _bearer(request),
+            None,
             bio=payload.bio,
             creator_status="pending",
             creator_portfolio_urls=payload.portfolio_urls,

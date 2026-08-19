@@ -1,6 +1,6 @@
 # Cấu trúc codebase hiện tại
 
-Cập nhật lần cuối: 2026-08-18.
+Cập nhật lần cuối: 2026-08-19.
 
 ## Các ứng dụng cấp cao nhất
 
@@ -340,8 +340,11 @@ runtime.
 Authentication is implemented as a vertical `auth` module. It owns the
 `auth_runtime_users` and `auth_runtime_sessions` tables, uses PostgreSQL when `DATABASE_URL` is
 configured, and uses an in-memory repository only for tests or development
-without a database. Sessions are opaque cookies; the raw token is never stored
-in the database.
+without a database. Protected requests use a short-lived HS256 JWT access token
+in `Authorization: Bearer`; refresh tokens are rotated, hashed in
+`auth_runtime_sessions`. The raw refresh token is sent explicitly in the
+refresh/logout request body and is never stored in the database. No auth
+cookie or CSRF token is required.
 
 Information Finder hiện có service cache-first, các port `SearchProvider`,
 `SearchQueryPlanner`, `SourceRepository`, `EmbeddingProvider`, `SourceChunker`,

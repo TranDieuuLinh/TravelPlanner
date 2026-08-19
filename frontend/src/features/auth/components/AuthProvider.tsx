@@ -9,7 +9,7 @@ import {
   type ReactNode
 } from "react";
 import { authLoadFailureAction } from "@/features/auth/lib/session-recovery";
-import { APIError, apiFetch } from "@/shared/api/client";
+import { APIError, apiFetch, getRefreshToken, setTokens } from "@/shared/api/client";
 
 const SESSION_RETRY_DELAY_MS = 3_000;
 const SESSION_REQUEST_TIMEOUT_MS = 5_000;
@@ -135,25 +135,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     sessionUnavailable,
     async login(email, password) {
-      const response = await apiFetch<{ user: CurrentUser }>("/auth/login", {
+      const response = await apiFetch<{ user: CurrentUser; accessToken: string; refreshToken: string }>("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password })
       }, false);
+      setTokens(response.accessToken, response.refreshToken);
       setUser(response.user);
       return response.user;
     },
     async register(fullName, email, password) {
-      const response = await apiFetch<{ user: CurrentUser }>("/auth/register", {
+      const response = await apiFetch<{ user: CurrentUser; accessToken: string; refreshToken: string }>("/auth/register", {
         method: "POST",
         body: JSON.stringify({ fullName, email, password })
       }, false);
+      setTokens(response.accessToken, response.refreshToken);
       setUser(response.user);
       return response.user;
     },
     async logout() {
       try {
-        await apiFetch<void>("/auth/logout", { method: "POST" }, false);
+        await apiFetch<void>("/auth/logout", {
+          method: "POST",
+          body: JSON.stringify({ refreshToken: getRefreshToken() })
+        }, false);
       } finally {
+        setTokens(null, null);
         setUser(null);
       }
     },

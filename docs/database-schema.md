@@ -1,6 +1,6 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-18.
+Cập nhật lần cuối: 2026-08-19.
 
 ## Phạm vi và trạng thái
 
@@ -135,7 +135,7 @@ Ngày sửa đổi cuối cùng: 2026-08-14.
 | `metadata` | json | Không | Metadata của sự kiện. |
 | `created_at` | timestamptz | Không | Thời điểm tạo sự kiện. |
 
-### `auth_sessions`
+### `auth_runtime_sessions`
 
 Ngày sửa đổi cuối cùng: 2026-08-10.
 
@@ -143,13 +143,10 @@ Ngày sửa đổi cuối cùng: 2026-08-10.
 |---|---|---|---|
 | `id` | integer | Không | Khóa chính session. |
 | `user_id` | integer | Không | User sở hữu session. |
-| `jti` | varchar | Không | Mã định danh refresh token. |
-| `refresh_token_hash` | varchar | Không | Hash của refresh token. |
+| `token_hash` | varchar | Không | SHA-256 hash của refresh JWT. |
+| `csrf_token_hash` | varchar | Không | Hash của CSRF token dùng cho refresh/logout. |
 | `expires_at` | timestamptz | Không | Thời điểm session hết hạn. |
-| `revoked_at` | timestamptz | Có | Thời điểm session bị thu hồi. |
-| `replaced_by_jti` | varchar | Có | JTI của session thay thế. |
-| `created_at` | timestamptz | Không | Thời điểm tạo session. |
-| `last_used_at` | timestamptz | Có | Lần cuối session được dùng. |
+| `last_used_at` | timestamptz | Có | Lần cuối refresh session được dùng. |
 
 ### `users`
 
