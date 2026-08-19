@@ -24,6 +24,10 @@ class GeminiIntentClassifier:
             "mentionedPlaces": payload.mentioned_places[-50:],
             "selectedPlaces": payload.selected_places[-50:],
             "clarificationRequired": payload.clarification_required,
+            "pendingUserContext": [
+                item.model_dump(mode="json", by_alias=True)
+                for item in payload.pending_user_context
+            ],
             "conversationSummary": (payload.conversation_summary or "")[-2000:],
         }
         response = await self._client.generate(

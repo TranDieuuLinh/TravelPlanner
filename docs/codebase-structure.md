@@ -285,6 +285,11 @@ Explorer chỉ trích xuất và giữ provenance, không resolve place. Root
 orchestration chuyển output `ready`, hoặc `partial` vẫn xác định được
 `input_ADM`, sang public input của PlaceChecker; partial không có destination
 vẫn dừng an toàn.
+Các agent dùng `shared/contracts/user_context.py` để trả yêu cầu dữ liệu còn
+thiếu về Supervisor. Root giữ các request đang chờ ở `pending_user_context`;
+Supervisor là nơi duy nhất tạo câu hỏi hiển thị cho người dùng và route lại agent
+ở lượt trả lời tiếp theo. Explorer nhận `contextSummary` tùy chọn qua public
+input; việc sinh summary chưa thuộc thay đổi này.
 Explorer output mang `days`, `startDate` và `timezone`; mặc định duration là 3
 ngày và ngày bắt đầu là ngày mai khi prompt không chỉ định. Shared `TripIntent`
 cũng dùng mặc định 3 ngày để các luồng legacy không âm thầm quay về plan 1 ngày.

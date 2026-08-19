@@ -76,8 +76,10 @@ class TestConversationMemoryBaseline(unittest.TestCase):
                 config=self.config,
             )
         )
-        self.assertEqual(result["decision"].route, "explorer")
+        self.assertEqual(result["decision"].route, "finish")
         self.assertEqual(result["explorer_output"].input_adm, "Hanoi")
+        assert "bao nhiêu ngày" in result["clarification_question"]
+        assert "Ngân sách" in result["clarification_question"]
         self.assertIsNotNone(result.get("response"))
 
     def test_case_02_multiturn_deictic_reference_baseline_gap(self):
@@ -98,11 +100,12 @@ class TestConversationMemoryBaseline(unittest.TestCase):
         )
         # Baseline check: Without conversation memory resolution, Turn 2 lacks destination
         # and returns clarification question instead of resolving "các điểm bên trên".
-        self.assertEqual(result_turn2["decision"].route, "explorer")
-        self.assertEqual(result_turn2["explorer_output"].status, "clarification")
+        self.assertEqual(result_turn2["decision"].route, "finish")
         self.assertEqual(
             result_turn2["clarification_question"],
-            "Bạn muốn đi tỉnh hoặc thành phố nào?",
+            "Để tiếp tục, Penguin cần thêm:\n"
+            "1. Bạn muốn đi tỉnh hoặc thành phố nào?\n"
+            "2. Ngân sách dự kiến cho chuyến đi là bao nhiêu?",
         )
         self.assertIsNone(result_turn2.get("planner_output"))
         self.assertIsNone(result_turn2.get("itinerary"))
@@ -127,7 +130,7 @@ class TestConversationMemoryBaseline(unittest.TestCase):
             )
         )
         # Baseline check: "chỗ đó" is unresolved. Explorer output has no destination or resolved place.
-        self.assertEqual(result_turn2["decision"].route, "explorer")
+        self.assertEqual(result_turn2["decision"].route, "finish")
         self.assertIsNone(result_turn2.get("planner_output"))
         self.assertIsNone(result_turn2.get("itinerary"))
         explorer_output = result_turn2.get("explorer_output")
@@ -165,11 +168,14 @@ class TestConversationMemoryBaseline(unittest.TestCase):
             )
         )
         # Baseline check: InMemorySaver in graph B has no state for fixed_thread_id; context is lost
-        self.assertEqual(result_after_restart["decision"].route, "explorer")
+        self.assertEqual(result_after_restart["decision"].route, "finish")
         self.assertEqual(result_after_restart["explorer_output"].status, "clarification")
         self.assertEqual(
             result_after_restart["clarification_question"],
-            "Bạn muốn đi tỉnh hoặc thành phố nào?",
+            "Để tiếp tục, Penguin cần thêm:\n"
+            "1. Bạn muốn đi tỉnh hoặc thành phố nào?\n"
+            "2. Bạn muốn đi trong bao nhiêu ngày?\n"
+            "3. Ngân sách dự kiến cho chuyến đi là bao nhiêu?",
         )
         self.assertIsNone(result_after_restart.get("planner_output"))
         self.assertIsNone(result_after_restart.get("itinerary"))
@@ -223,4 +229,3 @@ class TestConversationMemoryBaseline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

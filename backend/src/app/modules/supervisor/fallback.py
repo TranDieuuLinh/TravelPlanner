@@ -10,6 +10,14 @@ def build_fallback_decision(
     warning: str,
 ) -> SupervisorDecision:
     message = _normalize(payload.message)
+    if payload.pending_user_context:
+        route = payload.pending_user_context[0].resume_route
+        if route in {"explorer", "information_finder", "plan_editor"}:
+            return _decision(
+                route,
+                warning,
+                "Resuming the agent that requested additional user context.",
+            )
     if payload.has_itinerary and payload.has_edit_operation:
         return _decision("plan_editor", warning, "Structured edit state is complete.")
     if payload.has_source_input or _contains(

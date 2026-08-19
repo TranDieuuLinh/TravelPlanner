@@ -18,9 +18,11 @@ def test_legacy_planning_flow_does_not_generate_a_fake_itinerary() -> None:
         )
     )
 
-    assert result["decision"].route == "explorer"
+    assert result["decision"].route == "finish"
     assert result.get("itinerary") is None
-    assert "new trip/places/food input contract" in result["response"]
+    assert result["clarification_question"] == (
+        "Ngân sách dự kiến cho chuyến đi là bao nhiêu?"
+    )
 
 
 def test_planning_flow_returns_clarification() -> None:
@@ -34,7 +36,11 @@ def test_planning_flow_returns_clarification() -> None:
     )
 
     assert result.get("itinerary") is None
-    assert result["clarification_question"] == "Bạn muốn đi tỉnh hoặc thành phố nào?"
+    assert result["clarification_question"] == (
+        "Để tiếp tục, Penguin cần thêm:\n"
+        "1. Bạn muốn đi tỉnh hoặc thành phố nào?\n"
+        "2. Ngân sách dự kiến cho chuyến đi là bao nhiêu?"
+    )
 
 
 def test_image_without_prompt_routes_to_explorer() -> None:
@@ -51,8 +57,38 @@ def test_image_without_prompt_routes_to_explorer() -> None:
         config={"configurable": {"thread_id": str(uuid4())}},
     ))
 
-    assert result["decision"].route == "explorer"
+    assert result["decision"].route == "finish"
     assert result["explorer_output"].input_adm == "Huế"
+    assert result["clarification_question"] == (
+        "Để tiếp tục, Penguin cần thêm:\n"
+        "1. Bạn muốn đi trong bao nhiêu ngày?\n"
+        "2. Ngân sách dự kiến cho chuyến đi là bao nhiêu?"
+    )
+
+
+def test_agent_questions_are_answered_through_supervisor_on_next_turn() -> None:
+    graph = create_root_graph()
+    config = {"configurable": {"thread_id": str(uuid4())}}
+
+    first = asyncio.run(
+        graph.ainvoke(
+            {
+                "request_id": "context-request-1",
+                "message": "Lập kế hoạch ở Đà Nẵng trong 3 ngày",
+            },
+            config=config,
+        )
+    )
+    assert [item["field"] for item in first["pending_user_context"]] == ["budget"]
+
+    second = asyncio.run(
+        graph.ainvoke(
+            {"request_id": "context-request-2", "message": "Ngân sách 5 triệu"},
+            config=config,
+        )
+    )
+    assert second["decision"].route == "explorer"
+    assert second["pending_user_context"] == []
 
 
 def test_same_thread_keeps_user_context_for_follow_up_routing() -> None:

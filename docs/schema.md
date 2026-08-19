@@ -1,6 +1,6 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-18.
+Cập nhật lần cuối: 2026-08-19.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
@@ -133,6 +133,14 @@ Trong routing, ý định rõ ở `message` hiện tại có ưu tiên hơn cont
 lược bỏ intent, Supervisor kế thừa tác vụ hỏi đáp hoặc lập kế hoạch từ các lượt
 có role gần nhất; nếu không đủ căn cứ phân biệt thì route `finish` hỏi lại.
 
+Mọi agent có thể trả `UserContextRequest` (`field`, `sourceAgent`, `resumeRoute`,
+tùy chọn `reason`) khi cần thêm dữ liệu do người dùng sở hữu. Agent không tạo câu
+hỏi trực tiếp. Root chuyển request cho Supervisor; Supervisor tạo một
+`clarificationQuestion`, lưu request đang chờ trong root state và route `finish`.
+Lượt trả lời mới vẫn đi qua Supervisor trước; nếu không có intent mới,
+Supervisor route lại `resumeRoute` để agent tiếp tục. `contextSummary` đã có chỗ
+truyền vào Explorer; cơ chế tạo summary sẽ được triển khai riêng.
+
 ### Explorer
 
 `ExplorerInput` nhận `rawPrompt` tùy chọn, `urls`, `images` và `forceRefresh`
@@ -159,7 +167,8 @@ không có `schemaVersion` và gồm:
   gồm access/timing/price/caution, hoạt động cụ thể tại địa điểm, trải nghiệm
   đặc trưng và fun fact; loại lời quảng cáo chung chung;
 - `days`, `budget`, `people`, `shortPreferences`, `shortAvoids`;
-- clarification, warnings hoặc structured `AgentError` khi phù hợp.
+- `userContextRequests`, warnings hoặc structured `AgentError` khi phù hợp;
+  `clarificationQuestion` không còn là kênh hỏi trực tiếp của Explorer.
 
 Tên place chỉ chứa tên riêng của địa điểm/cơ sở. Khi raw prompt nói một hành
 động hoặc món gắn với cơ sở có tên, hành động/món nằm trong `inputItems` và có
