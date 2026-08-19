@@ -30,7 +30,7 @@ def _search_dependencies(request: Request) -> tuple[SearchPlacesTool, PostgresPl
 async def search_places_for_manual_plan(
     query: str = Query(..., min_length=2, max_length=200),
     destination: str | None = Query(default=None, max_length=160),
-    top_k: int = Query(default=5, ge=1, le=20, alias="topK"),
+    top_k: int = Query(default=1, ge=1, le=20, alias="topK"),
     _: AuthUser = Depends(require_current_user),
     dependencies: tuple[SearchPlacesTool, PostgresPlaceCatalog] = Depends(_search_dependencies),
 ) -> list[dict[str, object | None]]:

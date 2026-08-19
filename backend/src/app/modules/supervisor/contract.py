@@ -2,8 +2,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.shared.contracts.user_context import UserContextRequest
-
 
 SupervisorRoute = Literal[
     "explorer",
@@ -27,12 +25,6 @@ class SupervisorInput(BaseModel):
     mentioned_places: list[str] = Field(default_factory=list, max_length=50)
     selected_places: list[str] = Field(default_factory=list, max_length=50)
     clarification_required: bool = False
-    user_context_requests: list[UserContextRequest] = Field(
-        default_factory=list, max_length=20
-    )
-    pending_user_context: list[UserContextRequest] = Field(
-        default_factory=list, max_length=20
-    )
     conversation_summary: str | None = Field(default=None, max_length=2000)
 
 

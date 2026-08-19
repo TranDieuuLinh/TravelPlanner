@@ -15,7 +15,6 @@ from app.modules.explorer.adm_reconciliation import reconcile_adm_candidates
 from app.modules.explorer.draft_key import explorer_draft_cache_key
 from app.modules.explorer.errors import ExplorerOperationError
 from app.modules.explorer.intake_policy import normalize_intake_items
-from app.modules.explorer.intake_requirements import build_user_context_requests
 from app.modules.explorer.models import BatchCoverage, ExplorerDraft, SourceExtractionResult
 from app.modules.explorer.ports import (
     ExplorerDraftCache,
@@ -339,12 +338,11 @@ class ExplorerService:
         if budget.source == "default":
             budget = ExplorerBudget(level="low", source="default")
         budget = normalize_budget_per_person(budget, draft.people)
-        user_context_requests = build_user_context_requests(
-            input_adm=input_adm,
-            prompt_days=prompt_days,
-            budget=budget,
-        )
         if not input_adm:
+            question = (
+                "Các nguồn có địa điểm hành chính mâu thuẫn. Bạn muốn đi đâu?"
+                if adm_conflict else "Bạn muốn đi tỉnh hoặc thành phố nào?"
+            )
             return ExplorerOutput(
                 status="clarification", intakeId=intake_id, input_ADM=None,
                 places=draft.places or None, inputItems=draft.input_items or None,
@@ -352,9 +350,8 @@ class ExplorerService:
                 startDate=start_date, timezone=timezone,
                 budget=budget, people=draft.people,
                 shortPreferences=draft.short_preferences, shortAvoids=draft.short_avoids,
-                clarificationQuestion=None, warnings=warnings,
+                clarificationQuestion=question, warnings=warnings,
                 completeness=completeness,
-                userContextRequests=user_context_requests,
             )
         status = "ready"
         if completeness and not completeness.complete:
@@ -368,7 +365,6 @@ class ExplorerService:
             shortPreferences=draft.short_preferences, shortAvoids=draft.short_avoids,
             warnings=warnings,
             completeness=completeness,
-            userContextRequests=user_context_requests,
         )
 
     def failure(self, intake_id: str, error: AgentError) -> ExplorerOutput:

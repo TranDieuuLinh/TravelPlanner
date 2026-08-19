@@ -12,8 +12,6 @@ def route_supervisor(
 def route_after_explorer(
     state: RootState,
 ) -> Literal["place_checker", "finish"]:
-    if state.get("pending_user_context"):
-        return "finish"
     output = state["explorer_output"]
     return "place_checker" if explorer_can_plan(output) else "finish"
 

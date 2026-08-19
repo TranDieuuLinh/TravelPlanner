@@ -1,15 +1,16 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-19.
+Cập nhật lần cuối: 2026-08-18.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
 trực tiếp.
 
 Place Checker phân biệt identity `provisional` có nguồn URL/direct input với
-retrieval provisional. Loại đầu chỉ được giữ khi có canonical ID, tọa độ, đúng
-ADM, đạt ngưỡng score và có exact/alias, address hoặc semantic evidence mạnh;
-output là `conditional` và có constraint xác minh trước khi chốt lịch.
+retrieval provisional. Loại đầu được tự chọn từ candidate tốt nhất khi có
+canonical ID, tọa độ và đúng ADM; `addressHint` được ưu tiên khi có, còn không
+thì dùng ranking đầu tiên. Output là `conditional`, có warning/constraint xác
+minh trước khi chốt lịch.
 Retrieval/system provisional vẫn không planner-eligible.
 
 Ontology có node place-like `Entertainment`, dùng cùng required/optional
@@ -133,14 +134,6 @@ Trong routing, ý định rõ ở `message` hiện tại có ưu tiên hơn cont
 lược bỏ intent, Supervisor kế thừa tác vụ hỏi đáp hoặc lập kế hoạch từ các lượt
 có role gần nhất; nếu không đủ căn cứ phân biệt thì route `finish` hỏi lại.
 
-Mọi agent có thể trả `UserContextRequest` (`field`, `sourceAgent`, `resumeRoute`,
-tùy chọn `reason`) khi cần thêm dữ liệu do người dùng sở hữu. Agent không tạo câu
-hỏi trực tiếp. Root chuyển request cho Supervisor; Supervisor tạo một
-`clarificationQuestion`, lưu request đang chờ trong root state và route `finish`.
-Lượt trả lời mới vẫn đi qua Supervisor trước; nếu không có intent mới,
-Supervisor route lại `resumeRoute` để agent tiếp tục. `contextSummary` đã có chỗ
-truyền vào Explorer; cơ chế tạo summary sẽ được triển khai riêng.
-
 ### Explorer
 
 `ExplorerInput` nhận `rawPrompt` tùy chọn, `urls`, `images` và `forceRefresh`
@@ -167,8 +160,7 @@ không có `schemaVersion` và gồm:
   gồm access/timing/price/caution, hoạt động cụ thể tại địa điểm, trải nghiệm
   đặc trưng và fun fact; loại lời quảng cáo chung chung;
 - `days`, `budget`, `people`, `shortPreferences`, `shortAvoids`;
-- `userContextRequests`, warnings hoặc structured `AgentError` khi phù hợp;
-  `clarificationQuestion` không còn là kênh hỏi trực tiếp của Explorer.
+- clarification, warnings hoặc structured `AgentError` khi phù hợp.
 
 Tên place chỉ chứa tên riêng của địa điểm/cơ sở. Khi raw prompt nói một hành
 động hoặc món gắn với cơ sở có tên, hành động/món nằm trong `inputItems` và có
@@ -278,11 +270,10 @@ anchor khi có budget target, nếu không mới dùng candidate đầu tiên; c
 Rich PlaceChecker result trả `foodStyleCoverage[]` gồm Style ID/tên, target,
 số quán đã chọn, số Item phân biệt và trạng thái complete. Compact Planner
 contract vẫn nhận food venue cùng `foodCoverage` meal feasibility.
-Output planner giữ các entry không xếp được trong `unscheduled`; với lỗi
-canonical identity, frontend tự search top 1 và đưa match vào ngày ít điểm nhất.
-Nếu không có match, người dùng vẫn có thể search tối đa 5 địa điểm thay thế,
-chọn ngày, rồi gọi mutation xác nhận để đưa match vào `days[].stops` và loại
-entry khỏi `unscheduled` cùng một revision.
+Output planner giữ các entry thật sự không xếp được trong `unscheduled`. Với
+URL/direct input có candidate hợp lệ nhưng identity nhập nhằng, Place Checker
+tự chọn một canonical candidate tốt nhất trước khi tạo Planner input; frontend
+không còn mở flow chọn Top-K để resolve identity.
 Rich result còn trả `styleCandidateSelections[]` với place/entity type,
 Style/Item ID và tên, `relationshipSource`, cùng
 `styleCandidateCoverage[]` và các input Style/Item không resolve được. Selector

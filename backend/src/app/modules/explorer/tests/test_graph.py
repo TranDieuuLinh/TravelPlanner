@@ -133,11 +133,7 @@ def test_missing_adm_uses_clarification_path() -> None:
     assert output.status == "clarification"
     assert output.input_adm is None
     assert output.budget.level == "low"
-    assert output.clarification_question is None
-    assert [item.field for item in output.user_context_requests] == [
-        "destination",
-        "budget",
-    ]
+    assert output.clarification_question == "Bạn muốn đi tỉnh hoặc thành phố nào?"
 
 
 def test_source_action_is_not_part_of_place_name() -> None:

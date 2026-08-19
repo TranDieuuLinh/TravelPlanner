@@ -17,8 +17,6 @@ def create_decide_node(service: SupervisorService):
                 mentioned_places=state.get("mentioned_places", []),
                 selected_places=state.get("selected_places", []),
                 clarification_required=state.get("clarification_required", False),
-                user_context_requests=state.get("user_context_requests", []),
-                pending_user_context=state.get("pending_user_context", []),
                 conversation_summary=state.get("conversation_summary"),
             )
         )

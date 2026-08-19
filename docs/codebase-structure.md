@@ -1,6 +1,6 @@
 # Cấu trúc codebase hiện tại
 
-Cập nhật lần cuối: 2026-08-19.
+Cập nhật lần cuối: 2026-08-18.
 
 ## Các ứng dụng cấp cao nhất
 
@@ -176,11 +176,11 @@ Frontend chỉ hiển thị đi bộ cho chặng ngắn hơn 1,5 km. Với chặ
 phương án hợp lệ, thao tác chọn option gọi Trip Chat mutation; backend lưu
 `selectedTransport` vào đúng leg trong `currentPlannerOutput` với optimistic
 revision để lựa chọn còn nguyên sau khi tải lại.
-Địa điểm trong `currentPlannerOutput.unscheduled` bị lỗi canonical identity sẽ
-được frontend tự tìm top 1 và thêm vào ngày ít điểm nhất qua Trip Chat mutation;
-mutation kiểm tra revision, thêm stop và xóa entry chưa xếp nguyên tử. Nếu top 1
-không tìm được, card fallback vẫn cho phép tìm tối đa 5 kết quả, chọn ngày và
-match thủ công. Menu ba chấm của card chưa xếp có thao tác tìm lại và xóa entry.
+Địa điểm URL/direct input được Place Checker tự chọn một canonical candidate tốt
+nhất trước khi tạo Planner input; `addressHint` được ưu tiên nếu có. Frontend
+không còn resolve identity bằng Top-K hoặc chèn match trực tiếp qua Trip Chat
+mutation. `unscheduled` chỉ còn phản ánh candidate không xếp được do preflight,
+giờ mở cửa, route hoặc constraint của Planner; menu vẫn cho phép bỏ entry.
 Danh sách TripChat chỉ map contract summary và giữ `hasItinerary`; sau một
 message, frontend áp dụng trực tiếp full chat snapshot vừa nhận để chuyển sang
 itinerary mà không phụ thuộc vào một lượt GET đồng bộ thứ hai. Output không có
@@ -285,11 +285,6 @@ Explorer chỉ trích xuất và giữ provenance, không resolve place. Root
 orchestration chuyển output `ready`, hoặc `partial` vẫn xác định được
 `input_ADM`, sang public input của PlaceChecker; partial không có destination
 vẫn dừng an toàn.
-Các agent dùng `shared/contracts/user_context.py` để trả yêu cầu dữ liệu còn
-thiếu về Supervisor. Root giữ các request đang chờ ở `pending_user_context`;
-Supervisor là nơi duy nhất tạo câu hỏi hiển thị cho người dùng và route lại agent
-ở lượt trả lời tiếp theo. Explorer nhận `contextSummary` tùy chọn qua public
-input; việc sinh summary chưa thuộc thay đổi này.
 Explorer output mang `days`, `startDate` và `timezone`; mặc định duration là 3
 ngày và ngày bắt đầu là ngày mai khi prompt không chỉ định. Shared `TripIntent`
 cũng dùng mặc định 3 ngày để các luồng legacy không âm thầm quay về plan 1 ngày.
