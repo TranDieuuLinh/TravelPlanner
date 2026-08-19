@@ -100,7 +100,11 @@ class TestMemoryRootGraphIntegration(unittest.TestCase):
         )
         self.assertIsNotNone(saved_chat)
         assistant_msg = saved_chat.messages[-1]
-        self.assertEqual(assistant_msg.route, "explorer")
+        self.assertEqual(assistant_msg.route, "finish")
+        self.assertEqual(
+            assistant_msg.clarification_question,
+            "Ngân sách dự kiến cho chuyến đi là bao nhiêu?",
+        )
 
         updated_mem = asyncio.run(self.memory_service.load_context(chat_id, self.user_id))
         self.assertEqual(updated_mem.destination, "Hà Nội")

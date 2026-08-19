@@ -40,8 +40,10 @@ from app.modules.explorer.adapters import (
     YtDlpCaptionClient,
 )
 from app.modules.explorer.graph import build_explorer_graph as _compile_explorer_graph
+from app.modules.explorer.intake_requirements import keep_unknown_context_requests
 from app.modules.explorer.service import ExplorerService
 from app.shared.llm import LlmClient
+from app.shared.contracts.user_context import UserContextRequest
 
 
 def create_explorer_service(
@@ -242,6 +244,8 @@ def build_explorer_graph(service: ExplorerService | None = None):
 __all__ = [
     "ExplorerBudget", "ExplorerImageInput", "ExplorerInput", "ExplorerOutput",
     "ExplorerPeople", "ExplorerPlace", "PlaceSource", "RequestedItem", "SourceNote",
+    "UserContextRequest",
+    "keep_unknown_context_requests",
     "build_explorer_graph",
     "create_explorer_service",
 ]

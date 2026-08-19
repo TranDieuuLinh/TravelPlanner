@@ -1,6 +1,9 @@
 import re
 
-from app.modules.explorer.public import build_explorer_graph
+from app.modules.explorer.public import (
+    build_explorer_graph,
+    keep_unknown_context_requests,
+)
 from app.modules.information_finder.public import (
     InformationFinderService,
     build_information_finder_graph,
@@ -73,6 +76,7 @@ class RootNodes:
         summary = memory_field(memory, "summary")
         pending_goal = memory_field(memory, "pending_goal")
         clarification = pending_goal == "clarify_reference"
+        pending_context = state.get("pending_user_context", [])
 
         supervisor_payload = {
             "message": state["message"],
@@ -85,6 +89,7 @@ class RootNodes:
             "mentioned_places": places,
             "selected_places": sel_places,
             "clarification_required": clarification,
+            "pending_user_context": pending_context,
             "conversation_summary": summary,
         }
 
@@ -102,18 +107,22 @@ class RootNodes:
         return update
 
     async def run_explorer(self, state: RootState) -> dict:
+        memory = state.get("conversation_memory")
+        context_summary = state.get("conversation_summary") or memory_field(
+            memory, "summary"
+        )
         result = await self.explorer.ainvoke(
             {"payload": {
                 "rawPrompt": state.get("message") or None,
                 "urls": state.get("urls", []),
                 "images": state.get("images", []),
                 "forceRefresh": state.get("force_refresh", False),
+                "contextSummary": context_summary,
             }}
         )
         output = result["output"]
 
         # Context enrichment from conversation memory if present
-        memory = state.get("conversation_memory")
         if memory:
             dest = getattr(memory, "destination", None) or (memory.get("destination") if isinstance(memory, dict) else None)
             dur = getattr(memory, "duration_days", None) or (memory.get("duration_days") or memory.get("durationDays") if isinstance(memory, dict) else None)
@@ -162,10 +171,41 @@ class RootNodes:
                 output.status = "ready"
                 output.clarification_question = None
 
+        previous_output = state.get("explorer_output")
+        previous_pending = {
+            request.get("field") if isinstance(request, dict) else request.field
+            for request in state.get("pending_user_context", [])
+        }
+        self._carry_known_fields(output, previous_output, previous_pending, state)
+
+        known_fields = self._known_explorer_fields(output, state)
+        requests = keep_unknown_context_requests(
+            output.user_context_requests, known_fields
+        )
         update = {
             "explorer_output": output,
+            "pending_user_context": [
+                request.model_dump(mode="json", by_alias=True)
+                for request in requests
+            ],
             "warnings": [*state.get("warnings", []), *output.warnings],
         }
+        if requests:
+            questionnaire_result = await self.supervisor.ainvoke(
+                {
+                    "message": state.get("message", ""),
+                    "user_context_requests": requests,
+                }
+            )
+            questionnaire = questionnaire_result["decision"]
+            update.update(
+                {
+                    "decision": questionnaire,
+                    "clarification_question": questionnaire.clarification_question,
+                    "response": questionnaire.response,
+                }
+            )
+            return update
         if not explorer_can_plan(output):
             update.update(
                 {
@@ -177,6 +217,51 @@ class RootNodes:
         else:
             update["intent"] = output_to_intent(output)
         return update
+
+    @staticmethod
+    def _carry_known_fields(output, previous, previous_pending, state) -> None:
+        if previous is None or not previous_pending:
+            return
+        if "destination" not in previous_pending and not output.input_adm:
+            output.input_adm = previous.input_adm
+        prompt = state.get("message") or ""
+        if "duration_days" not in previous_pending and not re.search(
+            r"\b\d{1,2}\s*(?:ngày|days?)\b", prompt, re.IGNORECASE
+        ):
+            output.days = previous.days
+        if "budget" not in previous_pending and output.budget.source == "default":
+            output.budget = previous.budget
+
+    @staticmethod
+    def _known_explorer_fields(output, state) -> set[str]:
+        known = set()
+        if output.input_adm:
+            known.add("destination")
+        prompt = state.get("message") or ""
+        memory = state.get("conversation_memory")
+        has_new_input = bool(
+            state.get("urls")
+            or state.get("images")
+            or output.places
+            or output.input_items
+        )
+        if re.search(r"\b\d{1,2}\s*(?:ngày|days?)\b", prompt, re.IGNORECASE):
+            known.add("duration_days")
+        elif memory_field(memory, "duration_days") and not has_new_input:
+            known.add("duration_days")
+        elif (
+            state.get("pending_user_context")
+            and not any(
+                (
+                    request.get("field") if isinstance(request, dict) else request.field
+                ) == "duration_days"
+                for request in state["pending_user_context"]
+            )
+        ):
+            known.add("duration_days")
+        if output.budget.source != "default" or memory_field(memory, "budget"):
+            known.add("budget")
+        return known
 
     async def run_information_finder(self, state: RootState) -> dict:
         result = await self.information_finder.ainvoke(

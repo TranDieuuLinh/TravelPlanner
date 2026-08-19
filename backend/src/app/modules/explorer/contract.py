@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from pydantic.alias_generators import to_camel
 
 from app.shared.contracts.agent import AgentError
+from app.shared.contracts.user_context import UserContextRequest
 
 
 class ExplorerModel(BaseModel):
@@ -125,6 +126,7 @@ class ExplorerInput(ExplorerModel):
     urls: list[str] = Field(default_factory=list, max_length=20)
     images: list[ExplorerImageInput] = Field(default_factory=list, max_length=20)
     force_refresh: bool = False
+    context_summary: str | None = Field(default=None, max_length=4000)
 
     @model_validator(mode="after")
     def has_input(self) -> "ExplorerInput":
@@ -187,4 +189,5 @@ class ExplorerOutput(ExplorerModel):
     clarification_question: str | None = Field(default=None, max_length=500)
     warnings: list[str] = Field(default_factory=list)
     completeness: ExplorerCompleteness | None = None
+    user_context_requests: list[UserContextRequest] = Field(default_factory=list)
     error: AgentError | None = None

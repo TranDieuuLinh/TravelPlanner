@@ -2,6 +2,7 @@ import asyncio
 
 from app.modules.supervisor.contract import ClassifierResult
 from app.modules.supervisor.public import SupervisorService, build_supervisor_graph
+from app.shared.contracts.user_context import UserContextRequest
 
 
 class FakeClassifier:
@@ -34,3 +35,21 @@ def test_routes_structured_edit() -> None:
     )
 
     assert result["decision"].route == "plan_editor"
+
+
+def test_turns_agent_context_request_into_user_question() -> None:
+    graph = build_supervisor_graph(SupervisorService())
+    request = UserContextRequest(
+        field="budget",
+        source_agent="place_checker",
+        resume_route="explorer",
+    )
+
+    result = asyncio.run(
+        graph.ainvoke({"message": "Lập kế hoạch", "user_context_requests": [request]})
+    )
+
+    assert result["decision"].route == "finish"
+    assert result["decision"].clarification_question == (
+        "Ngân sách dự kiến cho chuyến đi là bao nhiêu?"
+    )

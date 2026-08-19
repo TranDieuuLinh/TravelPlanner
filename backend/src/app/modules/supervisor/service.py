@@ -38,6 +38,9 @@ class SupervisorService:
                 response=question,
             )
 
+        if payload.user_context_requests:
+            return self.build_context_questionnaire(payload.user_context_requests)
+
         if self._classifier is None:
             return build_fallback_decision(
                 payload,
@@ -55,6 +58,40 @@ class SupervisorService:
                 payload,
                 warning="Không thể gọi Supervisor LLM; đã dùng câu hỏi làm rõ.",
             )
+
+    @staticmethod
+    def build_context_questionnaire(requests) -> SupervisorDecision:
+        labels = {
+            "destination": "Bạn muốn đi tỉnh hoặc thành phố nào?",
+            "duration_days": "Bạn muốn đi trong bao nhiêu ngày?",
+            "budget": "Ngân sách dự kiến cho chuyến đi là bao nhiêu?",
+            "travelers": "Bạn đi cùng bao nhiêu người?",
+            "preferences": "Bạn có sở thích hoặc ưu tiên nào không?",
+            "avoids": "Bạn có điều gì muốn tránh không?",
+        }
+        unique_requests = []
+        seen = set()
+        for request in requests:
+            if request.field not in seen:
+                unique_requests.append(request)
+                seen.add(request.field)
+        questions = [
+            labels.get(request.field, f"Bạn có thể cho biết thêm về {request.field}?")
+            for request in unique_requests
+        ]
+        question = questions[0] if len(questions) == 1 else (
+            "Để tiếp tục, Penguin cần thêm:\n"
+            + "\n".join(
+                f"{index}. {item}" for index, item in enumerate(questions, start=1)
+            )
+        )
+        return SupervisorDecision(
+            route="finish",
+            confidence=1.0,
+            reason="An agent requested additional user context.",
+            clarification_question=question,
+            response=question,
+        )
 
     def _accept_classifier_result(
         self, payload: SupervisorInput, result: ClassifierResult

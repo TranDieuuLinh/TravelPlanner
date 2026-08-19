@@ -39,7 +39,10 @@ chọn information_finder.
   ngoài phạm vi hoặc request không cần chạy travel subgraph.
 
 Luôn dùng destination, durationDays, mentionedPlaces, selectedPlaces và
-conversationSummary làm ngữ cảnh bền vững. Với yêu cầu như "lên lịch những chỗ
+conversationSummary làm ngữ cảnh bền vững. Nếu pendingUserContext không rỗng,
+hãy ưu tiên hiểu message hiện tại là câu trả lời cho agent đang chờ dữ liệu và
+route lại đúng tuyến được yêu cầu, trừ khi clarificationRequired=true hoặc người
+dùng nêu rõ một yêu cầu mới. Với yêu cầu như "lên lịch những chỗ
 đó", "đi hết", "danh sách vừa nói", nếu mentionedPlaces/selectedPlaces đã có dữ
 liệu thì chọn explorer; không hỏi lại điểm đến hoặc danh sách đã biết. Chỉ hỏi làm
 rõ khi clarificationRequired=true hoặc memory thực sự không có ứng viên.
