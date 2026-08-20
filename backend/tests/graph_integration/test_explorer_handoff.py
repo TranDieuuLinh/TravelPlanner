@@ -5,6 +5,9 @@ from app.modules.explorer.contract import (
     ExplorerBudget,
     ExplorerOutput,
     ExplorerPeople,
+    ExplorerPlace,
+    PlaceSource,
+    SourceNote,
 )
 from app.orchestration.explorer_handoff import (
     ExplorerHandoffError,
@@ -137,3 +140,77 @@ def test_missing_destination_becomes_structured_handoff_blocker(tmp_path) -> Non
 
     assert caught.value.code == "PLACE_CHECKER_DESTINATION_REQUIRED"
     assert caught.value.status == "blocked"
+
+
+def test_final_handoff_deduplicates_places_and_keeps_all_sources(tmp_path) -> None:
+    output = ExplorerOutput(
+        status="ready",
+        intakeId="intake-dedupe",
+        input_ADM="Hà Nội",
+        places=[
+            ExplorerPlace(
+                name="Văn Miếu - Quốc Tử Giám",
+                sourcePlaces=[PlaceSource(
+                    origin="input",
+                    evidenceType="raw_prompt",
+                    evidence="Thêm Văn Miếu",
+                )],
+            ),
+            ExplorerPlace(
+                name="van mieu quoc tu giam",
+                sourcePlaces=[PlaceSource(
+                    origin="url",
+                    evidenceType="transcript",
+                    sourceUrl="https://example.com/hanoi",
+                    evidence="Nguồn URL",
+                )],
+            ),
+        ],
+        urlNotes=[SourceNote(
+            summary="van mieu quoc tu giam là địa điểm văn hóa",
+            placeName="van mieu quoc tu giam",
+            evidenceType="transcript",
+            sourceUrl="https://example.com/hanoi",
+        )],
+    )
+
+    handoff = projector(tmp_path).project(output, raw_prompt="Đi Hà Nội")
+    payload = handoff.place_checker_input.model_dump(by_alias=True)
+
+    assert len(handoff.explorer_output.places or []) == 1
+    assert len(payload["places"]) == 1
+    assert len(payload["places"][0]["sourcePlaces"]) == 2
+    assert payload["places"][0]["sourcePlaces"][1]["urlNotes"] == [
+        {"summary": "van mieu quoc tu giam là địa điểm văn hóa"}
+    ]
+
+
+def test_final_handoff_collapses_sources_with_the_same_public_identity(tmp_path) -> None:
+    output = ExplorerOutput(
+        status="ready",
+        intakeId="intake-source-dedupe",
+        input_ADM="Hà Nội",
+        places=[
+            ExplorerPlace(
+                name="Văn Miếu",
+                sourcePlaces=[
+                    PlaceSource(
+                        origin="input",
+                        evidenceType="raw_prompt",
+                        evidence="Thêm Văn Miếu",
+                    ),
+                    PlaceSource(
+                        origin="input",
+                        evidenceType="transcript",
+                        evidence="Văn Miếu được nhắc lại",
+                    ),
+                ],
+            )
+        ],
+    )
+
+    payload = projector(tmp_path).project(
+        output, raw_prompt="Đi Hà Nội"
+    ).place_checker_input.model_dump(by_alias=True)
+
+    assert len(payload["places"][0]["sourcePlaces"]) == 1

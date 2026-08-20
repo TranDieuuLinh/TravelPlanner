@@ -138,7 +138,7 @@ candidate-level validation issue.
 
 `ExplorerHandoffProjector` là boundary duy nhất của root: merge Conversation
 Memory theo precedence, resolve tag bằng `auto-attach/tags-auto.yml`, validate
-lại canonical Explorer output, map provenance và tạo `PlaceCheckerInput`. Root
+final-dedupe place và gộp source evidence, rồi tạo `PlaceCheckerInput`. Root
 không gate theo `ready`/`partial` hoặc `input_ADM`; thiếu destination được trả
 dạng `blocked`, còn Explorer/provider/runtime failure được trả dạng `error` có
 cấu trúc.

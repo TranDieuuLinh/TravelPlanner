@@ -256,7 +256,9 @@ graph, node hoặc state nội bộ.
 Explorer output được ưu tiên, Conversation Memory chỉ bổ sung context còn thiếu;
 places được merge một lần, preferences/avoids được resolve bằng taxonomy hiện
 tại trong `tags-auto.yml`, rồi toàn bộ `ExplorerOutput` và `PlaceCheckerInput`
-được validate lại. PlaceChecker nhận `inputADM`, `places`, `inputItems`, `days`,
+được validate lại. Sau memory merge, Explorer final-dedupe theo tên đã chuẩn
+hóa và gộp toàn bộ source evidence của các bản trùng. PlaceChecker nhận
+`inputADM`, `places`, `inputItems`, `days`,
 `budget`, `people`, `shortPreferences`, `shortAvoids` và `specialNotes`; không
 nhận top-level `urlNotes` hoặc status `ready`/`partial` của Explorer.
 

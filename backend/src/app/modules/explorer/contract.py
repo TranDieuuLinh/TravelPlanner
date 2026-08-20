@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from pydantic.alias_generators import to_camel
 
 from app.shared.contracts.agent import AgentError
+from app.modules.explorer.place_keys import place_name_key
 
 
 class ExplorerModel(BaseModel):
@@ -381,12 +382,12 @@ class ExplorerApiOutput(ExplorerModel):
     def _notes_for_place(
         place: ExplorerPlace, notes: list[SourceNote]
     ) -> list[SourceNote]:
-        place_key = " ".join(place.name.casefold().split())
+        place_key = place_name_key(place.name)
         matched: list[SourceNote] = []
         seen: set[tuple[str, str | None]] = set()
         for note in notes:
-            note_place = " ".join((note.place_name or "").casefold().split())
-            summary = " ".join(note.summary.casefold().split())
+            note_place = place_name_key(note.place_name or "")
+            summary = place_name_key(note.summary)
             if note_place != place_key and place_key not in summary:
                 continue
             signature = (summary, note.source_url)

@@ -2,7 +2,9 @@ import re
 from dataclasses import dataclass
 
 from app.modules.explorer.public import (
+    deduplicate_places,
     ExplorerOutput,
+    place_name_key,
     TagCatalog,
     normalize_budget_per_person,
 )
@@ -72,10 +74,12 @@ class ExplorerHandoffProjector:
                 output.clarification_question or "Bạn muốn đi tỉnh hoặc thành phố nào?",
             )
 
-        places = merge_memory_places(
-            output.places or [],
-            memory,
-            resolved_references=resolved_references,
+        places = deduplicate_places(
+            merge_memory_places(
+                output.places or [],
+                memory,
+                resolved_references=resolved_references,
+            )
         )
         days = self._days(output, raw_prompt, memory, has_source_input)
         people = self._people(output, raw_prompt, memory)
@@ -193,37 +197,57 @@ class ExplorerHandoffProjector:
         return [
             {
                 "name": place.name,
-                "sourcePlaces": [
-                    {
-                        "evidenceType": (
-                            "url" if source.origin == "url" else "raw_prompt"
-                        ),
-                        "sourceUrl": (
-                            source.source_url if source.origin == "url" else None
-                        ),
-                        "sourceTimeHint": source.source_time_hint,
-                        "addressHint": source.address_hint or place.address_hint,
-                        "urlNotes": [
-                            {"summary": note.summary}
-                            for note in cls._notes_for_source(place, source, notes)
-                        ],
-                    }
-                    for source in place.source_places
-                ],
+                "sourcePlaces": cls._source_places(place, notes),
                 "latitude": None,
                 "longitude": None,
             }
             for place in places
         ]
 
+    @classmethod
+    def _source_places(cls, place, notes) -> list[dict]:
+        result: list[dict] = []
+        positions: dict[tuple, int] = {}
+        for source in place.source_places:
+            evidence_type = "url" if source.origin == "url" else "raw_prompt"
+            source_url = source.source_url if source.origin == "url" else None
+            item = {
+                "evidenceType": evidence_type,
+                "sourceUrl": source_url,
+                "sourceTimeHint": source.source_time_hint,
+                "addressHint": source.address_hint or place.address_hint,
+                "urlNotes": [
+                    {"summary": note.summary}
+                    for note in cls._notes_for_source(place, source, notes)
+                ],
+            }
+            signature = (
+                evidence_type,
+                source_url,
+                source.source_time_hint,
+                item["addressHint"],
+            )
+            if signature not in positions:
+                positions[signature] = len(result)
+                result.append(item)
+                continue
+            stored = result[positions[signature]]
+            stored["urlNotes"] = list(
+                {
+                    note["summary"]: note
+                    for note in [*stored["urlNotes"], *item["urlNotes"]]
+                }.values()
+            )
+        return result
+
     @staticmethod
     def _notes_for_source(place, source, notes) -> list:
-        place_key = " ".join(place.name.casefold().split())
+        place_key = place_name_key(place.name)
         result = []
         seen = set()
         for note in notes:
-            note_place = " ".join((note.place_name or "").casefold().split())
-            summary_key = " ".join(note.summary.casefold().split())
+            note_place = place_name_key(note.place_name or "")
+            summary_key = place_name_key(note.summary)
             if note_place != place_key and place_key not in summary_key:
                 continue
             source_is_url = source.origin == "url"

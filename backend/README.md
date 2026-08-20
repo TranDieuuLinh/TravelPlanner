@@ -20,9 +20,10 @@ Supervisor
 The root graph lives in `src/app/orchestration`. It maps data between public
 module contracts and does not contain travel-planning rules. Every Explorer
 result reaches one handoff projector; it merges conversation memory, hot-loads
-the tag taxonomy, revalidates the canonical output, nests source notes, removes
-place tags/confidence/internal provenance, normalizes whole-trip budget per
-person, and creates `PlaceCheckerInput`. Missing destination and runtime failures become
+the tag taxonomy, final-deduplicates places while preserving their sources,
+revalidates the canonical output, nests source notes, removes place
+tags/confidence/internal provenance, normalizes whole-trip budget per person,
+and creates `PlaceCheckerInput`. Missing destination and runtime failures become
 structured PlaceChecker `blocked`/`error` results instead of route gates or raw
 exceptions.
 

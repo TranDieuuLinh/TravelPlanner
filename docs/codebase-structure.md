@@ -302,7 +302,9 @@ tại, dùng Conversation Memory để lấp context còn thiếu, merge place m
 resolve preferences/avoids theo `auto-attach/tags-auto.yml`, validate lại
 canonical `ExplorerOutput`, lồng note vào source tương ứng, bỏ place tags,
 confidence và provenance nội bộ rồi tạo `PlaceCheckerInput`. Budget tại boundary
-luôn là tổng toàn chuyến cho một người. Thiếu destination thành failure `blocked` có
+luôn là tổng toàn chuyến cho một người. Final dedupe chạy sau memory merge, giữ
+display name đầu tiên và gộp source evidence của mọi bản trùng. Thiếu destination
+thành failure `blocked` có
 cấu trúc; Explorer/provider/exception runtime thành `error` có code và cờ
 retryable phù hợp. Chỉ PlaceChecker success/conditional/partial mới sang Planner.
 Explorer output mang `days`, `startDate` và `timezone`; mặc định duration là 3

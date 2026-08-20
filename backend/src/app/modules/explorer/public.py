@@ -59,6 +59,8 @@ from app.modules.explorer.intake_patch import (
     apply_trip_context_patch,
 )
 from app.modules.explorer.ports import TagCatalog
+from app.modules.explorer.place_dedupe import deduplicate_places
+from app.modules.explorer.place_keys import place_name_key
 from app.modules.explorer.service import ExplorerService
 from app.modules.explorer.tools import normalize_budget_per_person
 from app.shared.llm import LlmClient
@@ -313,5 +315,7 @@ __all__ = [
     "create_explorer_service",
     "to_explorer_api_output",
     "apply_trip_context_patch",
+    "deduplicate_places",
     "normalize_budget_per_person",
+    "place_name_key",
 ]

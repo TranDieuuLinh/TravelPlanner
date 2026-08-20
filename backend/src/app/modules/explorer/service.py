@@ -15,6 +15,7 @@ from app.modules.explorer.models import (
     ExplorerDraft,
     SourceExtractionResult,
 )
+from app.modules.explorer.place_dedupe import deduplicate_places
 from app.modules.explorer.ports import (
     ExplorerDraftCache,
     ExplorerDraftGenerator,
@@ -271,23 +272,15 @@ class ExplorerService:
         )
 
     def normalize(self, draft: ExplorerDraft, raw_prompt: str | None) -> ExplorerDraft:
-        places = []
-        by_name = {}
-        for place in draft.places:
-            name = " ".join(place.name.strip(" ,.;:-").split())
-            if not name:
-                continue
-            key = self._key(name)
-            if key in by_name:
-                current = by_name[key]
-                current.source_places.extend(place.source_places)
-                if not current.address_hint:
-                    current.address_hint = place.address_hint
-                current.confidence = max(current.confidence, place.confidence)
-            else:
-                normalized = place.model_copy(update={"name": name})
-                by_name[key] = normalized
-                places.append(normalized)
+        places = deduplicate_places(
+            [
+                place.model_copy(
+                    update={"name": " ".join(place.name.strip(" ,.;:-").split())}
+                )
+                for place in draft.places
+                if place.name.strip(" ,.;:-")
+            ]
+        )
         items, preferences = normalize_intake_items(
             draft.input_items, draft.short_preferences, raw_prompt, normalize=self._key
         )
