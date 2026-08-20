@@ -14,6 +14,14 @@ class KGStats(KGModel):
     relationship_count: int
 
 
+class PriceObservation(KGModel):
+    entity_id: str
+    entity_name: str
+    value: float = Field(ge=0)
+    currency: str = Field(min_length=3, max_length=3)
+    property_key: str
+
+
 class KGSearchStats(KGModel):
     query: str
     entity_count: int

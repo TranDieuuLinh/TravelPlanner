@@ -1,0 +1,98 @@
+đối_tượng:
+  đi_một_mình:
+    priority-tags: [kiến thức, lịch sử, Văn hóa, địa phương, thiên nhiên, cảnh quan, chụp ảnh, ẩm thực]
+    avoid-tags: []
+
+  cặp_đôi:
+    priority-tags: [cảnh quan, thiên nhiên, biển, chụp ảnh, ẩm thực, nghỉ dưỡng, thư giãn, nightlife]
+    avoid-tags: []
+
+  nhóm_bạn:
+    priority-tags: [hoạt động, thể thao, mạo hiểm, chụp ảnh, ẩm thực, đồ uống, nightlife, biển]
+    avoid-tags: []
+
+  gia_đình:
+    priority-tags: [gia đình, Văn hóa, ẩm thực, thiên nhiên, cảnh quan, hoạt động, nghỉ dưỡng]
+    avoid-tags: ["18+", "Chỉ Người Lớn", drunk]
+
+  gia_đình_có_trẻ_em:
+    priority-tags: [gia đình, "Phù Hợp Với Trẻ Em", thiên nhiên, sinh thái, cảnh quan, hoạt động, kiến thức]
+    avoid-tags: ["18+", "Chỉ Người Lớn", drunk, rượu bia, nightlife, mạo hiểm]
+
+  người_lớn_tuổi:
+    priority-tags: [di tích, lịch sử, "Tâm linh", Văn hóa, kiến thức, cảnh quan, nghỉ dưỡng, thư giãn, ẩm thực]
+    avoid-tags: [mạo hiểm, drunk, "18+", "Chỉ Người Lớn", nightlife]
+
+ngân_sách:
+  tiết_kiệm:
+    priority-tags: [giá rẻ, địa phương, ẩm thực, Văn hóa, thiên nhiên, biển, núi, cảnh quan]
+    avoid-tags: [sang trọng]
+
+  trung_bình:
+    priority-tags: [ẩm thực, địa phương, hoạt động, chụp ảnh, Văn hóa, thiên nhiên, cảnh quan]
+    avoid-tags: []
+
+  cao_cấp:
+    priority-tags: [nghỉ dưỡng, thư giãn, ẩm thực, đồ uống, chụp ảnh, cảnh quan, mua sắm]
+    avoid-tags: [giá rẻ]
+
+  sang_trọng:
+    priority-tags: [sang trọng, nghỉ dưỡng, thư giãn, ẩm thực, đồ uống, mua sắm, chụp ảnh]
+    avoid-tags: [giá rẻ]
+
+sở_thích:
+  lịch_sử_văn_hóa:
+    priority-tags: [di tích, lịch sử, Văn hóa, kiến thức, kiến trúc, quân sự, địa phương]
+    avoid-tags: []
+
+  tâm_linh:
+    priority-tags: ["Tâm linh", di tích, lịch sử, Văn hóa, kiến trúc, địa phương]
+    avoid-tags: [drunk, "18+", "Chỉ Người Lớn"]
+
+  thiên_nhiên:
+    priority-tags: [thiên nhiên, sinh thái, cảnh quan, núi, biển, chụp ảnh]
+    avoid-tags: []
+
+  biển:
+    priority-tags: [biển, thiên nhiên, cảnh quan, chụp ảnh, hoạt động, thư giãn, nghỉ dưỡng]
+    avoid-tags: []
+
+  núi:
+    priority-tags: [núi, thiên nhiên, sinh thái, cảnh quan, mạo hiểm, hoạt động, chụp ảnh]
+    avoid-tags: []
+
+  ẩm_thực_đồ_uống:
+    priority-tags: [ẩm thực, đồ uống, địa phương, "phong cách Việt", "phong cách Nhật", "phong cách Hàn", "phong cách Trung Hoa", "phong cách Thái", "phong cách phương Tây"]
+    avoid-tags: []
+
+  giải_trí_ban_đêm:
+    priority-tags: [nightlife, đồ uống, rượu bia, drunk, "18+", "Chỉ Người Lớn"]
+    avoid-tags: ["Phù Hợp Với Trẻ Em"]
+
+  mạo_hiểm:
+    priority-tags: [mạo hiểm, hoạt động, thể thao, núi, biển, thiên nhiên]
+    avoid-tags: [thư giãn, nghỉ dưỡng]
+
+  thể_thao_hoạt_động:
+    priority-tags: [thể thao, hoạt động, mạo hiểm, biển, núi, thiên nhiên]
+    avoid-tags: []
+
+  chụp_ảnh:
+    priority-tags: [chụp ảnh, cảnh quan, thiên nhiên, kiến trúc, biển, núi, Văn hóa, địa phương]
+    avoid-tags: []
+
+  thư_giãn_nghỉ_dưỡng:
+    priority-tags: [thư giãn, nghỉ dưỡng, biển, thiên nhiên, cảnh quan, ẩm thực]
+    avoid-tags: [mạo hiểm, drunk]
+
+  mua_sắm:
+    priority-tags: [mua sắm, ẩm thực, địa phương, đồ uống, Văn hóa]
+    avoid-tags: []
+
+  trải_nghiệm_địa_phương:
+    priority-tags: [địa phương, Văn hóa, ẩm thực, "phong cách Việt", lịch sử, di tích, kiến thức]
+    avoid-tags: []
+
+  kiến_trúc:
+    priority-tags: [kiến trúc, di tích, lịch sử, Văn hóa, chụp ảnh, "phong cách Việt", "phong cách Nhật", "phong cách Hàn", "phong cách Trung Hoa", "phong cách Thái", "phong cách phương Tây"]
+    avoid-tags: []

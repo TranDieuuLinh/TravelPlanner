@@ -35,6 +35,7 @@ class ClassifierResult(BaseModel):
     confidence: float = Field(ge=0, le=1)
     reason: str = Field(min_length=1, max_length=240)
     response: str | None = Field(default=None, max_length=1000)
+    entity_names: list[str] = Field(default_factory=list, max_length=30)
 
 
 class SupervisorDecision(ClassifierResult):

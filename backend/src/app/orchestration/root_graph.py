@@ -46,7 +46,7 @@ def create_root_graph(
     builder.add_conditional_edges(
         "explorer",
         route_after_explorer,
-        {"place_checker": "place_checker", "finish": "finish"},
+        {"place_checker": "place_checker", "information_finder": "information_finder", "finish": "finish"},
     )
     builder.add_conditional_edges(
         "place_checker",

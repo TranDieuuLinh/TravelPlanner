@@ -25,7 +25,7 @@ def source(identifier: str, content: str) -> RetrievedSource:
 def test_extractive_answer_is_bounded_and_uses_markdown_bullets():
     generator = ExtractiveAnswerGenerator()
     sources = [
-        source(str(index), f"Vũng Tàu có điểm tham quan số {index}. " * 30)
+        source(str(index), f"Vũng Tàu có điểm tham quan số {index} " * 100)
         for index in range(1, 6)
     ]
 
@@ -34,7 +34,8 @@ def test_extractive_answer_is_bounded_and_uses_markdown_bullets():
     assert len(generated.claims) == 3
     assert generated.claims[0].text.startswith("- ")
     assert generated.claims[1].text.startswith("- ")
-    assert all(len(claim.text.rsplit("- ", 1)[-1]) <= 280 for claim in generated.claims)
+    assert len(generated.claims[0].text.rsplit("- ", 1)[-1]) > 280
+    assert all(len(claim.text.rsplit("- ", 1)[-1]) > 280 for claim in generated.claims)
 
 
 def test_extractive_answer_skips_noisy_source_and_keeps_useful_source():

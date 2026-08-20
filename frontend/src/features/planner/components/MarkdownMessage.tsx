@@ -275,15 +275,29 @@ export function MarkdownMessage({
     return () => window.clearInterval(timer);
   }, [content, streaming]);
 
-  const citationContent = visibleContent.replace(
-    /\[(\d+)\](?!\()/g,
-    (match, number: string) => {
-      const source = sources[Number(number) - 1];
-      const sourceUrl = source?.url?.trim();
-      if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return match;
-      return `[${number}](<${sourceUrl}>)`;
-    },
-  );
+  const citationContent = visibleContent
+    .replace(
+      /\[([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?:\s*,\s*[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})*)\]/gi,
+      (match, ids: string) => {
+        const links = ids.split(/\s*,\s*/).flatMap((sourceId) => {
+          const source = sources.find((item) => item.sourceId === sourceId);
+          const sourceUrl = source?.url?.trim();
+          if (!source || !sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return [];
+          const number = sources.findIndex((item) => item.sourceId === sourceId) + 1;
+          return [`[${number}](<${sourceUrl}>)`];
+        });
+        return links.length ? links.join(", ") : match;
+      },
+    )
+    .replace(
+      /\[(\d+)\](?!\()/g,
+      (match, number: string) => {
+        const source = sources[Number(number) - 1];
+        const sourceUrl = source?.url?.trim();
+        if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return match;
+        return `[${number}](<${sourceUrl}>)`;
+      },
+    );
   return (
     <div className="markdownMessage">
       <ReactMarkdown

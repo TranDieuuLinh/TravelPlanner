@@ -5,6 +5,7 @@ from app.modules.information_finder.public import (
     InformationFinderService,
     build_information_finder_graph,
 )
+from app.modules.information_finder.entity_linking import link_verified_entities
 from app.modules.itinerary_planner.public import (
     ItineraryPlannerInput,
     ItineraryPlannerOutput,
@@ -23,6 +24,7 @@ from app.modules.supervisor.public import (
     SupervisorService,
     build_supervisor_graph,
 )
+from app.modules.supervisor.service import SupervisorService as SupervisorFormatter
 from app.orchestration.root_state import RootState
 from app.orchestration.routes import explorer_can_plan
 from app.orchestration.memory_projection import (
@@ -43,7 +45,9 @@ class RootNodes:
         place_checker_pipeline: PlaceCheckerPipeline | None = None,
         itinerary_planner_graph=None,
     ) -> None:
-        self.supervisor = build_supervisor_graph(supervisor_service)
+        self.information_finder_service = information_finder_service
+        self.supervisor_service = supervisor_service or SupervisorService()
+        self.supervisor = build_supervisor_graph(self.supervisor_service)
         self.explorer = build_explorer_graph(explorer_service)
         self.information_finder = build_information_finder_graph(
             information_finder_service
@@ -94,11 +98,37 @@ class RootNodes:
             "decision": decision,
             "conversation_context": conversation_context,
             "warnings": decision.warnings,
+            "suggestions": [],
         }
         if decision.response is not None:
-            update["response"] = decision.response
+            response = decision.response
+            resolver = getattr(self.information_finder_service, "entity_resolver", None)
+            if resolver is not None and decision.entity_names:
+                response = await link_verified_entities(
+                    response,
+                    decision.entity_names,
+                    resolver,
+                )
+            update["response"] = response
         if decision.clarification_question is not None:
             update["clarification_question"] = decision.clarification_question
+            if self.information_finder is not None and pending_context:
+                fields = []
+                for request in pending_context:
+                    field = request.get("field") if isinstance(request, dict) else request.field
+                    if field and field not in fields:
+                        fields.append(field)
+                destination = dest or "điểm đến của chuyến đi"
+                query = (
+                    f"Gợi ý lựa chọn {', '.join(fields)} cho chuyến đi tại {destination}; "
+                    "ưu tiên địa điểm và hoạt động thực tế, có nguồn xác minh"
+                )
+                suggestion_result = await self.information_finder.ainvoke({"query": query})
+                suggestion_output = suggestion_result["output"]
+                update["suggestions"] = list(suggestion_output.suggestions)
+                update["information_output"] = suggestion_output.model_copy(
+                    update={"content_blocks": []}
+                )
         return update
 
     async def run_explorer(self, state: RootState) -> dict:
@@ -111,6 +141,21 @@ class RootNodes:
             }}
         )
         output = result["output"]
+        pending = state.get("pending_user_context", [])
+        if self.information_finder_service and pending and any(
+            (item.get("field") if isinstance(item, dict) else item.field) == "budget"
+            for item in pending
+        ):
+            destination = getattr(state.get("explorer_output"), "input_adm", None)
+            budget = await self.information_finder_service.suggest_budget_range(
+                destination or "", category="daily_trip"
+            )
+            if budget and budget.sample_count:
+                output = output.model_copy(update={"suggestions": [
+                    {"field": "budget", "label": "Tiết kiệm", "value": budget.q1, "currency": budget.currency},
+                    {"field": "budget", "label": "Tiêu chuẩn", "value": budget.median, "currency": budget.currency},
+                    {"field": "budget", "label": "Thoải mái", "value": budget.q3, "currency": budget.currency},
+                ]})
 
         # Context enrichment from conversation memory if present
         memory = state.get("conversation_memory")
@@ -183,9 +228,16 @@ class RootNodes:
             {"query": information_query(state)}
         )
         output = result["output"]
+        response = await self.supervisor_service.compose_information_response(
+            message=state.get("message", ""),
+            conversation_summary=state.get("conversation_summary"),
+            output=output,
+        )
+        if output.suggestions:
+            response = "Để tiếp tục, Penguin cần thêm ngân sách. Bạn có thể chọn một gợi ý bên dưới hoặc nhập mức khác."
         return {
             "information_output": output,
-            "response": output.answer,
+            "response": response,
             "warnings": [*state.get("warnings", []), *output.warnings],
         }
 

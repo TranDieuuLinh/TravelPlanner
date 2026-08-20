@@ -30,6 +30,9 @@ class KnowledgeGraphService:
     async def search_stats(self, query: str) -> dict:
         return await self.store.search_stats(query)
 
+    async def get_price_observations(self, region: str, category: str | None = None, currency: str = "VND") -> list[dict]:
+        return await self.store.get_price_observations(region, category, currency)
+
     async def entities(self, **filters) -> tuple[list[dict], int]:
         return await self.store.list_entities(**filters)
 

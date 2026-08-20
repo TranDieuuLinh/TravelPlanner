@@ -25,6 +25,7 @@ from app.modules.information_finder.adapters.postgres_source_repository import (
 )
 from app.modules.information_finder.adapters.tavily_search import TavilySearchProvider
 from app.modules.information_finder.entity_linking import KnowledgeGraphEntityResolver
+from app.modules.information_finder.tools.budget_ranges import BudgetRangeTool
 from app.modules.information_finder.ports import (
     AnswerGenerator,
     EmbeddingProvider,
@@ -42,7 +43,7 @@ from app.modules.knowledge_graph.public import (
     build_knowledge_graph_service,
 )
 from app.modules.place_checker.public import build_postgres_place_checker_pipeline
-from app.modules.supervisor.adapters import GeminiIntentClassifier
+from app.modules.supervisor.adapters import GeminiIntentClassifier, GeminiResponseComposer
 from app.modules.supervisor.public import SupervisorService
 from app.orchestration.root_graph import create_root_graph
 from app.shared.llm import GeminiKeyPool, GeminiLlmClient, LlmClient
@@ -146,6 +147,7 @@ def get_information_finder_service() -> InformationFinderService:
         search_provider=search_provider,
         search_query_planner=search_query_planner,
         entity_resolver=entity_resolver,
+        budget_ranges=(BudgetRangeTool(knowledge_graph) if knowledge_graph is not None else None),
         options=InformationFinderOptions(
             provider_relevance_threshold=settings.information_finder_relevance_threshold,
             blocked_domains=blocked_domains,
@@ -195,8 +197,19 @@ def create_supervisor_service(
         ),
         max_output_tokens=settings.supervisor_llm_max_output_tokens,
     )
+    composer = GeminiResponseComposer(
+        llm_client
+        or GeminiLlmClient(
+            settings.gemini_api_key,
+            model=settings.gemini_model,
+            timeout_seconds=settings.gemini_timeout_seconds,
+            key_cooldown_seconds=settings.gemini_key_cooldown_seconds,
+        ),
+        max_output_tokens=settings.supervisor_llm_max_output_tokens,
+    )
     return SupervisorService(
         classifier,
+        composer,
         fallback_enabled=settings.supervisor_llm_fallback_enabled,
         confidence_threshold=settings.supervisor_llm_confidence_threshold,
     )

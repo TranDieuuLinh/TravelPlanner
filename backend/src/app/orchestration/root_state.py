@@ -46,4 +46,6 @@ class RootState(TypedDict, total=False):
 
     response: str
     clarification_question: str | None
+    pending_user_context: list[dict]
+    suggestions: list[dict[str, object]]
     warnings: list[str]

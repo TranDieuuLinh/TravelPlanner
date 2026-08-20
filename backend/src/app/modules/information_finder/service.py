@@ -5,13 +5,12 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from app.modules.information_finder.contract import (
-    InformationFinderOutput,
+    InformationFinderOutput, AnswerClaim,
     PreparedChunk,
     PreparedSource,
     RetrievedSource,
     SourceReference,
 )
-from app.modules.information_finder.answering import generate_and_render_answer
 from app.modules.information_finder.errors import (
     EmbeddingProviderError,
     SearchQueryPlanningError,
@@ -35,6 +34,7 @@ from app.modules.information_finder.utils import (
     content_hash,
     normalize_query,
 )
+from app.modules.information_finder.tools.budget_ranges import BudgetRangeResult, BudgetRangeTool
 
 
 @dataclass(frozen=True)
@@ -68,6 +68,7 @@ class InformationFinderService:
         entity_resolver: EntityResolver | None = None,
         freshness: FreshnessPolicy | None = None,
         options: InformationFinderOptions | None = None,
+        budget_ranges: BudgetRangeTool | None = None,
     ) -> None:
         self.repository = repository
         self.embeddings = embeddings
@@ -79,6 +80,14 @@ class InformationFinderService:
         self.entity_resolver = entity_resolver
         self.freshness = freshness or FreshnessPolicy()
         self.options = options or InformationFinderOptions()
+        self.budget_ranges = budget_ranges
+
+    async def suggest_budget_range(
+        self, region: str, *, category: str | None = None, currency: str = "VND"
+    ) -> BudgetRangeResult | None:
+        if self.budget_ranges is None:
+            return None
+        return await self.budget_ranges.search(region, category=category, currency=currency)
 
     async def find(self, query: str) -> InformationFinderOutput:
         normalized_query = normalize_query(query)
@@ -216,21 +225,73 @@ class InformationFinderService:
                     "No source was available after local retrieval and optional web search.",
                 ],
             )
-        answer, content_blocks, cited_sources, answer_warnings = await generate_and_render_answer(
-            normalized_query,
-            ranked,
-            answers=self.answers,
-            fallback_answers=self.fallback_answers,
-            fallback_enabled=self.options.answer_fallback_enabled,
-            entity_resolver=self.entity_resolver,
-        )
-        warnings.extend(answer_warnings)
+        used_extractive_fallback = False
+        try:
+            generated = await self.answers.generate(normalized_query, ranked)
+        except Exception:
+            if not self.options.answer_fallback_enabled or self.fallback_answers is None:
+                raise
+            generated = await self.fallback_answers.generate(normalized_query, ranked)
+            used_extractive_fallback = True
+            warnings.append("answer_extractive_fallback:fact_extraction")
+
+        source_by_id = {source.source_id: source for source in ranked}
+        facts: list[AnswerClaim] = []
+        cited_ids: list[str] = []
+        for claim in generated.claims:
+            if not claim.text.strip() or any(item not in source_by_id for item in claim.source_ids):
+                continue
+            facts.append(claim)
+            cited_ids.extend(item for item in claim.source_ids if item not in cited_ids)
+        for block in generated.blocks:
+            for source_id in self._block_source_ids(block):
+                if source_id in source_by_id and source_id not in cited_ids:
+                    cited_ids.append(source_id)
+        if not facts:
+            warnings.append("No cited facts were extracted from available sources.")
         return InformationFinderOutput(
-            answer=answer,
-            content_blocks=content_blocks,
-            sources=[self._citation(source) for source in cited_sources],
+            facts=facts,
+            # Fallback blocks are source excerpts, not presentation-ready
+            # answers. Keep them private so the supervisor composer can
+            # normalize the facts before the API exposes the response.
+            content_blocks=[] if used_extractive_fallback else generated.blocks,
+            sources=[self._citation(source_by_id[item]) for item in cited_ids],
+            suggestions=(
+                []
+                if used_extractive_fallback
+                else self._suggestions_from_blocks(generated.blocks)
+            ),
             warnings=warnings,
         )
+
+    @staticmethod
+    def _block_source_ids(block) -> list[str]:
+        ids = list(getattr(block, "source_ids", []))
+        for field in ("items", "options"):
+            for item in getattr(block, field, []):
+                ids.extend(getattr(item, "source_ids", []))
+        return ids
+
+    @classmethod
+    def _suggestions_from_blocks(cls, blocks) -> list[dict[str, object]]:
+        """Turn retrieved, cited recommendations into grounded chat choices."""
+        suggestions: list[dict[str, object]] = []
+        for block in blocks:
+            if getattr(block, "type", None) not in {"recommendations", "comparison"}:
+                continue
+            entries = getattr(block, "items", None) or getattr(block, "options", None) or []
+            for entry in entries[:5]:
+                name = str(getattr(entry, "name", "")).strip()
+                source_ids = list(dict.fromkeys(getattr(entry, "source_ids", [])))
+                if not name or not source_ids:
+                    continue
+                suggestions.append({
+                    "field": "information_follow_up",
+                    "label": name,
+                    "value": f"Cho tôi biết thêm về {name}",
+                    "sourceIds": source_ids,
+                })
+        return suggestions
 
     @staticmethod
     def _sources_without_embeddings(
