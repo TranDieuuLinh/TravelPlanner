@@ -43,10 +43,9 @@ def test_structured_llm_output_is_validated_and_minimal_context_is_sent():
         "destination": None,
         "durationDays": None,
         "mentionedPlaces": [],
-            "selectedPlaces": [],
-            "clarificationRequired": False,
-            "pendingUserContext": [],
-            "conversationSummary": "",
+        "selectedPlaces": [],
+        "clarificationRequired": False,
+        "conversationSummary": "",
     }
     assert client.calls[0][1]["temperature"] == 0.0
     assert client.calls[0][1]["max_output_tokens"] == 256

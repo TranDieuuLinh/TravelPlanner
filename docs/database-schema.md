@@ -1,18 +1,20 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-19.
+Cập nhật lần cuối: 2026-08-20.
 
 ## Phạm vi và trạng thái
 
-Tài liệu này mô tả schema PostgreSQL local có pgvector được backend truy cập qua
-`DATABASE_URL` theo cấu hình mặc định. PostgreSQL local chạy trong service
-`postgres` của Compose duy nhất và dùng volume `travelplanner-postgres18`.
+Tài liệu này mô tả schema PostgreSQL có pgvector được backend truy cập qua
+`DATABASE_URL`. PostgreSQL là dependency bên ngoài Compose: có thể là database
+local đã chạy trên host hoặc database cloud. Compose không tải image, khởi tạo
+database hay sở hữu volume PostgreSQL; database được chọn hoàn toàn bằng
+`DATABASE_URL` trong `backend/.env`.
 
-Khởi tạo local database:
-
-```bash
-docker compose --env-file backend/.env up -d
-```
+Khi backend chạy trong Docker và PostgreSQL chạy trên máy host, hostname trong
+URL là `host.docker.internal`. Khi cả backend và PostgreSQL cùng chạy trực tiếp
+trên host, dùng `localhost`. Với cloud, dùng hostname và TLS options do provider
+cung cấp. Trong cả ba trường hợp, database phải được tạo sẵn và áp dụng các
+migration cần thiết trước khi khởi động backend.
 
 Database runtime hiện có 59 table trong schema `public`, gồm các bảng cache, planner,
 Knowledge Graph, profile, social và marketplace được
@@ -29,8 +31,8 @@ và migration 002/003. Vì vậy
 cần phân biệt:
 
 - **Database runtime:** các table được liệt kê bên dưới tồn tại trong database
-  PostgreSQL cloud sau khi migration tương ứng đã được áp dụng; local Docker
-  có thể được khởi tạo từ backup archive tương ứng.
+  PostgreSQL đã chọn sau khi migration tương ứng được áp dụng; database local có
+  thể được khôi phục từ backup archive tương ứng nhưng không do Compose quản lý.
 - **Backend mới:** không sử dụng các table legacy khác; khi có `DATABASE_URL`,
   root graph dùng PostgreSQL checkpointer và fail fast nếu runtime psycopg không
   khả dụng. Chỉ môi trường không cấu hình database mới dùng `InMemorySaver`.

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from math import ceil
+from time import monotonic
 from typing import Any
 
 import httpx
@@ -20,6 +22,9 @@ from app.modules.itinerary_planner.routing_models import (
 
 DEFAULT_MAX_MATRIX_PAIRS = 2_500
 DEFAULT_MATRIX_CONCURRENCY = 6
+DEFAULT_MATRIX_BATCH_CACHE_ENTRIES = 128
+DEFAULT_MATRIX_BATCH_CACHE_TTL_SECONDS = 600
+DEFAULT_TIMEOUT_SECONDS = 180.0
 
 
 class ValhallaAdapter:
@@ -28,21 +33,33 @@ class ValhallaAdapter:
         base_url: str,
         *,
         client: httpx.AsyncClient | None = None,
-        timeout_seconds: float | None = None,
+        timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS,
         provider_version: str = "unknown",
         max_matrix_pairs: int = DEFAULT_MAX_MATRIX_PAIRS,
         matrix_concurrency: int = DEFAULT_MATRIX_CONCURRENCY,
+        matrix_batch_cache_entries: int = DEFAULT_MATRIX_BATCH_CACHE_ENTRIES,
+        matrix_batch_cache_ttl_seconds: float = DEFAULT_MATRIX_BATCH_CACHE_TTL_SECONDS,
     ) -> None:
         if max_matrix_pairs < 1:
             raise ValueError("max_matrix_pairs must be positive")
         if matrix_concurrency < 1:
             raise ValueError("matrix_concurrency must be positive")
+        if matrix_batch_cache_entries < 1:
+            raise ValueError("matrix_batch_cache_entries must be positive")
+        if matrix_batch_cache_ttl_seconds <= 0:
+            raise ValueError("matrix_batch_cache_ttl_seconds must be positive")
         self.base_url = base_url.rstrip("/")
         self.client = client
         self.timeout_seconds = timeout_seconds
         self.provider_version = provider_version
         self.max_matrix_pairs = max_matrix_pairs
         self.matrix_concurrency = matrix_concurrency
+        self.matrix_batch_cache_entries = matrix_batch_cache_entries
+        self.matrix_batch_cache_ttl_seconds = matrix_batch_cache_ttl_seconds
+        self._matrix_batch_cache: OrderedDict[
+            tuple[str, tuple[str, ...], tuple[str, ...]],
+            tuple[float, tuple[tuple[MatrixCell, ...], ...]],
+        ] = OrderedDict()
 
     async def matrix(
         self,
@@ -80,7 +97,14 @@ class ValhallaAdapter:
             target_start: int,
             targets: tuple[MatrixLocation, ...],
         ) -> tuple[int, int, tuple[tuple[MatrixCell, ...], ...]]:
+            cache_key = self._matrix_batch_cache_key(profile, sources, targets)
+            cached = self._get_matrix_batch(cache_key)
+            if cached is not None:
+                return source_start, target_start, cached
             async with semaphore:
+                cached = self._get_matrix_batch(cache_key)
+                if cached is not None:
+                    return source_start, target_start, cached
                 response = await client.post(
                     f"{self.base_url}/sources_to_targets",
                     json={
@@ -92,10 +116,14 @@ class ValhallaAdapter:
                     timeout=self.timeout_seconds,
                 )
             response.raise_for_status()
+            cells = self._parse_matrix_cells(
+                response.json(), len(sources), len(targets)
+            )
+            self._put_matrix_batch(cache_key, cells)
             return (
                 source_start,
                 target_start,
-                self._parse_matrix_cells(response.json(), len(sources), len(targets)),
+                cells,
             )
 
         try:
@@ -173,6 +201,45 @@ class ValhallaAdapter:
             for source_start in range(0, size, source_chunk)
             for target_start in range(0, size, target_chunk)
         )
+
+    @staticmethod
+    def _matrix_batch_cache_key(
+        profile: str,
+        sources: tuple[MatrixLocation, ...],
+        targets: tuple[MatrixLocation, ...],
+    ) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+        return (
+            profile,
+            tuple(item.canonical_key for item in sources),
+            tuple(item.canonical_key for item in targets),
+        )
+
+    def _get_matrix_batch(
+        self,
+        key: tuple[str, tuple[str, ...], tuple[str, ...]],
+    ) -> tuple[tuple[MatrixCell, ...], ...] | None:
+        entry = self._matrix_batch_cache.get(key)
+        if entry is None:
+            return None
+        expires_at, cells = entry
+        if expires_at <= monotonic():
+            self._matrix_batch_cache.pop(key, None)
+            return None
+        self._matrix_batch_cache.move_to_end(key)
+        return cells
+
+    def _put_matrix_batch(
+        self,
+        key: tuple[str, tuple[str, ...], tuple[str, ...]],
+        cells: tuple[tuple[MatrixCell, ...], ...],
+    ) -> None:
+        self._matrix_batch_cache[key] = (
+            monotonic() + self.matrix_batch_cache_ttl_seconds,
+            cells,
+        )
+        self._matrix_batch_cache.move_to_end(key)
+        while len(self._matrix_batch_cache) > self.matrix_batch_cache_entries:
+            self._matrix_batch_cache.popitem(last=False)
 
     async def route(
         self,

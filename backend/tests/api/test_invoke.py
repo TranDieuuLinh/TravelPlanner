@@ -246,6 +246,11 @@ def test_explorer_invoke_returns_full_explorer_contract(tmp_path):
     assert payload["input_ADM"] == "Huế"
     assert payload["days"] == 3
     assert "schemaVersion" not in payload
+    assert "clarificationQuestion" not in payload
+    assert "warnings" not in payload
+    assert "completeness" not in payload
+    assert "error" not in payload
+    assert "urlNotes" not in payload
     traces = app.state.observability_service.store.page("traces", 1, 25)["items"]
     assert len(traces) == 1
     assert traces[0]["entryPoint"] == "explorer.invoke"

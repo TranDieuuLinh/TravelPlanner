@@ -30,7 +30,7 @@ from app.shared.tools.search_places.normalization import normalize_text
 from app.shared.tools.search_places.scoring import text_similarity
 
 
-MAX_MATCH_OPTIONS = 5
+MAX_MATCH_OPTIONS = 1
 
 
 class EntityResolutionService(EntityResolutionBatchMixin):
@@ -215,10 +215,10 @@ class EntityResolutionService(EntityResolutionBatchMixin):
                 score_margin=margin,
                 resolution_method=provisional.method,
                 provider_attempts=result.provider_attempts,
-                resolution_reason=f"provisional_{result.resolution_reason}",
+                resolution_reason=f"auto_selected_{result.resolution_reason}",
                 warnings=[
                     *warnings,
-                    "Identity tạm thời được giữ từ input; cần xác minh trước khi chốt lịch.",
+                    "Place Checker đã tự chọn match tốt nhất để đưa qua Planner; identity vẫn cần được xác minh trước khi chốt lịch.",
                 ],
             )
 

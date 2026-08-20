@@ -1,15 +1,16 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-19.
+Cập nhật lần cuối: 2026-08-20.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
 trực tiếp.
 
 Place Checker phân biệt identity `provisional` có nguồn URL/direct input với
-retrieval provisional. Loại đầu chỉ được giữ khi có canonical ID, tọa độ, đúng
-ADM, đạt ngưỡng score và có exact/alias, address hoặc semantic evidence mạnh;
-output là `conditional` và có constraint xác minh trước khi chốt lịch.
+retrieval provisional. Loại đầu được tự chọn từ candidate tốt nhất khi có
+canonical ID, tọa độ và đúng ADM; `addressHint` được ưu tiên khi có, còn không
+thì dùng ranking đầu tiên. Output là `conditional`, có warning/constraint xác
+minh trước khi chốt lịch.
 Retrieval/system provisional vẫn không planner-eligible.
 
 Ontology có node place-like `Entertainment`, dùng cùng required/optional
@@ -22,6 +23,7 @@ quan hệ graph. Hint `entertainment` hoặc `wellness` chỉ truy vấn
 | Endpoint | Input | Output |
 |---|---|---|
 | `GET /health` | Không có | `{ "status": "ok" }` |
+| `POST /v1/explorer/invoke` | `ExplorerInput` | `ExplorerApiOutput` rút gọn |
 | `POST /v1/plans/current-location-route` | `CurrentLocationRouteRequest` | Một `TransportLeg` có geometry Valhalla/fallback |
 | `POST /v1/plans/day-directions` | `DayDirectionsRequest` | Danh sách `TransportLeg` nối origin với các điểm theo thứ tự |
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
@@ -133,47 +135,45 @@ Trong routing, ý định rõ ở `message` hiện tại có ưu tiên hơn cont
 lược bỏ intent, Supervisor kế thừa tác vụ hỏi đáp hoặc lập kế hoạch từ các lượt
 có role gần nhất; nếu không đủ căn cứ phân biệt thì route `finish` hỏi lại.
 
-Mọi agent có thể trả `UserContextRequest` (`field`, `sourceAgent`, `resumeRoute`,
-tùy chọn `reason`) khi cần thêm dữ liệu do người dùng sở hữu. Agent không tạo câu
-hỏi trực tiếp. Root chuyển request cho Supervisor; Supervisor tạo một
-`clarificationQuestion`, lưu request đang chờ trong root state và route `finish`.
-Lượt trả lời mới vẫn đi qua Supervisor trước; nếu không có intent mới,
-Supervisor route lại `resumeRoute` để agent tiếp tục. `contextSummary` đã có chỗ
-truyền vào Explorer; cơ chế tạo summary sẽ được triển khai riêng.
-
 ### Explorer
 
 `ExplorerInput` nhận `rawPrompt` tùy chọn, `urls`, `images` và `forceRefresh`
 tùy chọn. `forceRefresh=true` buộc URL extraction bỏ qua cache. Explorer output
 không có `schemaVersion` và gồm:
 
-- `status`: `ready`, `clarification` hoặc `error`;
+- `status`: `ready`, `partial`, `clarification` hoặc `error`;
 - `intakeId`, `input_ADM`;
 - `days`, `startDate`, `timezone`; nếu prompt không có ngày thì ngày bắt đầu là
   ngày mai, nếu không có duration thì `days=3`. Turn mới có URL/ảnh/địa điểm
   hoặc item mới cũng giữ default này; chỉ follow-up thuần tham chiếu lịch cũ
   mới kế thừa duration từ Conversation Memory;
-- `places`, trong đó mỗi place có `sourcePlaces`, `sourceTimeHint` và
-  `addressHint`; `sourcePlaces` phân biệt nguồn `input` (người dùng chọn trực tiếp),
-  `url` (nguồn URL do người dùng cung cấp) và `system` (gợi ý từ assistant/information-finder
-  hoặc transcript cũ, mang tính tùy chọn, không bắt buộc; chỉ khi lượt người dùng hiện tại
-  tham chiếu rõ ràng qua current-turn explicit reference promotion mới được chuyển sang `input`);
-  mỗi source có thể mang `platform`, `extractorVersion`, `modelVersion`, `cacheStatus` và
-  các field provenance này được Place Checker giữ nguyên; không có `sourceOrder`/`sourceDay`;
-- `inputItems`, chỉ lấy food, drink hoặc activity cụ thể, có thể resolve được và
-  được nêu rõ trong raw prompt; sở thích/chủ đề chung được đưa vào
+- `places`, trong đó mỗi place có `name`, `addressHint`, `tags`, `sourcePlaces`
+  đã dedupe và `urlNotes` liên quan; public JSON không trả confidence của place.
+  `tags` chỉ được lấy từ key trong `auto-attach/tags-auto.yml`, đối chiếu keyword
+  với tên place và file được đọc lại khi tạo mỗi response. `sourcePlaces` chỉ
+  trả `evidenceType` cấp cao (`raw_prompt` hoặc `url`), `sourceUrl`,
+  `sourceTimeHint` và `addressHint`; ảnh người dùng gửi trực tiếp thuộc nhóm
+  `raw_prompt`. Provenance chi tiết như origin, evidence, observed time,
+  platform, extractor/model version và cache status chỉ được giữ nội bộ để
+  chuyển sang Place Checker;
+- `inputItems`, chỉ trả `name` và `itemType` cho food, drink hoặc activity cụ
+  thể được nêu rõ trong raw prompt; action, liên kết place, evidence và
+  confidence vẫn là dữ liệu nội bộ; sở thích/chủ đề chung được đưa vào
   `shortPreferences`;
-- `urlNotes`, giữ chi tiết hữu ích có evidence từ URL/ảnh/OCR/STT/metadata,
-  gồm access/timing/price/caution, hoạt động cụ thể tại địa điểm, trải nghiệm
-  đặc trưng và fun fact; loại lời quảng cáo chung chung;
-- `days`, `budget`, `people`, `shortPreferences`, `shortAvoids`;
-- `userContextRequests`, warnings hoặc structured `AgentError` khi phù hợp;
-  `clarificationQuestion` không còn là kênh hỏi trực tiếp của Explorer.
+- `places[].urlNotes` chỉ giữ `summary` cho chi tiết hữu ích từ
+  URL/ảnh/OCR/STT/metadata. Note chỉ được xuất khi `placeName` khớp hoặc summary
+  nhắc đúng tên place; top-level `urlNotes`, `placeName`, `evidenceType` và
+  `sourceUrl` lặp lại trong nested note đã bị bỏ;
+- `days`, `budget`, `people`, `shortPreferences`, `shortAvoids`; JSON public
+  không trả budget source, clarification, warnings, completeness hoặc
+  structured `AgentError`. `shortPreferences` và `shortAvoids` cũng được map
+  qua `tags-auto.yml`, chỉ trả key khai báo trong file và bỏ value nội bộ không
+  có tag tương ứng. Các field chẩn đoán vẫn được graph dùng nội bộ.
 
 Tên place chỉ chứa tên riêng của địa điểm/cơ sở. Khi raw prompt nói một hành
-động hoặc món gắn với cơ sở có tên, hành động/món nằm trong `inputItems` và có
-thể liên kết bằng `relatedPlaceName`; evidence từ source tương tự nằm trong
-`urlNotes`. Explorer không resolve place.
+động hoặc món gắn với cơ sở có tên, hành động/món nằm trong `inputItems`; liên
+kết `relatedPlaceName` và evidence chỉ giữ nội bộ. Evidence từ source tương tự
+nằm trong `urlNotes`. Explorer không resolve place.
 
 Policy mặc định: `days=3` và chỉ raw prompt được ghi đè; `people=2 adults` và
 chỉ raw prompt được ghi đè; budget ưu tiên raw prompt, whole-trip image,
@@ -278,11 +278,10 @@ anchor khi có budget target, nếu không mới dùng candidate đầu tiên; c
 Rich PlaceChecker result trả `foodStyleCoverage[]` gồm Style ID/tên, target,
 số quán đã chọn, số Item phân biệt và trạng thái complete. Compact Planner
 contract vẫn nhận food venue cùng `foodCoverage` meal feasibility.
-Output planner giữ các entry không xếp được trong `unscheduled`; với lỗi
-canonical identity, frontend tự search top 1 và đưa match vào ngày ít điểm nhất.
-Nếu không có match, người dùng vẫn có thể search tối đa 5 địa điểm thay thế,
-chọn ngày, rồi gọi mutation xác nhận để đưa match vào `days[].stops` và loại
-entry khỏi `unscheduled` cùng một revision.
+Output planner giữ các entry thật sự không xếp được trong `unscheduled`. Với
+URL/direct input có candidate hợp lệ nhưng identity nhập nhằng, Place Checker
+tự chọn một canonical candidate tốt nhất trước khi tạo Planner input; frontend
+không còn mở flow chọn Top-K để resolve identity.
 Rich result còn trả `styleCandidateSelections[]` với place/entity type,
 Style/Item ID và tên, `relationshipSource`, cùng
 `styleCandidateCoverage[]` và các input Style/Item không resolve được. Selector

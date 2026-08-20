@@ -4,7 +4,14 @@ from app.modules.auth.adapters.postgres import PostgresUserRepository
 from app.modules.auth.service import AuthService
 from app.core.config import Settings
 from app.modules.auth.router import router
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+
+# Declaring the bearer scheme as a FastAPI dependency makes the JWT flow
+# visible in OpenAPI/Swagger.  The token is still sent in the Authorization
+# header; no cookie is required.
+bearer_security = HTTPBearer(auto_error=False)
 
 
 def bearer_token(request: Request) -> str | None:
@@ -13,9 +20,13 @@ def bearer_token(request: Request) -> str | None:
     return token.strip() if scheme.casefold() == "bearer" and token.strip() else None
 
 
-async def require_current_user(request: Request) -> AuthUser:
+async def require_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_security),
+) -> AuthUser:
+    token = credentials.credentials if credentials else bearer_token(request)
     user = await request.app.state.auth_service.user(
-        bearer_token(request)
+        token
     )
     if not user:
         raise HTTPException(
@@ -25,9 +36,13 @@ async def require_current_user(request: Request) -> AuthUser:
     return user
 
 
-async def require_admin(request: Request) -> AuthUser:
+async def require_admin(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_security),
+) -> AuthUser:
+    token = credentials.credentials if credentials else bearer_token(request)
     user = await request.app.state.auth_service.user(
-        bearer_token(request)
+        token
     )
     if not user:
         raise HTTPException(
@@ -67,6 +82,7 @@ __all__ = [
     "AuthUser",
     "build_auth_service",
     "bearer_token",
+    "bearer_security",
     "require_admin",
     "require_current_user",
     "router",

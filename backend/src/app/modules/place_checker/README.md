@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai PlaceChecker
 
-Cập nhật lần cuối: 2026-08-18.
+Cập nhật lần cuối: 2026-08-19.
 
 Thư mục này chứa kế hoạch triển khai stage PlaceChecker. Các module Python
 production sẽ được thêm bên cạnh `docs/` khi từng task được thực hiện.
@@ -180,9 +180,11 @@ Tỷ lệ bốc pool theo buổi và sở thích được mô tả tại
   overhead, coverage và multi-dimensional gap analysis.
 - Checkpoint 5 đã có targeted retrieval theo gap, adapter gọi
   `shared/tools/search_places`, xác minh KG/hai nguồn ngoài, chặn candidate
-  retrieval provisional khỏi Planner. Identity điểm trung bình từ URL/input
-  được giữ ở `provisional` khi có exact/alias, address hoặc semantic evidence
-  mạnh; nó đi tiếp dưới dạng conditional kèm constraint bắt buộc xác minh.
+  retrieval provisional khỏi Planner. Identity từ URL/input được Place Checker
+  tự chọn theo một candidate tốt nhất đúng ADM, có stable identity và tọa độ;
+  address hint được gửi vào shared search để ưu tiên ranking. Match này đi tiếp
+  dưới dạng `provisional`/conditional kèm constraint bắt buộc xác minh, không mở
+  branch Top-K ở frontend.
   Promotion worker và outbox bộ nhớ dùng cho development/test.
 - Checkpoint 5 đã có scoring giải thích được theo 10 thành phần, penalty có
   giới hạn và deterministic diversity reranking theo category, experience type

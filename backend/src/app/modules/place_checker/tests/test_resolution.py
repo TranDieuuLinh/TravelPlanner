@@ -160,7 +160,7 @@ def test_shared_lexical_similarity_handles_typo() -> None:
     assert result.match_options[0].components.lexical_score > 0.9
 
 
-def test_close_branches_without_address_hint_select_first_result() -> None:
+def test_top_one_branch_without_address_hint_is_forwarded() -> None:
     first = provider_candidate(
         "kg_1",
         address="Hoan Kiem, Hanoi",
@@ -183,8 +183,8 @@ def test_close_branches_without_address_hint_select_first_result() -> None:
     assert result.status == IdentityResolutionStatus.resolved
     assert result.selected_place is not None
     assert result.selected_place.place_id == "kg_1"
-    assert result.score_margin == 0
-    assert result.resolution_reason == "first_branch_without_address_hint"
+    assert result.score_margin == 1
+    assert result.resolution_reason == "high_confidence_identity"
 
 
 def test_close_system_branches_without_address_hint_select_first_result() -> None:
@@ -210,7 +210,7 @@ def test_close_system_branches_without_address_hint_select_first_result() -> Non
     assert result.selected_place.place_id == "kg_1"
 
 
-def test_lexical_containment_without_strong_evidence_is_not_provisional() -> None:
+def test_lexical_containment_auto_selects_the_best_candidate() -> None:
     service, _ = service_with(
         [provider_candidate(name="BBQ Independence Road Restaurant", aliases=[])]
     )
@@ -222,8 +222,9 @@ def test_lexical_containment_without_strong_evidence_is_not_provisional() -> Non
         )
     ).candidates[0]
 
-    assert result.status == IdentityResolutionStatus.unresolved
-    assert result.selected_place is None
+    assert result.status == IdentityResolutionStatus.provisional
+    assert result.selected_place is not None
+    assert result.resolution_reason == "auto_selected_external_fallback_disabled"
 
 
 def test_wrong_adm_cannot_resolve() -> None:

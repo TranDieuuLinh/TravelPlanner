@@ -80,9 +80,6 @@ class SupervisorService:
                 response=question,
             )
 
-        if payload.user_context_requests:
-            return self.build_context_questionnaire(payload.user_context_requests)
-
         if self._classifier is None:
             return build_fallback_decision(
                 payload,

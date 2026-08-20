@@ -2,8 +2,9 @@
 
 ## Mục tiêu
 
-Phân giải từng place mention thành canonical identity trong đúng ADM mà không
-tự tạo place hoặc âm thầm chọn kết quả nhập nhằng.
+Phân giải từng place mention thành canonical identity trong đúng ADM, chọn
+một candidate tốt nhất cho direct-user/URL input và giữ warning/provenance khi
+identity chỉ ở trạng thái provisional.
 
 ## Phụ thuộc
 
@@ -18,7 +19,7 @@ Shared tool là nguồn luật duy nhất cho:
 - tìm theo canonical name và alias;
 - lexical similarity;
 - lọc ADM, loại địa điểm và stable identity;
-- xếp hạng top-K, ngưỡng chấp nhận và margin;
+- xếp hạng candidate, ngưỡng chấp nhận và address disambiguation;
 - chống trùng các dòng do provider trả về;
 - provider timeout/error và external fallback policy.
 
@@ -39,7 +40,7 @@ query = candidate.name
 input_adm = ADM đã resolve ở Task 02
 search_mode = named_place
 address_hint = candidate hoặc source address hint
-top_k = 5
+top_k = 1
 allow_external_fallback = false
 ```
 
@@ -76,19 +77,25 @@ semantic như behavior đã chạy chỉ vì enum đã dự phòng field này.
 
 ## Quy tắc chấp nhận
 
-- Named place yêu cầu score lớn hơn `0.82`.
-- Margin với candidate thứ hai tối thiểu `0.08`.
-- Score bằng đúng `0.82` không được tự động chấp nhận.
+- Place Checker lấy một candidate tốt nhất từ shared search tool.
+- Có `address_hint` thì shared tool dùng hint để disambiguate/ranking; không có
+  hint thì chọn kết quả đầu tiên theo ranking.
+- Candidate direct-user/URL có stable identity, tọa độ và đúng ADM được giữ dạng
+  `provisional` nếu identity chưa đạt ngưỡng verified, kèm warning để Planner
+  có thể tiếp tục mà không mở branch chọn Top-K ở frontend.
 - Match sai ADM, thiếu tọa độ, thiếu stable identity hoặc mâu thuẫn type không
   đủ điều kiện resolve theo policy shared tool hiện tại.
-- Tên mạnh nhưng address hint mâu thuẫn chuyển `needs_review`.
-- Direct-user unresolved vẫn được giữ cùng candidate và protection metadata.
+- Tên mạnh nhưng address hint mâu thuẫn chỉ được chọn nếu có candidate khác
+  hợp lệ; nếu không thì vẫn chuyển `needs_review`.
+- Direct-user/URL có candidate hợp lệ sẽ được tự chọn provisional thay vì mở
+  branch chọn match ở frontend.
 - Không gọi external provider trong Task 03, kể cả khi KG trả kết quả yếu.
 
 ## Mapping kết quả
 
-`resolved` tạo selected canonical place. `needs_review` giữ top matches nhưng
-không chọn place. `unresolved` giữ candidate gốc. `provider_error` được chiếu
+`resolved` tạo selected canonical place. `needs_review`/`unresolved` có candidate
+hợp lệ sẽ tự chọn một option tốt nhất thành `provisional`; nếu không có candidate
+hợp lệ hoặc provider lỗi thì giữ candidate gốc. `provider_error` được chiếu
 thành unresolved có warning, retryable context và provider attempts; không bị
 diễn giải thành không tồn tại địa điểm.
 
