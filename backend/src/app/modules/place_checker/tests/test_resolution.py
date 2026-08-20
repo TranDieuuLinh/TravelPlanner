@@ -16,7 +16,7 @@ from app.modules.place_checker.enums import (
     IdentityResolutionStatus,
     SimilarityMethod,
 )
-from app.modules.place_checker.resolution import EntityResolutionService
+from app.modules.place_checker.resolution.service import EntityResolutionService
 from app.shared.contracts.place import Coordinates
 from app.shared.tools.search_places import (
     PlaceProviderCandidate,
@@ -98,8 +98,7 @@ def provider_candidate(
         adm_names=adm_names or ["Hà Nội"],
         address=address,
         canonical_type="landmark",
-        coordinates=coordinates
-        or Coordinates(latitude=21.0368, longitude=105.8346),
+        coordinates=coordinates or Coordinates(latitude=21.0368, longitude=105.8346),
         data_confidence=0.98,
     )
 
@@ -126,7 +125,7 @@ def test_exact_match_uses_shared_search_tool() -> None:
     assert result.status == IdentityResolutionStatus.resolved
     assert result.selected_place.place_id == "kg_ho_chi_minh_mausoleum"
     assert result.resolution_method == SimilarityMethod.exact
-    assert result.resolution_reason == "high_confidence_identity"
+    assert result.resolution_reason == "unified_catalog_top_1"
     assert result.provider_attempts[0].provider == "knowledge_graph"
     assert kg.calls == [["Ho Chi Minh Mausoleum"]]
 
@@ -184,7 +183,7 @@ def test_top_one_branch_without_address_hint_is_forwarded() -> None:
     assert result.selected_place is not None
     assert result.selected_place.place_id == "kg_1"
     assert result.score_margin == 1
-    assert result.resolution_reason == "high_confidence_identity"
+    assert result.resolution_reason == "unified_catalog_top_1"
 
 
 def test_close_system_branches_without_address_hint_select_first_result() -> None:
@@ -222,9 +221,31 @@ def test_lexical_containment_auto_selects_the_best_candidate() -> None:
         )
     ).candidates[0]
 
-    assert result.status == IdentityResolutionStatus.provisional
+    assert result.status == IdentityResolutionStatus.resolved
     assert result.selected_place is not None
-    assert result.resolution_reason == "auto_selected_external_fallback_disabled"
+    assert result.resolution_reason == "unified_catalog_top_1"
+
+
+def test_catalog_top_one_prevents_google_maps_call() -> None:
+    external = InMemoryPlaceSearch(
+        [provider_candidate("external")],
+        provider_name="external",
+    )
+    service, _ = service_with(
+        [provider_candidate("kg-top-one", name="Different Branch")],
+        external=external,
+    )
+
+    result = asyncio.run(
+        service.resolve_all(
+            [explorer_candidate("Requested Branch")],
+            hanoi_context(),
+        )
+    ).candidates[0]
+
+    assert result.selected_place is not None
+    assert result.selected_place.place_id == "kg-top-one"
+    assert external.calls == []
 
 
 def test_wrong_adm_cannot_resolve() -> None:
@@ -317,7 +338,7 @@ def test_provider_timeout_returns_partial_result() -> None:
     assert batch.warnings
 
 
-def test_external_fallback_is_disabled_for_checkpoint_two() -> None:
+def test_external_search_runs_only_when_catalog_has_no_top_one() -> None:
     external = InMemoryPlaceSearch(
         [provider_candidate("external_1")],
         provider_name="external",
@@ -331,18 +352,18 @@ def test_external_fallback_is_disabled_for_checkpoint_two() -> None:
         )
     ).candidates[0]
 
-    assert result.status == IdentityResolutionStatus.unresolved
-    assert result.resolution_reason == "external_fallback_disabled"
-    assert external.calls == []
+    assert result.status == IdentityResolutionStatus.resolved
+    assert result.selected_place is not None
+    assert result.selected_place.place_id == "external_1"
+    assert result.resolution_reason == "external_unified_catalog_top_1"
+    assert external.calls == [["Ho Chi Minh Mausoleum"]]
 
 
 def test_unresolved_direct_user_candidate_is_preserved() -> None:
     service, _ = service_with([])
     original = explorer_candidate("Unknown Place")
 
-    result = asyncio.run(
-        service.resolve_all([original], hanoi_context())
-    ).candidates[0]
+    result = asyncio.run(service.resolve_all([original], hanoi_context())).candidates[0]
 
     assert result.status == IdentityResolutionStatus.unresolved
     assert result.candidate == original

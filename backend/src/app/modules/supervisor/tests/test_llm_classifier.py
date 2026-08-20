@@ -48,8 +48,11 @@ def test_structured_llm_output_is_validated_and_minimal_context_is_sent():
         "conversationSummary": "",
     }
     assert client.calls[0][1]["temperature"] == 0.0
-    assert client.calls[0][1]["max_output_tokens"] == 256
-    assert "response_json_schema" in client.calls[0][1]
+    assert client.calls[0][1]["max_output_tokens"] == 1024
+    response_schema = client.calls[0][1]["response_json_schema"]
+    suggestion_schema = response_schema["properties"]["suggestions"]["items"]
+    assert suggestion_schema["additionalProperties"] is False
+    assert suggestion_schema["required"] == ["field", "label", "value"]
 
 
 def test_classifier_receives_all_six_role_tagged_context_messages():

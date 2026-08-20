@@ -1,14 +1,14 @@
-from app.modules.place_checker.aggregate_analysis import TripAggregateAnalysisService
+from app.modules.place_checker.analysis.aggregate import TripAggregateAnalysisService
 from app.modules.place_checker.enums import (
     EvaluationDimension,
     GapType,
     IssueSeverity,
 )
-from app.modules.place_checker.evaluation_contract import (
+from app.modules.place_checker.evaluation.contract import (
     EvaluationFinding,
     PlannerConstraint,
 )
-from app.modules.place_checker.item_contract import ItemResolutionBatch
+from app.modules.place_checker.resolution.item_contract import ItemResolutionBatch
 from app.modules.place_checker.tests.analysis_fixtures import (
     analysis_context,
     empty_items,

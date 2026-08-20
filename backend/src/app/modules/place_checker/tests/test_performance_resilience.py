@@ -12,8 +12,8 @@ from app.modules.place_checker.contract import (
     SourcePlaceEvidence,
 )
 from app.modules.place_checker.enums import EvidenceOrigin
-from app.modules.place_checker.resolution import EntityResolutionService
-from app.modules.place_checker.resolution_contract import PlaceMetadata
+from app.modules.place_checker.resolution.service import EntityResolutionService
+from app.modules.place_checker.resolution.contract import PlaceMetadata
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 from app.shared.tools.search_places import (
     AdministrativeArea,

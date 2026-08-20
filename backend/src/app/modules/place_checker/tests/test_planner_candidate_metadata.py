@@ -1,4 +1,4 @@
-from app.modules.place_checker.planner_candidate_metadata import (
+from app.modules.place_checker.planning.candidate_metadata import (
     preferred_time_values,
     source_metadata,
 )

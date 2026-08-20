@@ -7,7 +7,8 @@ from app.modules.place_checker.errors import (
     CandidateSourceTimeout,
 )
 from app.modules.place_checker.ports import GapSourceBatchItem, NamedPlaceSearchTool
-from app.modules.place_checker.retrieval_contract import (
+from app.modules.place_checker.planning.category import planner_category
+from app.modules.place_checker.retrieval.contract import (
     RetrievalEvidence,
     TargetedRetrievalQuery,
 )
@@ -73,13 +74,12 @@ class SearchPlacesGapSource:
             match
             for match in matches
             if match.relationship_score > 0
-            or self._matches_relation_terms(match.tags, query.relation_terms)
+            or (
+                query.relation_terms
+                and self._matches_relation_terms(match.tags, query.relation_terms)
+            )
         ]
-        fallback_matches = [
-            match
-            for match in matches
-            if match not in relation_matches
-        ]
+        fallback_matches = [match for match in matches if match not in relation_matches]
         return self._to_evidence(
             (relation_matches + fallback_matches)[: query.limit], query
         )
@@ -97,15 +97,19 @@ class SearchPlacesGapSource:
                 await asyncio.gather(*(self._search_item(query) for query in queries))
             )
 
-        requests = [self._request(query, self._anchor_ids(query)[0]) for query in queries]
+        requests = [
+            self._request(query, self._anchor_ids(query)[0]) for query in queries
+        ]
         groups: dict[tuple[object, ...], list[int]] = defaultdict(list)
         for index, request in enumerate(requests):
-            groups[(
-                request.input_adm.adm_id,
-                request.place_type_hint,
-                request.top_k,
-                request.provider_scope,
-            )].append(index)
+            groups[
+                (
+                    request.input_adm.adm_id,
+                    request.place_type_hint,
+                    request.top_k,
+                    request.provider_scope,
+                )
+            ].append(index)
         items: list[GapSourceBatchItem | None] = [None] * len(queries)
         semaphore = asyncio.Semaphore(max(1, max_concurrency))
 
@@ -147,8 +151,7 @@ class SearchPlacesGapSource:
     def _batch_item(self, query, result) -> GapSourceBatchItem:
         if result.status == "provider_error":
             timeout = any(
-                attempt.provider == self.provider_name
-                and attempt.outcome == "timeout"
+                attempt.provider == self.provider_name and attempt.outcome == "timeout"
                 for attempt in result.provider_attempts
             )
             return GapSourceBatchItem(
@@ -170,7 +173,10 @@ class SearchPlacesGapSource:
             match
             for match in matches
             if match.relationship_score > 0
-            or self._matches_relation_terms(match.tags, query.relation_terms)
+            or (
+                query.relation_terms
+                and self._matches_relation_terms(match.tags, query.relation_terms)
+            )
         ]
         selected = (
             relation_matches
@@ -206,9 +212,7 @@ class SearchPlacesGapSource:
             place_type_hint=query.category_hint,
             anchor_place_id=anchor_id,
             top_k=min(60, max(5, query.limit)),
-            allow_external_fallback=(
-                self.source_kind == RetrievalSourceKind.external
-            ),
+            allow_external_fallback=(self.source_kind == RetrievalSourceKind.external),
             provider_scope=(
                 "external"
                 if self.source_kind == RetrievalSourceKind.external
@@ -240,20 +244,7 @@ class SearchPlacesGapSource:
                 ),
                 address=match.address,
                 coordinates=match.coordinates,
-                tags=[
-                    *match.tags,
-                    *(
-                        ["relationship:pending"]
-                        if any(
-                            relationship.get("status") == "pending"
-                            for relationship in match.relationship_evidence
-                        )
-                        else []
-                    ),
-                    *([
-                        "retrieval:relation"
-                    ] if match.relationship_score > 0 else ["retrieval:keyword_fallback"]),
-                ],
+                tags=list(match.tags),
                 confidence=match.score,
                 relationship_score=match.relationship_score,
                 relationships=match.relationship_evidence,
@@ -288,13 +279,23 @@ class SearchPlacesGapSource:
 
     @classmethod
     def _is_relevant(cls, match, query: TargetedRetrievalQuery) -> bool:
+        is_catalog_pool_match = query.gap_id in {
+            "pool:travel_place_candidates",
+            "pool:restaurant_candidates",
+            "pool:drink_dessert_candidates",
+            "pool:entertainment_candidates",
+            "pool:accommodation_candidates",
+        } and planner_category(match.canonical_type) == planner_category(
+            query.category_hint
+        )
+        if is_catalog_pool_match:
+            return True
         if match.score < 0.55:
             return False
         name_score = match.score_components.get("nameSimilarity", 0)
         if match.relationship_score > 0:
             if cls._is_special_experience_query(query) and any(
-                tag.casefold() == "experience:special_experience"
-                for tag in match.tags
+                tag.casefold() == "experience:special_experience" for tag in match.tags
             ):
                 return True
             return not query.relation_terms or cls._matches_relation_terms(

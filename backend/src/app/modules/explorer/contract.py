@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal
 from urllib.parse import urlparse
@@ -9,6 +9,8 @@ from pydantic.alias_generators import to_camel
 
 from app.shared.contracts.agent import AgentError
 from app.modules.explorer.place_keys import place_name_key
+from app.modules.explorer.review_types import ExplorerDefaultedField
+from app.modules.explorer.trip_defaults import tomorrow
 
 
 class ExplorerModel(BaseModel):
@@ -17,10 +19,6 @@ class ExplorerModel(BaseModel):
         populate_by_name=True,
         extra="forbid",
     )
-
-
-def _default_start_date() -> date:
-    return datetime.now().astimezone().date() + timedelta(days=1)
 
 
 class ExplorerImageInput(ExplorerModel):
@@ -148,29 +146,6 @@ class ExplorerInput(ExplorerModel):
 ExplorerStatus = Literal["ready", "partial", "clarification", "error"]
 
 
-class SourceCompleteness(ExplorerModel):
-    source_index: int = Field(ge=0)
-    source_ref: str
-    coverage_status: Literal["complete", "partial", "unknown"]
-    coverage_ratio: float | None = Field(default=None, ge=0, le=1)
-    raw_mention_count: int = Field(default=0, ge=0)
-    filtered_mention_count: int = Field(default=0, ge=0)
-    deduplicated_place_count: int = Field(default=0, ge=0)
-    source_chunk_count: int = Field(default=0, ge=0)
-    processed_source_chunk_count: int = Field(default=0, ge=0)
-    synthesis_coverage_ratio: float | None = Field(default=None, ge=0, le=1)
-    discarded: dict[str, int] = Field(default_factory=dict)
-
-
-class ExplorerCompleteness(ExplorerModel):
-    sources: list[SourceCompleteness] = Field(default_factory=list)
-    raw_mention_count: int = Field(default=0, ge=0)
-    filtered_mention_count: int = Field(default=0, ge=0)
-    deduplicated_place_count: int = Field(default=0, ge=0)
-    discarded: dict[str, int] = Field(default_factory=dict)
-    complete: bool = True
-
-
 class ExplorerOutput(ExplorerModel):
     status: ExplorerStatus
     intake_id: str
@@ -179,16 +154,18 @@ class ExplorerOutput(ExplorerModel):
     input_items: list[RequestedItem] | None = None
     url_notes: list[SourceNote] | None = None
     days: int = Field(default=3, ge=1, le=30)
-    start_date: date = Field(default_factory=_default_start_date)
+    start_date: date = Field(default_factory=tomorrow)
     timezone: str = Field(default="Asia/Ho_Chi_Minh", min_length=1, max_length=100)
     budget: ExplorerBudget = Field(default_factory=ExplorerBudget)
     people: ExplorerPeople = Field(default_factory=ExplorerPeople)
     short_preferences: list[str] = Field(default_factory=list)
     short_avoids: list[str] = Field(default_factory=list)
+    preference_inputs: list[str] = Field(default_factory=list)
+    avoid_inputs: list[str] = Field(default_factory=list)
     special_notes: list[str] = Field(default_factory=list, max_length=50)
     clarification_question: str | None = Field(default=None, max_length=500)
+    defaulted_fields: list[ExplorerDefaultedField] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    completeness: ExplorerCompleteness | None = None
     error: AgentError | None = None
 
 

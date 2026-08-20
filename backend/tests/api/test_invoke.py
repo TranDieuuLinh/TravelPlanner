@@ -69,6 +69,7 @@ def test_agent_invoke_forwards_force_refresh_to_root_graph():
         "/v1/agent/invoke",
         json={
             "threadId": "thread-refresh",
+            "message": "Tạo lịch trình chuyến đi từ liên kết này",
             "urls": ["https://example.test/post"],
             "forceRefresh": True,
         },
@@ -76,6 +77,18 @@ def test_agent_invoke_forwards_force_refresh_to_root_graph():
 
     assert response.status_code == 200
     assert received["force_refresh"] is True
+
+
+def test_agent_invoke_rejects_url_without_a_message():
+    response = TestClient(create_app()).post(
+        "/v1/agent/invoke",
+        json={
+            "threadId": "thread-url-without-message",
+            "urls": ["https://example.test/post"],
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_invoke_returns_finish_fields_in_camel_case():

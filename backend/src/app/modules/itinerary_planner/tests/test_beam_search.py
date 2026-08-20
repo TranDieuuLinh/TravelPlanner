@@ -42,6 +42,15 @@ def prepare_and_route(raw, matrix_provider=None):
     return prepared, routing
 
 
+def test_beam_uses_adaptive_global_time_budgets() -> None:
+    config = BeamSearchConfig()
+
+    assert config.resolved_time_limit_seconds(1) == 5.0
+    assert config.resolved_time_limit_seconds(3) == 8.0
+    assert config.resolved_time_limit_seconds(4) == 12.0
+    assert BeamSearchConfig(time_limit_seconds=2.5).resolved_time_limit_seconds(7) == 2.5
+
+
 def test_rejects_two_restaurants_as_adjacent_nodes() -> None:
     raw = payload(
         foods=[food("restaurant_a"), food("restaurant_b")],
@@ -164,9 +173,11 @@ def test_repetition_priority_is_entertainment_then_drink_then_restaurant() -> No
         ScheduledStop("restaurant", 1, 700, 760, None),
     )
 
-    assert repetition_sort_key(prepared, repeated_restaurant) > repetition_sort_key(
-        prepared, repeated_drink
-    ) > repetition_sort_key(prepared, repeated_entertainment)
+    assert (
+        repetition_sort_key(prepared, repeated_restaurant)
+        > repetition_sort_key(prepared, repeated_drink)
+        > repetition_sort_key(prepared, repeated_entertainment)
+    )
 
 
 def test_transition_window_keeps_waiting_and_visit_inside_window() -> None:
@@ -236,7 +247,9 @@ def test_beam_fills_missing_restaurants_in_lunch_dinner_windows() -> None:
         foods=[
             food("breakfast_restaurant", supported_meals=["breakfast"]),
             food("lunch_restaurant", supported_meals=["lunch"]),
-            food("dinner_drink", supported_meals=["dinner"], venue_type="drink_dessert"),
+            food(
+                "dinner_drink", supported_meals=["dinner"], venue_type="drink_dessert"
+            ),
             food("fill_restaurant", supported_meals=["breakfast"]),
         ],
     )
@@ -324,7 +337,6 @@ def test_beam_backtracks_day_combination_for_three_days() -> None:
             beam_width=16,
             combination_beam_width=16,
             max_stops_per_day=7,
-            time_limit_seconds=0.2,
         ),
     )
 

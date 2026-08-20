@@ -22,7 +22,7 @@ from app.modules.place_checker.enums import (
     PlaceLifecycleState,
     SourceTier,
 )
-from app.modules.place_checker.evaluation_contract import (
+from app.modules.place_checker.evaluation.contract import (
     DataQualityEvaluation,
     EvaluationFinding,
     PeopleSuitabilityEvaluation,
@@ -30,11 +30,11 @@ from app.modules.place_checker.evaluation_contract import (
     PlaceEvaluationBatch,
     PlannerConstraint,
 )
-from app.modules.place_checker.item_contract import (
+from app.modules.place_checker.resolution.item_contract import (
     ItemResolutionBatch,
     ResolvedInputItem,
 )
-from app.modules.place_checker.resolution_contract import (
+from app.modules.place_checker.resolution.contract import (
     EnrichedIdentityPlace,
     PlaceMetadata,
 )

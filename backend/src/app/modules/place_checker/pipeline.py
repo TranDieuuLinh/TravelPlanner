@@ -3,31 +3,28 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from time import perf_counter
 
-from app.modules.place_checker.aggregate_analysis import TripAggregateAnalysisService
+from app.modules.place_checker.analysis.aggregate import TripAggregateAnalysisService
 from app.modules.place_checker.contract import AdmResolutionStatus, PlaceCheckerInput
-from app.modules.place_checker.evaluation import PlaceEvaluationService
-from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
-from app.modules.place_checker.evidence import EvidenceEnrichmentService
-from app.modules.place_checker.item_resolution import InputItemResolutionService
-from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
-from app.modules.place_checker.food_anchor_policy import select_food_anchors
+from app.modules.place_checker.evaluation.service import PlaceEvaluationService
+from app.modules.place_checker.evaluation.contract import PlaceEvaluationBatch
+from app.modules.place_checker.resolution.enrichment import EvidenceEnrichmentService
+from app.modules.place_checker.resolution.item_service import InputItemResolutionService
+from app.modules.place_checker.selection.food.service import FoodRestaurantSelectionService
+from app.modules.place_checker.selection.food.anchor_policy import select_food_anchors
 from app.modules.place_checker.output import PlaceCheckerOutputAssembler
 from app.modules.place_checker.output_contract import (
     PlaceCheckerExecutionMetadata,
     PlaceCheckerResult,
     ToolCallSummary,
 )
-from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
+from app.modules.place_checker.planning.builder import PlaceCheckerPlannerOutputBuilder
 from app.modules.place_checker.enums import PlaceCheckerStatus, VerificationStatus
 from app.modules.place_checker.ports import PlaceCheckerMetricsSink
-from app.modules.place_checker.resolution import EntityResolutionService
-from app.modules.place_checker.retrieval import TargetedRetrievalService
-from app.modules.place_checker.retrieval_projection import RetrievalCandidateProjector
-from app.modules.place_checker.scoring import CandidateScoringService
+from app.modules.place_checker.resolution.service import EntityResolutionService
+from app.modules.place_checker.retrieval.service import TargetedRetrievalService
+from app.modules.place_checker.retrieval.projection import RetrievalCandidateProjector
+from app.modules.place_checker.scoring.service import CandidateScoringService
 from app.modules.place_checker.service import TripContextBuilder
-from app.modules.place_checker.style_candidate_selection import (
-    StyleCandidateSelectionService,
-)
 
 
 class PlaceCheckerPipeline:
@@ -44,7 +41,6 @@ class PlaceCheckerPipeline:
         scoring: CandidateScoringService | None = None,
         metrics: PlaceCheckerMetricsSink | None = None,
         food_selection: FoodRestaurantSelectionService | None = None,
-        style_selection: StyleCandidateSelectionService | None = None,
     ) -> None:
         self.context_builder = context_builder
         self.entity_resolution = entity_resolution
@@ -56,7 +52,6 @@ class PlaceCheckerPipeline:
         self.scoring = scoring or CandidateScoringService()
         self.metrics = metrics
         self.food_selection = food_selection
-        self.style_selection = style_selection
         self.output = PlaceCheckerOutputAssembler()
         self.retrieval_projection = RetrievalCandidateProjector()
 
@@ -96,37 +91,9 @@ class PlaceCheckerPipeline:
         analysis = self.aggregate_analysis.analyze(evaluated, items, context)
         phase["evaluation_and_analysis"] = self._elapsed(evaluation_started)
 
-        style_selection = None
-        style_verification: dict[str, VerificationStatus] = {}
-        if (
-            self.style_selection is not None
-            and context.destination.status == AdmResolutionStatus.resolved
-        ):
-            style_started = perf_counter()
-            style_selection = await self.style_selection.select(
-                context,
-                style_inputs=payload.short_preferences,
-                item_inputs=[item.name for item in payload.input_items],
-                anchor_coordinates=[
-                    place.place.metadata.coordinates
-                    for place in evaluated.places
-                    if place.place.metadata
-                    and place.place.metadata.coordinates
-                ],
-            )
-            style_places = self.style_selection.to_enriched_places(style_selection)
-            style_evaluations = self.evaluation.evaluate_all(style_places, context)
-            evaluated = self._merge_evaluations(evaluated, style_evaluations)
-            analysis = self.aggregate_analysis.analyze(evaluated, items, context)
-            style_verification = {
-                item.place_id: VerificationStatus.verified_kg
-                for item in style_selection.selections
-            }
-            phase["style_selection"] = self._elapsed(style_started)
-
         retrieval = None
         ranking = None
-        verification_by_id = dict(style_verification)
+        verification_by_id: dict[str, VerificationStatus] = {}
         ranking_by_id = {}
         if (
             self.targeted_retrieval is not None
@@ -138,9 +105,7 @@ class PlaceCheckerPipeline:
                 context,
                 items,
                 anchor_place_ids=[
-                    place.place_id
-                    for place in enriched.places
-                    if place.place_id
+                    place.place_id for place in enriched.places if place.place_id
                 ],
                 # Food selection searches special-near restaurants first, but
                 # it is not a replacement for the generic pool recovery. Keep
@@ -155,7 +120,9 @@ class PlaceCheckerPipeline:
                 self.retrieval_projection.to_enriched_places(ranking.ranked, context)
             )
             verification_by_id.update(retrieved_verification)
-            optional_evaluations = self.evaluation.evaluate_all(optional_places, context)
+            optional_evaluations = self.evaluation.evaluate_all(
+                optional_places, context
+            )
             evaluated = self._merge_evaluations(evaluated, optional_evaluations)
             analysis = self.aggregate_analysis.analyze(evaluated, items, context)
             phase["retrieval_and_ranking"] = self._elapsed(retrieval_started)
@@ -171,19 +138,6 @@ class PlaceCheckerPipeline:
             food_selection = await self.food_selection.select(
                 context,
                 food_anchors,
-                active_style_ids={
-                    "style_breakfast",
-                    "style_lunch",
-                    "style_dinner",
-                    *(
-                        item.style_id
-                        for item in (
-                            style_selection.resolved_intents
-                            if style_selection
-                            else []
-                        )
-                    ),
-                },
             )
             phase["food_selection"] = self._elapsed(food_started)
 
@@ -208,7 +162,7 @@ class PlaceCheckerPipeline:
                 ),
                 metadata_repository=int(bool(payload.places)),
                 food_selection=int(food_selection is not None),
-                style_selection=int(style_selection is not None),
+                style_selection=0,
             ),
             partial=bool(
                 payload.validation_issues
@@ -217,7 +171,6 @@ class PlaceCheckerPipeline:
                 or enriched.warnings
                 or (retrieval and retrieval.warnings)
                 or (food_selection and food_selection.warnings)
-                or (style_selection and style_selection.warnings)
             ),
         )
         result = self.output.assemble(
@@ -233,18 +186,18 @@ class PlaceCheckerPipeline:
             ranking_by_place_id=ranking_by_id,
             extra_warnings=[*identities.warnings, *enriched.warnings],
             food_selection=food_selection,
-            style_selection=style_selection,
+            style_selection=None,
         )
         planner_output_builder = PlaceCheckerPlannerOutputBuilder()
         _travel_target, food_target, missing_places, missing_food = (
             planner_output_builder.pool_shortfall(result)
         )
-        unpaired_place_ids = planner_output_builder.unpaired_travel_place_ids(result)
+        unpaired_place_ids = planner_output_builder.unpaired_activity_anchor_ids(result)
         pool_warnings = []
         if unpaired_place_ids:
             pool_warnings.append(
-                f"Special-near coverage is partial: {len(unpaired_place_ids)} travel "
-                "places will use the eligible general food pool as fallback."
+                f"Food proximity coverage is partial: {len(unpaired_place_ids)} "
+                "activity anchors only have city-wide eligible food options."
             )
         if missing_places:
             pool_warnings.append(
@@ -254,29 +207,50 @@ class PlaceCheckerPipeline:
                 "URL/user candidates remain eligible "
                 "and will be reported as unscheduled when no feasible slot exists."
             )
-        if missing_food:
-            warning = (
-                "Planner meal candidate pool is incomplete: "
-                f"require {food_target} meal-capable food candidates for "
-                f"{result.trip_context.days} days; missing {missing_food} "
-                "food candidates. Travel reserve shortfall is non-blocking."
-            )
-            result = result.model_copy(
-                update={
-                    "status": PlaceCheckerStatus.blocked,
-                    "warnings": list(
-                        dict.fromkeys([*result.warnings, *pool_warnings, warning])
-                    ),
-                }
-            )
-        elif pool_warnings:
-            result = result.model_copy(
-                update={
-                    "warnings": list(dict.fromkeys([*result.warnings, *pool_warnings]))
-                }
-            )
+        result = self._apply_food_pool_policy(
+            result,
+            pool_warnings=pool_warnings,
+            food_target=food_target,
+            missing_food=missing_food,
+        )
         await self._record_metrics(result)
         return result
+
+    @staticmethod
+    def _apply_food_pool_policy(
+        result: PlaceCheckerResult,
+        *,
+        pool_warnings: list[str],
+        food_target: int,
+        missing_food: int,
+    ) -> PlaceCheckerResult:
+        warnings = [*result.warnings, *pool_warnings]
+        status = result.status
+        if not result.food_meal_coverage.hard_complete:
+            missing_slots = len(result.food_meal_coverage.hard_missing_slots)
+            detail = (
+                f"; missing {missing_slots} required meal slots"
+                if missing_slots
+                else ""
+            )
+            warnings.append(
+                "Planner hard meal coverage is incomplete"
+                f"{detail}; breakfast/lunch/dinner feasibility is required."
+            )
+            status = PlaceCheckerStatus.blocked
+        elif missing_food:
+            warnings.append(
+                "Planner meal reserve is partial: "
+                f"target {food_target} meal-capable food candidates for "
+                f"{result.trip_context.days} days; missing {missing_food}. "
+                "Hard meal coverage is complete, so reserve shortfall is non-blocking."
+            )
+        return result.model_copy(
+            update={
+                "status": status,
+                "warnings": list(dict.fromkeys(warnings)),
+            }
+        )
 
     @staticmethod
     def _merge_evaluations(
@@ -285,9 +259,7 @@ class PlaceCheckerPipeline:
     ) -> PlaceEvaluationBatch:
         seen = {place.place.place_id for place in base.places if place.place.place_id}
         appended = [
-            place
-            for place in optional.places
-            if place.place.place_id not in seen
+            place for place in optional.places if place.place.place_id not in seen
         ]
         places = [*base.places, *appended]
         return PlaceEvaluationBatch(

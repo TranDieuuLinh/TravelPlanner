@@ -1,5 +1,5 @@
-from app.modules.place_checker.food_meal_matching import build_food_meal_coverage
-from app.modules.place_checker.food_pool_policy import aggregate_restaurants
+from app.modules.place_checker.selection.food.meal_matching import build_food_meal_coverage
+from app.modules.place_checker.selection.food.pool_policy import aggregate_restaurants
 from app.modules.place_checker.tests.test_food_selection import candidate
 
 
@@ -7,15 +7,15 @@ def _with_hours(restaurant_id: str, hours: str):
     value = candidate("place:anchor", restaurant_id)
     return value.model_copy(
         update={
-            "metadata": value.metadata.model_copy(
-                update={"opening_hours": [hours]}
-            )
+            "metadata": value.metadata.model_copy(update={"opening_hours": [hours]})
         }
     )
 
 
 def _coverage(values, days: int):
-    rank = lambda item, _: (item.restaurant_id,)
+    def rank(item, _):
+        return (item.restaurant_id,)
+
     aggregates = aggregate_restaurants(values, {}, rank)
     return build_food_meal_coverage(
         aggregates,
@@ -26,10 +26,7 @@ def _coverage(values, days: int):
 
 def test_unique_matching_detects_count_only_false_positive() -> None:
     values = [
-        *(
-            _with_hours(f"restaurant:all:{index}", "07:00-21:00")
-            for index in range(3)
-        ),
+        *(_with_hours(f"restaurant:all:{index}", "07:00-21:00") for index in range(3)),
         *(
             _with_hours(f"restaurant:dinner:{index}", "17:00-21:00")
             for index in range(6)
@@ -75,8 +72,7 @@ def test_unique_matching_completes_one_restaurant_per_meal_slot() -> None:
 
 def test_reserve_matching_uses_a_disjoint_second_set() -> None:
     values = [
-        _with_hours(f"restaurant:all:{index}", "07:00-21:00")
-        for index in range(18)
+        _with_hours(f"restaurant:all:{index}", "07:00-21:00") for index in range(18)
     ]
 
     coverage = _coverage(values, days=3)

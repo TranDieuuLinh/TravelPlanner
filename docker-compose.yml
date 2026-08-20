@@ -10,6 +10,9 @@ services:
     env_file:
       - path: ./backend/.env
         required: true
+    environment:
+      EXPLORER_TAGS_AUTO_PATH: /auto-attach/tags-auto.yml
+      EXPLORER_INSIGHT_USER_PATH: /auto-attach/insight-user.yml
     ports:
       - "${BACKEND_PORT:?Set BACKEND_PORT in backend/.env}:8000"
     volumes:

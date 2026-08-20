@@ -88,11 +88,13 @@ WITH RECURSIVE adm_descendants(id) AS (
         FROM knowledge_properties property
         WHERE property.entity_id = entity.id
     ) props ON true
-    WHERE $1 = 'travel place'
-      AND entity.entity_type = 'TravelPlace'
+    WHERE $1 IN ('travel place', 'restaurant', 'cafe', 'entertainment', 'hotel')
+      AND entity.entity_type = ANY($3::text[])
       AND props.latitude IS NOT NULL
       AND props.longitude IS NOT NULL
       AND (
+          entity.entity_type = 'Accommodation'
+          OR
           props.time_duration IS NOT NULL
           OR EXISTS (
               SELECT 1
@@ -120,31 +122,8 @@ WITH RECURSIVE adm_descendants(id) AS (
     JOIN knowledge_relationships relation ON relation.from_entity_id = scoped.id
     JOIN knowledge_entities target ON target.id = relation.to_entity_id
     WHERE $1 <> ''
-      AND relation.relationship_type IN ('Offer_Item', 'Has_Style')
+      AND relation.relationship_type = 'Offer_Item'
       AND target.normalized_name % $1
-    UNION ALL
-    SELECT styled.from_entity_id, 1.0 - styled.style_rank * 0.01
-    FROM (
-        SELECT relation.from_entity_id,
-               row_number() OVER (
-                   PARTITION BY relation.to_entity_id
-                   ORDER BY relation.from_entity_id
-               ) AS style_rank
-        FROM scoped
-        JOIN knowledge_relationships relation ON relation.from_entity_id = scoped.id
-        WHERE $1 = 'restaurant'
-          AND relation.relationship_type = 'Has_Style'
-          AND relation.to_entity_id IN (
-              'style_breakfast', 'style_lunch', 'style_dinner'
-          )
-    ) styled
-    WHERE styled.style_rank <= 20
-    UNION ALL
-    SELECT relation.from_entity_id, 0.90
-    FROM scoped
-    JOIN knowledge_relationships relation ON relation.from_entity_id = scoped.id
-    WHERE $1 = 'cafe'
-      AND relation.relationship_type = 'Has_Style'
     UNION ALL
     SELECT special.to_entity_id, 0.0
     FROM knowledge_relationships special
@@ -224,13 +203,12 @@ LEFT JOIN LATERAL (
     FROM (
         SELECT CASE relation.relationship_type
                    WHEN 'Offer_Item' THEN 'item:' || target.canonical_name
-                   WHEN 'Has_Style' THEN 'style:' || target.canonical_name
                END AS label,
                similarity(target.normalized_name, $1) AS label_score
         FROM knowledge_relationships relation
         JOIN knowledge_entities target ON target.id = relation.to_entity_id
         WHERE relation.from_entity_id = entity.id
-          AND relation.relationship_type IN ('Offer_Item', 'Has_Style')
+          AND relation.relationship_type = 'Offer_Item'
         UNION ALL
         SELECT 'experience:special_experience', 0.0
         FROM knowledge_relationships relation
@@ -238,6 +216,11 @@ LEFT JOIN LATERAL (
         WHERE relation.to_entity_id = entity.id
           AND relation.relationship_type = 'Special_Experience'
           AND relation.from_entity_id IN (SELECT id FROM adm_scope)
+        UNION ALL
+        SELECT property.value, 0.0
+        FROM knowledge_properties property
+        WHERE property.entity_id = entity.id
+          AND property.key = 'tags'
     ) labels
 ) tags ON true
 LEFT JOIN LATERAL (
@@ -267,37 +250,24 @@ LEFT JOIN LATERAL (
           AND special.relationship_type = 'Special_Experience'
         UNION ALL
         SELECT relation.relationship_type,
-               CASE relation.relationship_type
-                   WHEN 'Offer_Item' THEN COALESCE(
-                       CASE jsonb_typeof(relation.recommendations::jsonb)
-                           WHEN 'array' THEN (
-                               SELECT max((evidence->>'confidence')::double precision)
-                               FROM jsonb_array_elements(relation.recommendations::jsonb) evidence
-                               WHERE evidence ? 'confidence'
-                           )
-                           WHEN 'object' THEN
-                               (relation.recommendations::jsonb->>'confidence')::double precision
-                       END,
-                       CASE WHEN relation.recommendations::jsonb->>'status' = 'pending'
-                            THEN 0.45 ELSE 0.72 END
-                   )
-                   WHEN 'Has_Style' THEN LEAST(
-                       0.75,
-                       0.45 + COALESCE(
-                           (relation.recommendations::jsonb->>'priority')::double precision / 400,
-                           0.10
+               COALESCE(
+                   CASE jsonb_typeof(relation.recommendations::jsonb)
+                       WHEN 'array' THEN (
+                           SELECT max((evidence->>'confidence')::double precision)
+                           FROM jsonb_array_elements(relation.recommendations::jsonb) evidence
+                           WHERE evidence ? 'confidence'
                        )
-                   )
-               END
+                       WHEN 'object' THEN
+                           (relation.recommendations::jsonb->>'confidence')::double precision
+                   END,
+                   CASE WHEN relation.recommendations::jsonb->>'status' = 'pending'
+                        THEN 0.45 ELSE 0.72 END
+               )
         FROM knowledge_relationships relation
         JOIN knowledge_entities target ON target.id = relation.to_entity_id
         WHERE relation.from_entity_id = entity.id
-          AND relation.relationship_type IN ('Offer_Item', 'Has_Style')
-          AND (
-              target.normalized_name % $1
-              OR ($1 IN ('restaurant', 'cafe')
-                  AND relation.relationship_type = 'Has_Style')
-          )
+          AND relation.relationship_type = 'Offer_Item'
+          AND target.normalized_name % $1
     ) scored_relations
     ORDER BY score DESC, kind
     LIMIT 1

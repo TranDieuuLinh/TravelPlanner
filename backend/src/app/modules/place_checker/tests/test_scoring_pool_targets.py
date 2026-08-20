@@ -1,4 +1,4 @@
-from app.modules.place_checker.scoring import CandidateScoringService
+from app.modules.place_checker.scoring.service import CandidateScoringService
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 from app.modules.place_checker.tests.test_scoring_reranking import (
     NOW,
@@ -41,7 +41,7 @@ def test_default_reserve_grows_with_trip_days() -> None:
     )
 
     assert result.reserve_limit_per_gap == 60
-    assert result.pool_target == 181
+    assert result.pool_target == 95
     assert len(result.ranked) == 8
 
 

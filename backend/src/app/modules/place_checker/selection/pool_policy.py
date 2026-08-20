@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+import math
+
+
+ACTIVITY_CANDIDATES_PER_DAY = 12
+FOOD_CANDIDATES_PER_DAY = 6
+ENTERTAINMENT_CANDIDATES_PER_DAY = 2
+DRINK_DESSERT_CANDIDATES_PER_DAY = 3
+MAX_ACTIVITY_POOL_TARGET = 360
+MAX_FOOD_POOL_TARGET = 180
+MAX_ENTERTAINMENT_POOL_TARGET = 60
+MAX_DRINK_DESSERT_POOL_TARGET = 90
+MAX_QUERY_LIMIT = 60
+ACCOMMODATION_POOL_TARGET = 3
+MEALS_PER_DAY = 3
+
+
+def activity_pool_target_for_days(days: int) -> int:
+    """Return the TravelPlace reserve required for the trip duration."""
+    return min(
+        MAX_ACTIVITY_POOL_TARGET,
+        max(12, days * ACTIVITY_CANDIDATES_PER_DAY),
+    )
+
+
+def food_pool_target_for_days(days: int) -> int:
+    """Return the restaurant reserve target, separate from activity capacity."""
+    return min(MAX_FOOD_POOL_TARGET, max(6, days * FOOD_CANDIDATES_PER_DAY))
+
+
+def entertainment_pool_target_for_days(days: int) -> int:
+    """Return the evening Entertainment reserve target."""
+    return min(
+        MAX_ENTERTAINMENT_POOL_TARGET,
+        max(2, days * ENTERTAINMENT_CANDIDATES_PER_DAY),
+    )
+
+
+def drink_dessert_pool_target_for_days(days: int) -> int:
+    """Return the morning/afternoon DrinkDessert reserve target."""
+    return min(
+        MAX_DRINK_DESSERT_POOL_TARGET,
+        max(3, days * DRINK_DESSERT_CANDIDATES_PER_DAY),
+    )
+
+
+def planner_pool_shortfall(
+    *,
+    days: int,
+    travel_place_count: int,
+    food_count: int,
+    food_meal_counts: dict[str, int] | None = None,
+) -> tuple[int, int, int, int]:
+    """Return reserve counts and hard meal-coverage shortfalls.
+
+    The travel count is a soft reserve measurement. Only the food count and
+    meal matching shortfalls are hard requirements for the Planner handoff.
+    """
+    travel_target = activity_pool_target_for_days(days)
+    food_target = food_pool_target_for_days(days)
+    meal_shortfall = max(
+        (max(0, days - count) for count in (food_meal_counts or {}).values()),
+        default=0,
+    )
+    return (
+        travel_target,
+        food_target,
+        max(0, travel_target - travel_place_count),
+        max(max(0, food_target - food_count), meal_shortfall),
+    )
+
+
+def combined_pool_target_for_days(days: int) -> int:
+    return (
+        activity_pool_target_for_days(days)
+        + food_pool_target_for_days(days)
+        + entertainment_pool_target_for_days(days)
+        + drink_dessert_pool_target_for_days(days)
+        + ACCOMMODATION_POOL_TARGET
+    )
+
+
+def pool_query_limit_for_days(days: int) -> int:
+    """Over-fetch per query; multiple discovery gaps can fill the trip pool."""
+    return min(MAX_QUERY_LIMIT, activity_pool_target_for_days(days) * 2)
+
+
+def per_gap_pool_target(days: int, discovery_gap_count: int) -> int:
+    target = activity_pool_target_for_days(days)
+    return min(20, max(6, math.ceil(target / max(1, discovery_gap_count))))

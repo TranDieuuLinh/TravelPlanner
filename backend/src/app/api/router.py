@@ -107,7 +107,7 @@ async def invoke_explorer(
             config={"callbacks": [trace_callback]},
         )
         output = result["output"]
-        source_count = len(output.completeness.sources) if output.completeness else 0
+        source_count = len(payload.urls) + len(payload.images)
         await observability.record_agent_invoke(
             request_id=request_id,
             route="explorer",

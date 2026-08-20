@@ -2,7 +2,11 @@ import logging
 
 from pydantic import ValidationError
 
-from app.modules.explorer.public import YamlTagCatalog, build_explorer_graph
+from app.modules.explorer.public import (
+    YamlInsightCatalog,
+    YamlTagCatalog,
+    build_explorer_graph,
+)
 from app.modules.information_finder.entity_linking import link_verified_entities
 from app.modules.information_finder.public import (
     InformationFinderService,
@@ -32,16 +36,14 @@ from app.modules.supervisor.public import (
     SupervisorService,
     build_supervisor_graph,
 )
+from app.orchestration.explorer_review_nodes import ExplorerReviewNodes
 from app.orchestration.explorer_handoff import (
     ExplorerHandoffError,
     ExplorerHandoffProjector,
-    explorer_output_to_intent,
 )
 from app.orchestration.memory_projection import (
     build_blocked_clarification,
     information_query,
-    memory_field,
-    supervisor_conversation_context,
 )
 from app.orchestration.root_state import RootState
 from app.shared.contracts.agent import AgentError
@@ -49,7 +51,7 @@ from app.shared.contracts.agent import AgentError
 logger = logging.getLogger(__name__)
 
 
-class RootNodes:
+class RootNodes(ExplorerReviewNodes):
     def __init__(
         self,
         information_finder_service: InformationFinderService | None = None,
@@ -67,8 +69,12 @@ class RootNodes:
         self.supervisor = build_supervisor_graph(self.supervisor_service)
         self.explorer = build_explorer_graph(explorer_service)
         tag_catalog = getattr(explorer_service, "tag_catalog", None)
+        self.explorer_tag_catalog = tag_catalog or YamlTagCatalog()
+        self.explorer_insight_catalog = getattr(
+            explorer_service, "insight_catalog", None
+        ) or YamlInsightCatalog(self.explorer_tag_catalog)
         self.explorer_handoff = handoff_projector or ExplorerHandoffProjector(
-            tag_catalog or YamlTagCatalog()
+            self.explorer_tag_catalog
         )
         self.information_finder = build_information_finder_graph(
             information_finder_service
@@ -83,77 +89,6 @@ class RootNodes:
             itinerary_planner_graph or build_itinerary_planner_graph()
         )
         self.plan_editor = build_plan_editor_graph()
-
-    async def run_supervisor(self, state: RootState) -> dict:
-        conversation_context = supervisor_conversation_context(
-            state.get("recent_messages"),
-            state.get("response"),
-        )
-
-        memory = state.get("conversation_memory")
-        dest = memory_field(memory, "destination")
-        dur = memory_field(memory, "duration_days")
-        places = memory_field(memory, "mentioned_places", []) or []
-        sel_places = memory_field(memory, "selected_places", []) or []
-        summary = memory_field(memory, "summary")
-        pending_goal = memory_field(memory, "pending_goal")
-        clarification = pending_goal == "clarify_reference"
-
-        supervisor_payload = {
-            "message": state["message"],
-            "conversation_context": conversation_context,
-            "has_source_input": bool(state.get("urls") or state.get("images")),
-            "has_itinerary": state.get("existing_itinerary") is not None,
-            "has_edit_operation": state.get("edit_operation") is not None,
-            "destination": dest,
-            "duration_days": dur,
-            "mentioned_places": places,
-            "selected_places": sel_places,
-            "clarification_required": clarification,
-            "conversation_summary": summary,
-        }
-
-        result = await self.supervisor.ainvoke(supervisor_payload)
-        decision = result["decision"]
-        update = {
-            "decision": decision,
-            "conversation_context": conversation_context,
-            "warnings": decision.warnings,
-            "suggestions": list(decision.suggestions),
-        }
-        if decision.response is not None:
-            response = decision.response
-            resolver = self.entity_resolver
-            if resolver is not None and decision.entity_names:
-                response = await link_verified_entities(
-                    response,
-                    decision.entity_names,
-                    resolver,
-                )
-            update["response"] = response
-        if decision.clarification_question is not None:
-            update["clarification_question"] = decision.clarification_question
-        return update
-
-    async def run_explorer(self, state: RootState) -> dict:
-        result = await self.explorer.ainvoke(
-            {
-                "payload": {
-                    "rawPrompt": state.get("message") or None,
-                    "urls": state.get("urls", []),
-                    "images": state.get("images", []),
-                    "forceRefresh": state.get("force_refresh", False),
-                }
-            }
-        )
-        output = result["output"]
-        update = {
-            "explorer_output": output,
-            "warnings": [*state.get("warnings", []), *output.warnings],
-        }
-        if output.input_adm:
-            update["intent"] = explorer_output_to_intent(output)
-        return update
 
     async def run_information_finder(self, state: RootState) -> dict:
         result = await self.information_finder.ainvoke(

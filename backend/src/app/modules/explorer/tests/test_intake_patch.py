@@ -164,3 +164,67 @@ def test_adm_follow_up_applies_hidden_insight_defaults() -> None:
     assert result.status == "ready"
     assert result.short_preferences == ["giá rẻ", "địa phương", "Văn hóa"]
     assert result.short_avoids == ["sang trọng"]
+
+
+def test_changing_days_recalculates_default_budget() -> None:
+    defaulted = ExplorerOutput(
+        status="ready",
+        intakeId="intake-default-budget",
+        input_ADM="Hà Nội",
+        days=3,
+        budget=ExplorerBudget(
+            level="low",
+            targetAmount=1_923_284,
+            source="default",
+            basis="per_person",
+        ),
+        people=ExplorerPeople(adults=2),
+        defaultedFields=["budget"],
+    )
+    patch = TripContextPatch.model_validate(
+        {"days": {"operation": "set", "value": 2}}
+    )
+
+    result = apply_trip_context_patch(
+        defaulted,
+        patch,
+        raw_user_message="Đi 2 ngày",
+    )
+
+    assert result.days == 2
+    assert result.budget.target_amount == 1_172_432
+
+
+def test_changing_people_reprojects_insight_tags_from_explicit_inputs() -> None:
+    class Insight:
+        def enrich(self, **kwargs):
+            derived = ["gia đình"] if kwargs["children"] else ["nightlife"]
+            return [*kwargs["preferences"], *derived], kwargs["avoids"]
+
+    defaulted = ExplorerOutput(
+        status="ready",
+        intakeId="intake-reproject-insight",
+        input_ADM="Hà Nội",
+        shortPreferences=["Văn hóa", "nightlife"],
+        preferenceInputs=["Văn hóa"],
+        defaultedFields=["people", "shortPreferences"],
+    )
+    patch = TripContextPatch.model_validate(
+        {
+            "people": {
+                "operation": "set",
+                "value": {"adults": 2, "children": 1},
+            }
+        }
+    )
+
+    result = apply_trip_context_patch(
+        defaulted,
+        patch,
+        raw_user_message="2 người lớn và 1 trẻ em",
+        insight_catalog=Insight(),
+    )
+
+    assert result.preference_inputs == ["Văn hóa"]
+    assert result.short_preferences == ["Văn hóa", "gia đình"]
+    assert "nightlife" not in result.short_preferences

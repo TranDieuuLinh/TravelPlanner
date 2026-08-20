@@ -46,11 +46,12 @@ tiếp không cải thiện. Greedy/local-search order được đưa vào CP-SA
 solution hint; CP-SAT vẫn có quyền sửa selection, time và route để thỏa hard
 constraint.
 Valhalla matrix và route-detail request có timeout mặc định 180 giây; có thể
-điều chỉnh qua `VALHALLA_TIMEOUT_SECONDS` khi deployment cần SLA. Kết quả từng
-matrix batch thành công được cache tối đa 128 entry trong 10 phút trên cùng
-Valhalla adapter. Vì vậy nếu một batch lỗi, lần gọi matrix sau chỉ request lại
-batch còn thiếu; lỗi HTTP/provider thực sự vẫn đi qua approximate fallback và
-phát warning.
+điều chỉnh qua `VALHALLA_TIMEOUT_SECONDS` khi deployment cần SLA. Ngoài cache
+batch tối đa 128 entry trong 10 phút, adapter giữ bounded pair cache theo graph
+version/profile/directed coordinates. Matrix trace công bố logical pair count,
+pair-cache hit, provider pair count và số batch thực sự gọi. Lỗi HTTP/provider
+không được cache thành unreachable và vẫn đi qua approximate fallback có
+warning.
 Greedy không dùng tổng activity duration làm điều kiện loại sớm. Nó tạo activity
 skeleton trước, giữ placeholder cho ba meal, rồi ưu tiên restaurant theo tổng
 travel từ activity trước qua restaurant đến activity sau. Daily CP-SAT vẫn sở
@@ -84,6 +85,16 @@ ID khác nhau dù cùng travel-place signature. Candidate `user_input` hoặc `u
 vào `unscheduled` với reason code `not_selected_by_optimizer`; candidate bị
 loại trước optimizer giữ reason code validation/feasibility ban đầu.
 
+FastAPI runtime dùng graph Beam-first có prefix `prepare_problem` và
+`build_travel_matrix` chung. Beam `PARTIAL`, deadline, exception hoặc route
+reflow failure chuyển sang Hybrid CP-SAT trên cùng `PreparedPlanningProblem` và
+`RoutingProblem`; fallback không gọi lại matrix. Beam dùng một global deadline
+cho toàn bộ ngày và nhánh backtracking, kiểm tra định kỳ ngay trong vòng
+candidate. Budget mặc định là 5 giây cho một ngày, 8 giây cho 2–3 ngày và 12
+giây cho chuyến dài hơn; giá trị explicit trong `BeamSearchConfig` ghi đè budget
+adaptive. Khi deadline tới, complete incumbent được giữ, còn incomplete plan
+chuyển fallback với reason rõ ràng.
+
 ## State nội bộ
 
 `ItineraryPlannerState` nên có:
@@ -98,6 +109,9 @@ output
 warnings
 error
 phase_timings_ms
+beam_failure_reason
+selected_optimizer
+fallback_used
 ```
 
 Chỉ `input` bắt buộc khi invoke. Các field còn lại được từng node bổ sung.

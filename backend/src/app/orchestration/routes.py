@@ -1,6 +1,7 @@
 from typing import Literal
 
 from app.orchestration.root_state import RootState
+from app.modules.explorer.public import ExplorerReview
 
 
 def route_supervisor(
@@ -11,8 +12,15 @@ def route_supervisor(
 
 def route_after_explorer(
     state: RootState,
-) -> Literal["place_checker"]:
-    return "place_checker"
+) -> Literal["supervisor_review", "supervisor_source_summary", "place_checker"]:
+    if state.get("source_action") == "summarize_source":
+        return "supervisor_source_summary"
+    review = ExplorerReview.model_validate(state["explorer_review"])
+    return (
+        "place_checker"
+        if review is not None and review.kind == "ready_for_execution"
+        else "supervisor_review"
+    )
 
 
 def route_after_place_checker(

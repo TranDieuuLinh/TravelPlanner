@@ -3968,6 +3968,7 @@
 .plannerChat .composerSourceActions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 5px;
 }
 
@@ -4030,10 +4031,6 @@
 }
 
 @media (max-width: 360px) {
-  .plannerChat .sourceActionButton span {
-    display: none;
-  }
-
   .plannerChat .urlImporter {
     padding: 12px;
   }

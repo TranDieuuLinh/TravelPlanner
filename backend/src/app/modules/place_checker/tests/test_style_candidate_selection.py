@@ -1,24 +1,24 @@
 import asyncio
+import inspect
 
 from app.modules.place_checker.adapters.postgres_style_candidate_query import (
     STYLE_CANDIDATE_SQL,
     STYLE_INTENT_RESOLUTION_SQL,
 )
 from app.modules.place_checker.enums import CostTier, OperationalStatus
-from app.modules.place_checker.contract import BudgetInput, PeopleInput, PlaceCheckerInput
-from app.modules.place_checker.item_contract import ItemResolutionBatch
+from app.modules.place_checker.resolution.item_contract import ItemResolutionBatch
 from app.modules.place_checker.pipeline import PlaceCheckerPipeline
-from app.modules.place_checker.resolution_contract import PlaceMetadata
-from app.modules.place_checker.resolution_contract import (
+from app.modules.place_checker.resolution.contract import PlaceMetadata
+from app.modules.place_checker.resolution.contract import (
     EvidenceEnrichmentOutput,
     IdentityResolutionBatch,
 )
-from app.modules.place_checker.style_candidate_contract import (
+from app.modules.place_checker.selection.style_contract import (
     ResolvedStyleIntent,
     StyleCandidate,
     StyleCandidateSourceBatch,
 )
-from app.modules.place_checker.style_candidate_selection import (
+from app.modules.place_checker.selection.style_service import (
     StyleCandidateSelectionService,
 )
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
@@ -312,41 +312,8 @@ def test_postgres_queries_use_canonical_ids_and_both_relationship_paths() -> Non
     assert "normalized_name =" not in STYLE_CANDIDATE_SQL
 
 
-def test_rich_pipeline_projects_style_selection_and_coverage() -> None:
-    resolved = intent("style_culture", "Văn hóa")
-    source = FakeStyleSource(
-        StyleCandidateSourceBatch(
-            resolved_intents=[resolved],
-            candidates=[
-                candidate("culture:1", "style_culture"),
-                candidate("culture:2", "style_culture"),
-            ],
-        )
+def test_pipeline_does_not_expose_has_style_discovery() -> None:
+    assert (
+        "style_selection"
+        not in inspect.signature(PlaceCheckerPipeline.__init__).parameters
     )
-    pipeline = PlaceCheckerPipeline(
-        context_builder=FakeContextBuilder(),
-        entity_resolution=EmptyIdentityResolution(),
-        evidence_enrichment=EmptyEvidenceEnrichment(),
-        item_resolution=EmptyItemResolution(),
-        style_selection=StyleCandidateSelectionService(source),
-    )
-    payload = PlaceCheckerInput(
-        input_adm="Hà Nội",
-        days=1,
-        budget=BudgetInput(level="medium", source="test"),
-        people=PeopleInput(adults=1, children=0, infants=0),
-        short_preferences=["style:Văn hóa"],
-    )
-
-    result = asyncio.run(pipeline.check(payload, request_id="style-pipeline"))
-
-    assert {item.place_id for item in result.style_candidate_selections} == {
-        "culture:1",
-        "culture:2",
-    }
-    assert result.style_candidate_coverage[0].complete is True
-    assert {item.place_id for item in result.checked_places} >= {
-        "culture:1",
-        "culture:2",
-    }
-    assert result.metadata.tool_calls.style_selection == 1

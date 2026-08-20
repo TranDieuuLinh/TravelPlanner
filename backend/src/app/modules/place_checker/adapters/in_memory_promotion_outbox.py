@@ -1,5 +1,5 @@
 from app.modules.place_checker.enums import PromotionEventStatus
-from app.modules.place_checker.retrieval_contract import PromotionEvent
+from app.modules.place_checker.retrieval.contract import PromotionEvent
 
 
 class InMemoryPromotionOutbox:

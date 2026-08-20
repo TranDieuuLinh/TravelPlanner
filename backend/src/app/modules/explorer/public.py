@@ -58,6 +58,13 @@ from app.modules.explorer.intake_patch import (
     TripContextPatch,
     apply_trip_context_patch,
 )
+from app.modules.explorer.review import build_explorer_review
+from app.modules.explorer.review_contract import (
+    ExplorerReview,
+    ExplorerReviewBudget,
+    ExplorerReviewContext,
+    ExplorerReviewKind,
+)
 from app.modules.explorer.ports import TagCatalog
 from app.modules.explorer.place_dedupe import deduplicate_places
 from app.modules.explorer.place_keys import place_name_key
@@ -79,7 +86,6 @@ def create_explorer_service(
     source_max_concurrency: int = 5,
     synthesis_max_concurrency: int = 6,
     synthesis_limiter: asyncio.Semaphore | None = None,
-    minimum_synthesis_coverage: float = 0.8,
     dedupe_provider: str = "gemini",
     note_provider: str = "gemini",
     url_timeout_seconds: float = 30,
@@ -259,7 +265,6 @@ def create_explorer_service(
         url_cache=url_cache,
         draft_cache=draft_cache,
         draft_cache_namespace=draft_cache_namespace,
-        minimum_synthesis_coverage=minimum_synthesis_coverage,
         source_extraction_timeout_seconds=source_extraction_timeout_seconds,
         source_synthesis_timeout_seconds=source_synthesis_timeout_seconds,
         fallback_drafts=rules,
@@ -297,6 +302,10 @@ __all__ = [
     "ExplorerOutput",
     "ExplorerPeople",
     "ExplorerPlace",
+    "ExplorerReview",
+    "ExplorerReviewBudget",
+    "ExplorerReviewContext",
+    "ExplorerReviewKind",
     "PlaceSource",
     "IntegerScalarPatch",
     "ItemCollectionPatch",
@@ -312,6 +321,7 @@ __all__ = [
     "YamlTagCatalog",
     "YamlInsightCatalog",
     "build_explorer_graph",
+    "build_explorer_review",
     "create_explorer_service",
     "to_explorer_api_output",
     "apply_trip_context_patch",

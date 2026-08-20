@@ -28,6 +28,33 @@ def test_prompt_without_days_defaults_to_three_day_plan() -> None:
     assert output.people.adults == 2
 
 
+def test_destination_only_records_and_calculates_review_defaults() -> None:
+    output = invoke({"rawPrompt": "Lập kế hoạch Hà Nội"})
+
+    assert output.defaulted_fields == [
+        "days",
+        "budget",
+        "people",
+        "shortPreferences",
+    ]
+    assert output.budget.level == "low"
+    assert output.budget.target_amount == 1_923_284
+
+
+def test_explicit_required_fields_do_not_create_default_review() -> None:
+    output = invoke({
+        "rawPrompt": (
+            "Lập kế hoạch Hà Nội 4 ngày cho 3 người, "
+            "budget 6 triệu/người, thích văn hóa"
+        )
+    })
+
+    assert output.defaulted_fields == []
+    assert output.days == 4
+    assert output.people.adults == 3
+    assert output.budget.target_amount == 6_000_000
+
+
 def test_explicit_solo_party_overrides_two_person_default() -> None:
     output = invoke({"rawPrompt": "Lập kế hoạch ở Huế cho 1 người"})
 

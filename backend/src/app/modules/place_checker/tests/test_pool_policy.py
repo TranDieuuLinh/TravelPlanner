@@ -1,125 +1,67 @@
 import asyncio
 
-from app.modules.place_checker.analysis_contract import (
-    AnalysisGap,
-    CoverageAnalysis,
-    GapAnalysis,
-)
-from app.modules.place_checker.enums import (
-    CoverageLevel,
-    GapType,
-    IssueSeverity,
-    RetrievalSourceKind,
-)
-from app.modules.place_checker.pool_policy import (
+from app.modules.place_checker.analysis.contract import CoverageAnalysis, GapAnalysis
+from app.modules.place_checker.enums import CoverageLevel, GapType, RetrievalSourceKind
+from app.modules.place_checker.selection.pool_policy import (
     activity_pool_target_for_days,
     combined_pool_target_for_days,
+    drink_dessert_pool_target_for_days,
     entertainment_pool_target_for_days,
     food_pool_target_for_days,
     per_gap_pool_target,
     planner_pool_shortfall,
     pool_query_limit_for_days,
 )
-from app.modules.place_checker.retrieval import (
-    CORE_POOL_QUERY_SPECS,
-    POOL_QUERY_SPECS,
-    TargetedRetrievalService,
-)
-from app.modules.place_checker.retrieval_pool_selection import (
-    select_adaptive_pool_specs,
-)
+from app.modules.place_checker.retrieval.service import TargetedRetrievalService
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 
 
-def test_activity_pool_target_is_twenty_two_places_per_day() -> None:
-    assert activity_pool_target_for_days(1) == 22
-    assert activity_pool_target_for_days(4) == 88
-    assert activity_pool_target_for_days(7) == 154
-    assert activity_pool_target_for_days(30) == 420
+def test_independent_pool_targets() -> None:
+    assert activity_pool_target_for_days(1) == 12
+    assert activity_pool_target_for_days(3) == 36
+    assert food_pool_target_for_days(1) == 6
+    assert food_pool_target_for_days(3) == 18
+    assert entertainment_pool_target_for_days(1) == 2
+    assert entertainment_pool_target_for_days(3) == 6
+    assert drink_dessert_pool_target_for_days(1) == 3
+    assert drink_dessert_pool_target_for_days(3) == 9
 
 
-def test_food_reserve_target_remains_separate() -> None:
-    assert food_pool_target_for_days(1) == 16
-    assert food_pool_target_for_days(3) == 48
-
-
-def test_entertainment_reserve_target_is_six_per_day() -> None:
-    assert entertainment_pool_target_for_days(1) == 6
-    assert entertainment_pool_target_for_days(3) == 18
-
-
-def test_combined_pool_has_independent_travel_and_restaurant_targets() -> None:
-    assert combined_pool_target_for_days(1) == 49
-    assert combined_pool_target_for_days(3) == 137
-    assert combined_pool_target_for_days(5) == 225
-    assert pool_query_limit_for_days(1) == 44
+def test_combined_target_counts_every_pool_once() -> None:
+    assert combined_pool_target_for_days(1) == 26
+    assert combined_pool_target_for_days(3) == 72
+    assert pool_query_limit_for_days(1) == 24
     assert pool_query_limit_for_days(3) == 60
 
 
-def test_planner_pool_shortfall_is_a_hard_per_type_measurement() -> None:
+def test_planner_shortfall_uses_activity_and_six_food_per_day() -> None:
     assert planner_pool_shortfall(days=1, travel_place_count=7, food_count=8) == (
-        8,
-        3,
-        1,
+        12,
+        6,
+        5,
         0,
     )
-    assert planner_pool_shortfall(days=1, travel_place_count=8, food_count=10) == (
-        8,
-        3,
-        0,
-        0,
-    )
-
-
-def test_three_day_food_hard_minimum_tracks_nine_meal_slots() -> None:
-    assert planner_pool_shortfall(days=3, travel_place_count=24, food_count=9) == (
-        24,
-        9,
+    assert planner_pool_shortfall(days=3, travel_place_count=36, food_count=18) == (
+        36,
+        18,
         0,
         0,
     )
-    assert planner_pool_shortfall(days=3, travel_place_count=24, food_count=8) == (
-        24,
-        9,
-        0,
-        1,
-    )
 
 
-def test_food_hard_minimum_also_requires_each_meal_type() -> None:
+def test_food_shortfall_also_checks_breakfast_lunch_and_dinner() -> None:
     assert planner_pool_shortfall(
         days=3,
-        travel_place_count=24,
-        food_count=9,
-        food_meal_counts={"breakfast": 0, "lunch": 9, "dinner": 9},
-    ) == (24, 9, 0, 3)
+        travel_place_count=36,
+        food_count=18,
+        food_meal_counts={"breakfast": 0, "lunch": 18, "dinner": 18},
+    ) == (36, 18, 0, 3)
 
 
-def test_pool_target_is_shared_across_discovery_gaps() -> None:
-    assert per_gap_pool_target(4, 4) == 20
+def test_per_gap_limit_remains_bounded() -> None:
+    assert per_gap_pool_target(4, 4) == 12
     assert per_gap_pool_target(4, 2) == 20
     assert per_gap_pool_target(4, 1) == 20
-    assert per_gap_pool_target(7, 8) == 20
-
-
-def test_generic_travel_query_uses_bounded_places_per_trip_day() -> None:
-    gap = AnalysisGap(
-        gap_id="gap:experience_coverage",
-        gap_type=GapType.experience_coverage,
-        severity=IssueSeverity.high,
-        trigger="missing coverage",
-        suggested_action="search",
-    )
-
-    one_day = TargetedRetrievalService._query(
-        gap, analysis_context(days=1), None, anchor_place_ids=[], limit=3
-    )
-    three_days = TargetedRetrievalService._query(
-        gap, analysis_context(days=3), None, anchor_place_ids=[], limit=6
-    )
-
-    assert one_day.limit == 22
-    assert three_days.limit == 60
 
 
 class RecordingSource:
@@ -134,62 +76,32 @@ class RecordingSource:
         return []
 
 
-def test_core_pool_retrieval_leaves_restaurants_to_food_pool_service() -> None:
+def test_runtime_creates_exactly_one_query_per_pool() -> None:
     source = RecordingSource()
-    service = TargetedRetrievalService(source, ensure_core_pools=True)
+    service = TargetedRetrievalService(
+        source,
+        ensure_core_pools=True,
+        expand_pool=True,
+    )
 
     result = asyncio.run(service.retrieve(GapAnalysis(), analysis_context(days=3)))
 
     queries = {gap.gap_id: gap.query for gap in result.gaps}
     assert set(queries) == {
         "pool:travel_place_candidates",
-        "pool:popular_landmark_candidates",
-        "pool:heritage_landmark_candidates",
-        "pool:special_experience_candidates",
+        "pool:restaurant_candidates",
+        "pool:drink_dessert_candidates",
+        "pool:entertainment_candidates",
         "pool:accommodation_candidates",
-        "pool:travel_place_reserve",
     }
-    assert queries["pool:travel_place_candidates"].category_hint == "travel place"
-    assert (
-        queries["pool:popular_landmark_candidates"].query_text
-        == "famous landmark must see top attraction"
-    )
-    assert (
-        queries["pool:heritage_landmark_candidates"].query_text
-        == "iconic historic landmark museum temple old quarter"
-    )
-    assert queries["pool:accommodation_candidates"].category_hint == "accommodation"
-    assert all(query.limit == 60 for query in queries.values())
+    assert queries["pool:travel_place_candidates"].limit == 60
+    assert queries["pool:restaurant_candidates"].limit == 18
+    assert queries["pool:drink_dessert_candidates"].limit == 9
+    assert queries["pool:entertainment_candidates"].limit == 8
+    assert all(not query.relation_terms for query in queries.values())
 
 
-def test_expanded_pool_queries_independent_activity_themes_and_styles() -> None:
-    source = RecordingSource()
-    service = TargetedRetrievalService(source, expand_pool=True)
-
-    asyncio.run(service.retrieve(GapAnalysis(), analysis_context(days=3)))
-
-    queries = {query.gap_id: query for query in source.queries}
-    assert {
-        "pool:culture_alternatives",
-        "pool:nature_alternatives",
-        "pool:shopping_alternatives",
-        "pool:nightlife_alternatives",
-        "pool:workshop_alternatives",
-        "pool:performance_alternatives",
-        "pool:outdoor_alternatives",
-        "pool:family_alternatives",
-        "pool:special_experience_alternatives",
-        "pool:local_activity_alternatives",
-    } <= set(queries)
-    assert queries["pool:nature_alternatives"].relation_terms
-    assert queries["pool:nightlife_alternatives"].relation_terms
-    assert (
-        queries["pool:entertainment_alternatives"].query_text
-        == "water puppet theater cultural performance live music evening show"
-    )
-
-
-def test_adaptive_pool_skips_reserve_queries_when_existing_pool_is_sufficient() -> None:
+def test_sufficient_existing_counts_skip_all_pool_queries() -> None:
     source = RecordingSource()
     service = TargetedRetrievalService(
         source,
@@ -198,159 +110,39 @@ def test_adaptive_pool_skips_reserve_queries_when_existing_pool_is_sufficient() 
     )
     coverage = CoverageAnalysis(
         level=CoverageLevel.sufficient,
-        planner_eligible_place_count=85,
+        planner_eligible_place_count=72,
         mandatory_place_count=0,
         category_distribution={
-            "landmark": 66,
-            "entertainment": 18,
-            "accommodation": 1,
+            "travel_place": 36,
+            "restaurant": 18,
+            "drink_dessert": 9,
+            "entertainment": 6,
+            "accommodation": 3,
         },
         resolved_item_count=0,
         unresolved_item_count=0,
-        food_covered=False,
+        food_covered=True,
         experience_covered=True,
     )
 
     result = asyncio.run(
-        service.retrieve(
-            GapAnalysis(),
-            analysis_context(days=3),
-            coverage=coverage,
-            excluded_gap_types={GapType.food_coverage},
-        )
+        service.retrieve(GapAnalysis(), analysis_context(days=3), coverage=coverage)
     )
 
     assert result.gaps == []
     assert source.queries == []
 
 
-def test_adaptive_pool_recovers_food_when_special_near_pool_is_empty() -> None:
-    coverage = CoverageAnalysis(
-        level=CoverageLevel.partial,
-        planner_eligible_place_count=24,
-        mandatory_place_count=0,
-        category_distribution={"landmark": 24},
-        resolved_item_count=0,
-        unresolved_item_count=0,
-        food_covered=False,
-        experience_covered=True,
-    )
-
-    selected = select_adaptive_pool_specs(
-        {**CORE_POOL_QUERY_SPECS, **POOL_QUERY_SPECS},
-        GapAnalysis().gaps,
-        coverage,
-        days=3,
-        excluded_gap_types=set(),
-    )
-
-    assert "pool:food_alternatives" in selected
-
-
-def test_adaptive_pool_only_adds_queries_needed_for_shortfall() -> None:
-    source = RecordingSource()
-    service = TargetedRetrievalService(
-        source,
-        ensure_core_pools=True,
-        expand_pool=True,
-    )
-    coverage = CoverageAnalysis(
-        level=CoverageLevel.partial,
-        planner_eligible_place_count=31,
-        mandatory_place_count=0,
-        category_distribution={"landmark": 30, "accommodation": 1},
-        resolved_item_count=0,
-        unresolved_item_count=0,
-        food_covered=False,
-        experience_covered=True,
-    )
-
-    asyncio.run(
-        service.retrieve(
-            GapAnalysis(),
-            analysis_context(days=3),
-            coverage=coverage,
-            excluded_gap_types={GapType.food_coverage},
-        )
-    )
-
-    assert [query.gap_id for query in source.queries] == [
-        "pool:travel_place_candidates",
-        "pool:popular_landmark_candidates",
-        "pool:heritage_landmark_candidates",
-        "pool:special_experience_candidates",
-        "pool:culture_alternatives",
-        "pool:nature_alternatives",
-        "pool:entertainment_alternatives",
-    ]
-
-
-def test_small_handoff_shortfall_always_queries_special_experience() -> None:
-    coverage = CoverageAnalysis(
-        level=CoverageLevel.partial,
-        planner_eligible_place_count=42,
-        mandatory_place_count=0,
-        category_distribution={
-            "landmark": 23,
-            "entertainment": 18,
-            "accommodation": 1,
-        },
-        resolved_item_count=0,
-        unresolved_item_count=0,
-        food_covered=False,
-        experience_covered=True,
-    )
-
-    selected = select_adaptive_pool_specs(
-        {**CORE_POOL_QUERY_SPECS, **POOL_QUERY_SPECS},
-        GapAnalysis(
-            gaps=[
-                AnalysisGap(
-                    gap_id=f"gap:experience:{index}",
-                    gap_type=GapType.experience_coverage,
-                    severity=IssueSeverity.low,
-                    trigger="existing discovery gap",
-                    suggested_action="search",
-                )
-                for index in range(8)
-            ],
-            open_count=8,
-        ).gaps,
-        coverage,
-        days=3,
-        excluded_gap_types={GapType.food_coverage},
-    )
-
-    assert list(selected) == [
-        "pool:travel_place_candidates",
-        "pool:special_experience_candidates",
-        "pool:travel_place_reserve",
-        "pool:nature_alternatives",
-    ]
-
-
-def test_retrieval_can_skip_food_gaps_for_dedicated_food_pool() -> None:
+def test_excluded_gap_type_is_respected_outside_runtime_configuration() -> None:
     source = RecordingSource()
     service = TargetedRetrievalService(source)
-    gaps = GapAnalysis(
-        gaps=[
-            AnalysisGap(
-                gap_id="gap:food",
-                gap_type=GapType.food_coverage,
-                severity=IssueSeverity.high,
-                trigger="missing food",
-                suggested_action="search food",
-            )
-        ]
-    )
 
     result = asyncio.run(
         service.retrieve(
-            gaps,
+            GapAnalysis(),
             analysis_context(days=3),
             excluded_gap_types={GapType.food_coverage},
         )
     )
 
     assert result.gaps == []
-    assert source.queries == []

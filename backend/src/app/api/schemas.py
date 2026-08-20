@@ -31,6 +31,10 @@ class InvokeRequest(ApiModel):
             images=self.images,
             force_refresh=self.force_refresh,
         )
+        if explorer_input.urls and not explorer_input.raw_prompt:
+            raise ValueError(
+                "A URL request must include a planning or summary message."
+            )
         self.message = explorer_input.raw_prompt
         self.urls = explorer_input.urls
 

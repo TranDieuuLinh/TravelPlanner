@@ -6,9 +6,9 @@ from datetime import date
 from uuid import uuid4
 
 from app.modules.explorer.adm_reconciliation import reconcile_adm_candidates
-from app.modules.explorer.completeness import build_completeness
-from app.modules.explorer.contract import ExplorerBudget, ExplorerInput, ExplorerOutput
+from app.modules.explorer.contract import ExplorerInput, ExplorerOutput
 from app.modules.explorer.draft_key import explorer_draft_cache_key
+from app.modules.explorer.finalization import finalize_explorer_output
 from app.modules.explorer.intake_policy import normalize_intake_items
 from app.modules.explorer.models import (
     BatchCoverage,
@@ -28,20 +28,20 @@ from app.modules.explorer.ports import (
 )
 from app.modules.explorer.retry import run_with_one_retry
 from app.modules.explorer.source_execution import mark_synthesis_timeout, safe_source
-from app.modules.explorer.source_warnings import source_warnings
-from app.modules.explorer.tools import normalize_budget_per_person
 from app.modules.explorer.trip_defaults import (
     prompt_start_date,
-    timezone_for_destination,
-    tomorrow,
 )
 from app.shared.contracts.agent import AgentError
+from app.shared.tools.daily_budget import DestinationDailyBudgetEstimator
 
 logger = logging.getLogger(__name__)
 
 
 class ExplorerService:
     _DAY = re.compile(r"\b(\d{1,2})\s*(?:ngày|days?)\b", re.IGNORECASE)
+    _PEOPLE = re.compile(
+        r"\b\d{1,3}\s*(?:người|adults?|people|persons?)\b", re.IGNORECASE
+    )
     _URL = re.compile(r"https?://[^\s<>\]\[\"']+", re.IGNORECASE)
 
     def __init__(
@@ -53,12 +53,12 @@ class ExplorerService:
         url_cache: UrlSourceCache | None = None,
         draft_cache: ExplorerDraftCache | None = None,
         draft_cache_namespace: str = "explorer-draft-v1",
-        minimum_synthesis_coverage: float = 0.8,
         source_extraction_timeout_seconds: float = 90,
         source_synthesis_timeout_seconds: float = 60,
         fallback_drafts: ExplorerDraftGenerator | None = None,
         tag_catalog: TagCatalog | None = None,
         insight_catalog: InsightCatalog | None = None,
+        budget_estimator: DestinationDailyBudgetEstimator | None = None,
     ) -> None:
         self.drafts = drafts
         self.url_extractor = url_extractor
@@ -67,12 +67,12 @@ class ExplorerService:
         self.url_cache = url_cache
         self.draft_cache = draft_cache
         self.draft_cache_namespace = draft_cache_namespace
-        self.minimum_synthesis_coverage = minimum_synthesis_coverage
         self.source_extraction_timeout_seconds = source_extraction_timeout_seconds
         self.source_synthesis_timeout_seconds = source_synthesis_timeout_seconds
         self.fallback_drafts = fallback_drafts or drafts
         self.tag_catalog = tag_catalog
         self.insight_catalog = insight_catalog
+        self.budget_estimator = budget_estimator or DestinationDailyBudgetEstimator()
 
     def prepare(self, payload: ExplorerInput | dict) -> dict:
         if not isinstance(payload, ExplorerInput):
@@ -90,6 +90,7 @@ class ExplorerService:
             "intake_id": str(uuid4()),
             "payload": payload,
             "prompt_days": int(day_match.group(1)) if day_match else None,
+            "prompt_people_explicit": bool(self._PEOPLE.search(prompt or "")),
             "prompt_start_date": prompt_start_date(prompt),
         }
 
@@ -351,87 +352,22 @@ class ExplorerService:
         adm_conflict: bool,
         prompt_days: int | None,
         coverage: BatchCoverage | None,
+        prompt_people_explicit: bool = False,
         source_results: list[SourceExtractionResult] | None = None,
         prompt_start_date: date | None = None,
     ) -> ExplorerOutput:
-        warnings = source_warnings(coverage, source_results)
-        timezone = timezone_for_destination(input_adm)
-        start_date = prompt_start_date or tomorrow()
-        completeness = build_completeness(
-            source_results,
-            len(draft.places),
-            self.minimum_synthesis_coverage,
-        )
-        budget = draft.budget
-        if budget.source == "default":
-            budget = ExplorerBudget(level="low", source="default")
-        budget = normalize_budget_per_person(budget, draft.people)
-        if input_adm and self.insight_catalog is not None:
-            try:
-                preferences, avoids = self.insight_catalog.enrich(
-                    budget_level=budget.level,
-                    children=draft.people.children,
-                    infants=draft.people.infants,
-                    preferences=draft.short_preferences,
-                    avoids=draft.short_avoids,
-                    seed=f"{intake_id}:{input_adm}:{budget.level}",
-                )
-                draft = draft.model_copy(
-                    update={
-                        "short_preferences": preferences,
-                        "short_avoids": avoids,
-                    }
-                )
-            except (OSError, ValueError):
-                logger.warning("Explorer user-insight catalog is unavailable", exc_info=True)
-                warnings.append(
-                    "Không thể áp dụng nhóm sở thích mặc định từ insight-user.yml."
-                )
-        if not input_adm:
-            question = (
-                "Các nguồn có địa điểm hành chính mâu thuẫn. Bạn muốn đi đâu?"
-                if adm_conflict
-                else "Bạn muốn đi tỉnh hoặc thành phố nào?"
-            )
-            return ExplorerOutput(
-                status="clarification",
-                intakeId=intake_id,
-                input_ADM=None,
-                places=draft.places or None,
-                inputItems=draft.input_items or None,
-                urlNotes=draft.url_notes or None,
-                days=prompt_days or 3,
-                startDate=start_date,
-                timezone=timezone,
-                budget=budget,
-                people=draft.people,
-                shortPreferences=draft.short_preferences,
-                shortAvoids=draft.short_avoids,
-                specialNotes=draft.special_notes,
-                clarificationQuestion=question,
-                warnings=warnings,
-                completeness=completeness,
-            )
-        status = "ready"
-        if completeness and not completeness.complete:
-            status = "partial"
-        return ExplorerOutput(
-            status=status,
-            intakeId=intake_id,
-            input_ADM=input_adm,
-            places=draft.places or None,
-            inputItems=draft.input_items or None,
-            urlNotes=draft.url_notes or None,
-            days=prompt_days or 3,
-            startDate=start_date,
-            timezone=timezone,
-            budget=budget,
-            people=draft.people,
-            shortPreferences=draft.short_preferences,
-            shortAvoids=draft.short_avoids,
-            specialNotes=draft.special_notes,
-            warnings=warnings,
-            completeness=completeness,
+        return finalize_explorer_output(
+            intake_id=intake_id,
+            draft=draft,
+            input_adm=input_adm,
+            adm_conflict=adm_conflict,
+            prompt_days=prompt_days,
+            coverage=coverage,
+            prompt_people_explicit=prompt_people_explicit,
+            source_results=source_results,
+            prompt_start_date=prompt_start_date,
+            insight_catalog=self.insight_catalog,
+            budget_estimator=self.budget_estimator,
         )
 
     def failure(self, intake_id: str, error: AgentError) -> ExplorerOutput:
@@ -439,13 +375,9 @@ class ExplorerService:
 
     async def persist(self, output: ExplorerOutput, kind: str) -> None:
         payload = output.model_dump(mode="json", by_alias=True, exclude_none=True)
-        await run_with_one_retry(
-            lambda: self.snapshots.save(output.intake_id, kind, payload)
-        )
+        await run_with_one_retry(lambda: self.snapshots.save(output.intake_id, kind, payload))
 
-    async def persist_or_failure(
-        self, output: ExplorerOutput, kind: str
-    ) -> ExplorerOutput | None:
+    async def persist_or_failure(self, output: ExplorerOutput, kind: str) -> ExplorerOutput | None:
         try:
             await self.persist(output, kind)
         except Exception:  # noqa: BLE001 - persistence adapters define no common error

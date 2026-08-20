@@ -2,7 +2,7 @@ import asyncio
 
 from app.modules.place_checker.contract import SourcePlaceEvidence, UrlNote
 from app.modules.place_checker.enums import EvidenceOrigin
-from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
+from app.modules.place_checker.planning.builder import PlaceCheckerPlannerOutputBuilder
 from app.modules.place_checker.tests.test_pipeline_output import payload, pipeline
 from app.shared.contracts.source_note import SourceNote
 

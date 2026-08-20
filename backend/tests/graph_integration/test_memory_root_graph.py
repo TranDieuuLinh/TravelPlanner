@@ -119,8 +119,11 @@ class TestMemoryRootGraphIntegration(unittest.TestCase):
                 "Tôi muốn đi du lịch ở Hà Nội, tham quan Văn Miếu và Hồ Hoàn Kiếm.",
             )
         )
+        # The Explorer review gate now requires accepting proposed defaults
+        # before the trip proceeds to PlaceChecker.
+        asyncio.run(self.chat_service.send(self.user_id, chat_id, "OK"))
 
-        # Turn 2: "Thêm chỗ đó vào ngày 2." (Ambiguous reference -> 2 candidate places)
+        # Next turn: ambiguous reference -> 2 candidate places.
         saved_chat = asyncio.run(
             self.chat_service.send(self.user_id, chat_id, "Thêm chỗ đó vào ngày 2.")
         )

@@ -4,7 +4,7 @@ from uuid import uuid4
 from app.orchestration.root_graph import create_root_graph
 
 
-def test_legacy_planning_flow_does_not_generate_a_fake_itinerary() -> None:
+def test_planning_flow_reviews_defaults_before_place_checker() -> None:
     graph = create_root_graph()
     thread_id = str(uuid4())
 
@@ -20,7 +20,9 @@ def test_legacy_planning_flow_does_not_generate_a_fake_itinerary() -> None:
 
     assert result["decision"].route == "explorer"
     assert result.get("itinerary") is None
-    assert "new trip/places/food input contract" in result["response"]
+    assert result["explorer_review"]["kind"] == "defaults_proposed"
+    assert result.get("place_output") is None
+    assert "giá trị mặc định" in result["response"]
 
 
 def test_planning_flow_returns_clarification() -> None:
@@ -35,8 +37,8 @@ def test_planning_flow_returns_clarification() -> None:
 
     assert result.get("itinerary") is None
     assert result["clarification_question"] == "Bạn muốn đi tỉnh hoặc thành phố nào?"
-    assert result["place_output"].status == "blocked"
-    assert result["place_output"].error.code == "PLACE_CHECKER_DESTINATION_REQUIRED"
+    assert result["explorer_review"]["kind"] == "missing_fields"
+    assert result.get("place_output") is None
 
 
 def test_image_without_prompt_routes_to_explorer() -> None:
@@ -60,6 +62,31 @@ def test_image_without_prompt_routes_to_explorer() -> None:
 
     assert result["decision"].route == "explorer"
     assert result["explorer_output"].input_adm == "Huế"
+
+
+def test_source_summary_stops_before_default_review_and_place_checker() -> None:
+    graph = create_root_graph()
+    result = asyncio.run(
+        graph.ainvoke(
+            {
+                "request_id": "request-summary",
+                "message": "Tóm tắt nội dung liên kết này",
+                "images": [
+                    {
+                        "fileName": "capture.png",
+                        "mimeType": "image/png",
+                        "ocrText": "Du lịch ở Huế, tham quan Đại Nội",
+                    }
+                ],
+            },
+            config={"configurable": {"thread_id": str(uuid4())}},
+        )
+    )
+
+    assert result["decision"].source_action == "summarize_source"
+    assert "Huế" in result["response"]
+    assert result.get("place_output") is None
+    assert result.get("pending_explorer_review") is None
 
 
 def test_same_thread_keeps_user_context_for_follow_up_routing() -> None:

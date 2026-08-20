@@ -6,6 +6,10 @@ from app.modules.itinerary_planner.routing import (
     feasible_arc_days,
 )
 from app.modules.itinerary_planner.routing_models import SafeTravel
+from app.modules.itinerary_planner.sparse_arc_policy import (
+    MEAL_ACCESS_NEIGHBOR_LIMIT,
+    meal_access_pairs,
+)
 from app.modules.itinerary_planner.tests.factories import candidate, payload
 
 
@@ -95,3 +99,34 @@ def test_unreachable_priority_is_warned_and_never_estimated() -> None:
     assert any("unreachable_priority: place_0" in warning for warning in warnings)
     assert any(arc.origin_id == "__start__:1" for arc in arcs)
     assert any(arc.destination_id == "__end__:1" for arc in arcs)
+
+
+def test_meal_access_keeps_multiple_activity_neighbors_per_food() -> None:
+    problem = make_problem()
+    food_ids = {item.place_id for item in problem.valid_food}
+    activity_ids = set(problem.candidate_by_id) - food_ids
+    cross_pairs = {
+        (origin, destination)
+        for origin in problem.candidate_by_id
+        for destination in problem.candidate_by_id
+        if origin != destination
+        and ((origin in food_ids) != (destination in food_ids))
+    }
+    feasible = {pair: frozenset({1}) for pair in cross_pairs}
+    travel = {
+        pair: SafeTravel(10, 10, 1_000, 100)
+        for pair in cross_pairs
+    }
+
+    selected = meal_access_pairs(
+        feasible,
+        travel,
+        problem.feasible_days,
+        food_ids,
+        activity_ids,
+    )
+
+    expected = min(MEAL_ACCESS_NEIGHBOR_LIMIT, len(activity_ids))
+    for food_id in food_ids:
+        assert sum(pair[0] == food_id for pair in selected) >= expected
+        assert sum(pair[1] == food_id for pair in selected) >= expected

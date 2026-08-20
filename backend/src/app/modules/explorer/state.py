@@ -10,6 +10,7 @@ class ExplorerState(TypedDict):
     payload: Required[ExplorerInput]
     intake_id: NotRequired[str]
     prompt_days: NotRequired[int | None]
+    prompt_people_explicit: NotRequired[bool]
     prompt_start_date: NotRequired[date | None]
     source_results: NotRequired[list[SourceExtractionResult]]
     coverage: NotRequired[BatchCoverage]

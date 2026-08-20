@@ -1,31 +1,31 @@
-from app.modules.place_checker.aggregate_analysis import TripAggregateAnalysisService
-from app.modules.place_checker.analysis_contract import (
+from app.modules.place_checker.analysis.aggregate import TripAggregateAnalysisService
+from app.modules.place_checker.analysis.contract import (
     BudgetAnalysis,
     CapacityAnalysis,
     CoverageAnalysis,
     GapAnalysis,
     TripAggregateAnalysis,
 )
-from app.modules.place_checker.budget_analysis import BudgetAnalysisService
-from app.modules.place_checker.capacity_analysis import CapacityAnalysisService
+from app.modules.place_checker.analysis.budget import BudgetAnalysisService
+from app.modules.place_checker.analysis.capacity import CapacityAnalysisService
 from app.modules.place_checker.contract import (
     AdmResolution,
     PlaceCheckerInput,
     PlaceCheckerOutput,
     TripEvaluationContext,
 )
-from app.modules.place_checker.evaluation import PlaceEvaluationService
-from app.modules.place_checker.evaluation_contract import (
+from app.modules.place_checker.evaluation.service import PlaceEvaluationService
+from app.modules.place_checker.evaluation.contract import (
     PlaceEvaluation,
     PlaceEvaluationBatch,
 )
-from app.modules.place_checker.evidence import EvidenceEnrichmentService
+from app.modules.place_checker.resolution.enrichment import EvidenceEnrichmentService
 from app.modules.place_checker.factory import (
     build_postgres_place_checker_pipeline,
     build_postgres_place_search_tool,
 )
-from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
-from app.modules.place_checker.food_selection_contract import (
+from app.modules.place_checker.selection.food.service import FoodRestaurantSelectionService
+from app.modules.place_checker.selection.food.contract import (
     FoodMealCoverage,
     FoodMealSlot,
     FoodMealSlotAssignment,
@@ -40,11 +40,11 @@ from app.modules.place_checker.graph import (
     build_place_checker_pipeline_graph,
 )
 from app.modules.place_checker.input_projection import ExplorerInputProjector
-from app.modules.place_checker.item_contract import (
+from app.modules.place_checker.resolution.item_contract import (
     ItemResolutionBatch,
     ResolvedInputItem,
 )
-from app.modules.place_checker.item_resolution import InputItemResolutionService
+from app.modules.place_checker.resolution.item_service import InputItemResolutionService
 from app.modules.place_checker.manual_search import router as manual_search_router
 from app.modules.place_checker.output_contract import (
     CheckedPlace,
@@ -55,7 +55,7 @@ from app.modules.place_checker.output_contract import (
     PlannerPlaceContext,
 )
 from app.modules.place_checker.pipeline import PlaceCheckerPipeline
-from app.modules.place_checker.planning_output import (
+from app.modules.place_checker.planning.builder import (
     PlaceCheckerPlannerOutputBuilder,
     PlaceCheckerPlanningProjector,
 )
@@ -72,24 +72,24 @@ from app.modules.place_checker.ports import (
     SpecialFoodRestaurantSource,
     StyleCandidateSource,
 )
-from app.modules.place_checker.promotion import PromotionWorker
-from app.modules.place_checker.resolution import EntityResolutionService
-from app.modules.place_checker.resolution_contract import (
+from app.modules.place_checker.retrieval.promotion import PromotionWorker
+from app.modules.place_checker.resolution.service import EntityResolutionService
+from app.modules.place_checker.resolution.contract import (
     EnrichedIdentityPlace,
     EvidenceEnrichmentOutput,
     IdentityResolutionBatch,
     PlaceMetadata,
     ResolvedPlaceCandidate,
 )
-from app.modules.place_checker.retrieval import TargetedRetrievalService
-from app.modules.place_checker.retrieval_contract import (
+from app.modules.place_checker.retrieval.service import TargetedRetrievalService
+from app.modules.place_checker.retrieval.contract import (
     RetrievalBatch,
     RetrievedCandidate,
 )
-from app.modules.place_checker.scoring import CandidateScoringService
-from app.modules.place_checker.scoring_contract import CandidateRankingBatch
+from app.modules.place_checker.scoring.service import CandidateScoringService
+from app.modules.place_checker.scoring.contract import CandidateRankingBatch
 from app.modules.place_checker.service import TripContextBuilder
-from app.modules.place_checker.style_candidate_contract import (
+from app.modules.place_checker.selection.style_contract import (
     ResolvedStyleIntent,
     StyleCandidate,
     StyleCandidateCoverage,
@@ -97,7 +97,7 @@ from app.modules.place_checker.style_candidate_contract import (
     StyleCandidateSelectionBatch,
     StyleCandidateSourceBatch,
 )
-from app.modules.place_checker.style_candidate_selection import (
+from app.modules.place_checker.selection.style_service import (
     StyleCandidateSelectionService,
 )
 from app.shared.tools.bayesian_rating import bayesian_rating

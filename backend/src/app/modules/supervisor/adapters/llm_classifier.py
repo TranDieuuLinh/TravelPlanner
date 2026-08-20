@@ -7,7 +7,7 @@ from app.shared.llm import LlmClient
 
 
 class GeminiIntentClassifier:
-    def __init__(self, client: LlmClient, *, max_output_tokens: int = 256) -> None:
+    def __init__(self, client: LlmClient, *, max_output_tokens: int = 1024) -> None:
         self._client = client
         self._max_output_tokens = max_output_tokens
 
@@ -37,4 +37,15 @@ class GeminiIntentClassifier:
 
     @staticmethod
     def _schema() -> dict[str, Any]:
-        return ClassifierResult.model_json_schema()
+        schema = ClassifierResult.model_json_schema()
+        schema["properties"]["suggestions"]["items"] = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "field": {"type": "string", "enum": ["follow_up"]},
+                "label": {"type": "string", "minLength": 1, "maxLength": 60},
+                "value": {"type": "string", "minLength": 1, "maxLength": 4000},
+            },
+            "required": ["field", "label", "value"],
+        }
+        return schema

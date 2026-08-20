@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     gemini_timeout_seconds: float = 30.0
     gemini_key_cooldown_seconds: float = 60.0
     supervisor_classifier_provider: Literal["gemini"] = "gemini"
-    supervisor_llm_max_output_tokens: int = 256
+    supervisor_llm_max_output_tokens: int = 1024
     supervisor_llm_fallback_enabled: bool = True
     supervisor_llm_confidence_threshold: float = 0.65
     explorer_draft_provider: Literal["rules", "gemini"] = "rules"
@@ -91,7 +91,6 @@ class Settings(BaseSettings):
     explorer_source_max_output_tokens: int = Field(default=8_000, ge=1_000)
     explorer_source_max_concurrency: int = Field(default=5, ge=1, le=20)
     explorer_synthesis_max_concurrency: int = Field(default=6, ge=1, le=20)
-    explorer_minimum_synthesis_coverage: float = Field(default=0.8, gt=0, le=1)
     explorer_dedupe_provider: Literal["rules", "gemini"] = "gemini"
     explorer_note_provider: Literal["rules", "gemini"] = "gemini"
     explorer_url_timeout_seconds: float = Field(default=30.0, gt=0)

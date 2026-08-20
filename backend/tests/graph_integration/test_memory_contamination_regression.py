@@ -56,7 +56,7 @@ class EndToEndRegressionClassifier:
 
 
 class MockInformationFinderProvider:
-    async def find(self, query: str):
+    async def find(self, query: str, *, force_refresh: bool = False):
         return InformationFinderOutput(
             answer="Hà Nội có Hồ Gươm, Lăng Bác. Ngoài ra bạn có thể tham quan Vịnh Hạ Long nếu đi xa hơn.",
             sources=[
@@ -102,7 +102,8 @@ class TestMemoryContaminationRegression(unittest.TestCase):
         """Concrete end-to-end failure reproduction and fix verification:
 
         Turn 1: User asks about Hanoi -> assistant mentions Vinh Ha Long in answer.
-        Turn 2: User says 'lên plan đi HN 3 ngày 2 đêm' -> plan succeeds, NOT blocked.
+        Turn 2: User says 'lên plan đi HN 3 ngày 2 đêm' -> Explorer reaches
+        the defaults review for Hanoi, not a contaminated destination blocker.
         """
         chat_service, memory_service, _graph, _repo = build_end_to_end_env()
         chat = asyncio.run(chat_service.create(self.user_id, "Hanoi Trip Chat"))
@@ -146,7 +147,8 @@ class TestMemoryContaminationRegression(unittest.TestCase):
             t2_last_msg.content,
             "PlaceChecker cần làm rõ dữ liệu trước khi lập lịch.",
         )
-        self.assertIsNone(t2_last_msg.clarification_question)
+        self.assertIsNotNone(t2_last_msg.clarification_question)
+        self.assertIn("giá trị mặc định", t2_last_msg.clarification_question)
 
         # Verify memory after turn 2 has updated destination and duration
         mem2 = asyncio.run(memory_service.load_context(chat_id, self.user_id))

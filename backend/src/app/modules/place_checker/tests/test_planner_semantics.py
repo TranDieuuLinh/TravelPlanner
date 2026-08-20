@@ -1,4 +1,4 @@
-from app.modules.place_checker.planner_semantics import (
+from app.modules.place_checker.planning.semantics import (
     audience_values,
     candidate_semantics,
     split_trip_preferences,
@@ -6,7 +6,7 @@ from app.modules.place_checker.planner_semantics import (
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
 
 
-def test_candidate_semantics_separates_verified_styles_and_technical_tags() -> None:
+def test_candidate_semantics_ignores_has_style_as_planner_semantics() -> None:
     style = PlaceRelationshipEvidence(
         relationship_type="Has_Style",
         direction="place_to_attribute",
@@ -22,7 +22,7 @@ def test_candidate_semantics_separates_verified_styles_and_technical_tags() -> N
     )
 
     assert tags == ["temple", "history"]
-    assert styles == ["slow_travel"]
+    assert styles == []
 
 
 def test_trip_preferences_split_known_styles_from_flat_tags() -> None:

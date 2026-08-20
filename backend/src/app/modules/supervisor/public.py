@@ -3,6 +3,7 @@ from app.modules.supervisor.contract import (
     SupervisorDecision,
     SupervisorInput,
     SupervisorRoute,
+    SourceAction,
 )
 from app.modules.supervisor.errors import SupervisorClassificationError
 from app.modules.supervisor.graph import build_supervisor_graph
@@ -10,6 +11,7 @@ from app.modules.supervisor.ports import IntentClassifier
 from app.modules.supervisor.service import SupervisorService
 from app.modules.supervisor.ports import ResponseComposer
 from app.modules.supervisor.prompts import RESPONSE_COMPOSER_SYSTEM_PROMPT
+from app.modules.supervisor.source_action import infer_source_action
 
 __all__ = [
     "ClassifierResult",
@@ -18,8 +20,10 @@ __all__ = [
     "SupervisorClassificationError",
     "SupervisorInput",
     "SupervisorRoute",
+    "SourceAction",
     "SupervisorService",
     "build_supervisor_graph",
     "RESPONSE_COMPOSER_SYSTEM_PROMPT",
     "ResponseComposer",
+    "infer_source_action",
 ]

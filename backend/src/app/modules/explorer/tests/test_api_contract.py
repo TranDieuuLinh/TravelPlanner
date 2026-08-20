@@ -4,7 +4,6 @@ from app.modules.explorer.adapters.auto_tags import YamlTagCatalog
 from app.modules.explorer.contract import (
     ExplorerApiOutput,
     ExplorerBudget,
-    ExplorerCompleteness,
     ExplorerOutput,
     ExplorerPlace,
     PlaceSource,
@@ -66,7 +65,6 @@ def test_api_output_keeps_only_compact_explorer_fields() -> None:
         ),
         clarificationQuestion="internal-only",
         warnings=["internal-only"],
-        completeness=ExplorerCompleteness(complete=True),
     )
 
     payload = ExplorerApiOutput.from_internal(

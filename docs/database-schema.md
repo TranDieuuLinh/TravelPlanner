@@ -71,7 +71,10 @@ cần xác định database ownership rồi triển khai durable adapter cho por
 `ExplorerSnapshotRepository`; lỗi lưu snapshot không được phép đi tiếp sang
 PlaceChecker.
 `TripContextPatch` cho các operation set/add/remove chỉ tồn tại trong graph state
-của lượt hiện tại; thay đổi handoff này không thêm table, column hoặc migration.
+của lượt hiện tại. `pending_explorer_review` và `pending_explorer_output` được
+root checkpointer giữ theo `threadId` giữa lượt hỏi mặc định và lượt user sửa;
+chúng không dùng bảng Conversation Memory và thay đổi handoff này không thêm
+table, column hoặc migration.
 Payload sang PlaceChecker không lưu place tags/confidence hay provenance nội bộ.
 YouTube/Instagram importer dùng `yt-dlp`; TikTok đọc HTML Safari. URL media đánh
 giá transcript/metadata/description trước và chỉ tải media CDN để chạy OCR/STT
@@ -499,11 +502,10 @@ Runtime relationship semantics observed on 2026-08-13:
   derivation rule. PlaceChecker xử lý được cả hai hướng của cạnh;
 - `Offer_Item`: place → item; recommendations may be an evidence array or an
   object containing status/priority;
-- `Has_Style`: place/item → style. Runtime reads `time_windows` and `time_duration`
-  from the target `Style` node. Chỉ duration lớn nhất được dùng làm place-level
-  fallback; Style windows là preferred timing và không thay thế hard opening
-  hours trực tiếp của place. Generic TravelPlace retrieval không chia quota
-  theo Style; selector Style riêng mới sở hữu quota active Style.
+- `Has_Style`: place/item → style. Runtime chỉ đọc `time_windows` và
+  `time_duration` từ Style priority cao nhất có field tương ứng khi entity/item
+  thiếu field đó. Property trực tiếp luôn thắng. HasStyle không tạo public tag,
+  candidate, category, preference match hoặc quota.
 
 Generic TravelPlace retrieval không chỉ đọc `Special_Experience`: nó còn lấy
 `TravelPlace` nằm trong cây ADM qua `Located_In`, xen kẽ hai nhóm special và
@@ -516,14 +518,17 @@ không thêm cột, table hoặc ghi ngược dữ liệu Knowledge Graph.
 PlaceChecker nhận bốn place entity type từ catalog: `TravelPlace`, `Restaurant`,
 `DrinkDessert` và `Entertainment` (ngoài `Accommodation`). Compact boundary
 nhóm `DrinkDessert`/`Entertainment` vào pool optional `entertainment`; đây chỉ
-là thay đổi read/projection contract, không thêm bảng hoặc cột. Runtime compact
-pool dùng quota 22 TravelPlace và 6 DrinkDessert/Entertainment mỗi ngày; chỉ
-Entertainment tự gợi ý có Bayesian-adjusted rating từ 4,2/5 mới được giữ, đồng
+là thay đổi read/projection contract, không thêm bảng hoặc cột.
+Named-place SQL search chung cả năm type theo canonical name, alias, address và
+cây ADM, lấy top-1 trước khi cân nhắc Google Maps; query này không đọc
+SpecialExperience/OfferItem/HasStyle. Runtime compact
+pool dùng quota 12 TravelPlace, 6 Restaurant, 2 Entertainment và 3 DrinkDessert
+mỗi ngày, cùng tối đa 3 Accommodation/toàn chuyến; chỉ Entertainment tự gợi ý
+có Bayesian-adjusted rating từ 4,2/5 mới được giữ, đồng
 thời tourist-suitability gate loại category cửa hàng/dịch vụ thương mại khỏi
-optional pool. Runtime chỉ giới hạn reserve Entertainment chỉ mở buổi sáng ở tối đa một
-candidate/ngày; candidate có thể xếp chiều/tối vẫn được giữ. TravelPlace reserve
-dùng tỷ lệ tham chiếu 8/14 cho
-Special Experience có evidence/provenance đã duyệt. Chính sách này chỉ đọc các field
+optional pool. Entertainment phải có window giao từ 18:00; DrinkDessert dùng
+window 07:00–18:00. Mỗi deficient entity type có một query catalog, không có
+thematic fan-out hoặc external discovery. Chính sách này chỉ đọc các field
 `rating`, `review_count` và time window hiện có nên không cần migration.
 Runtime còn dùng canonical name/tag để sửa các leisure venue rõ ràng bị gắn
 `TravelPlace` sai sang `Entertainment`, và chỉ tính popular TravelPlace khi có

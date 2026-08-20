@@ -8,15 +8,15 @@ from app.modules.place_checker.enums import (
     RetrievalSourceKind,
     VerificationStatus,
 )
-from app.modules.place_checker.resolution_contract import PlaceMetadata
-from app.modules.place_checker.retrieval_contract import (
+from app.modules.place_checker.resolution.contract import PlaceMetadata
+from app.modules.place_checker.retrieval.contract import (
     GapRetrievalResult,
     RetrievalBatch,
     RetrievalEvidence,
     RetrievedCandidate,
     TargetedRetrievalQuery,
 )
-from app.modules.place_checker.scoring import WEIGHTS, CandidateScoringService
+from app.modules.place_checker.scoring.service import WEIGHTS, CandidateScoringService
 from app.modules.place_checker.tests.analysis_fixtures import (
     analysis_context,
     evaluated_place,
@@ -170,15 +170,18 @@ def test_reputation_is_benchmarked_per_category_and_travel_has_highest_weight() 
     )
     by_category = {item.candidate.category: item for item in result.ranked}
 
-    assert by_category["travel_place"].components.rating_quality > by_category[
-        "restaurant"
-    ].components.rating_quality
-    assert by_category["restaurant"].components.rating_quality > by_category[
-        "drink_dessert"
-    ].components.rating_quality
-    assert by_category["travel_place"].components.review_quality > by_category[
-        "restaurant"
-    ].components.review_quality
+    assert (
+        by_category["travel_place"].components.rating_quality
+        > by_category["restaurant"].components.rating_quality
+    )
+    assert (
+        by_category["restaurant"].components.rating_quality
+        > by_category["drink_dessert"].components.rating_quality
+    )
+    assert (
+        by_category["travel_place"].components.review_quality
+        > by_category["restaurant"].components.review_quality
+    )
 
 
 def test_penalty_is_bounded() -> None:
@@ -223,8 +226,8 @@ def test_retrieved_alcohol_candidate_is_hard_filtered_via_alias() -> None:
     assert batch.excluded[0].exclusion_reasons == ["avoid_conflict"]
 
 
-def test_keyword_fallback_receives_real_ranking_penalty() -> None:
-    fallback = candidate("fallback", tags=["museum", "retrieval:keyword_fallback"])
+def test_catalog_tags_do_not_need_a_keyword_fallback_marker() -> None:
+    fallback = candidate("catalog", tags=["museum"])
 
     result = (
         CandidateScoringService(now=NOW)
@@ -236,7 +239,7 @@ def test_keyword_fallback_receives_real_ranking_penalty() -> None:
         .ranked[0]
     )
 
-    assert result.penalties["keyword_fallback"] == 0.08
+    assert "keyword_fallback" not in result.penalties
 
 
 def test_low_budget_prefers_low_cost_candidate() -> None:
@@ -275,9 +278,7 @@ def test_general_place_without_usable_cost_defaults_to_free() -> None:
         empty_places(),
     )
 
-    assert [item.candidate.candidate_key for item in result.ranked] == [
-        "unknown-price"
-    ]
+    assert [item.candidate.candidate_key for item in result.ranked] == ["unknown-price"]
     assert result.ranked[0].components.budget_fit == 1
 
 

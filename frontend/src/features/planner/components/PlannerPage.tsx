@@ -4291,7 +4291,7 @@ function Planner() {
       !event.nativeEvent.isComposing
     ) {
       event.preventDefault();
-      if (!loading && !queueingUrls && (prompt.trim() || urlInput.trim())) {
+      if (!loading && !queueingUrls && prompt.trim()) {
         sendPlannerEntry();
       }
     }
@@ -4409,6 +4409,11 @@ function Planner() {
     const tripRequest = prompt.trim();
     if (!urlInput.trim()) return tripRequest || null;
 
+    if (!tripRequest) {
+      setError("Chọn một hành động cho liên kết hoặc nhập yêu cầu trước khi gửi.");
+      return null;
+    }
+
     const result = parseUrlOnlyInput(urlInput);
     if (!result.ok) {
       setError(result.message);
@@ -4422,7 +4427,7 @@ function Planner() {
     if (submittingEntryRef.current || loading || queueingUrls) return;
     const request = buildEntryRequest();
     if (!request) {
-      setError("Nhập yêu cầu hoặc dán URL trước khi gửi.");
+      setError("Nhập yêu cầu hoặc chọn một hành động cho liên kết trước khi gửi.");
       return;
     }
 

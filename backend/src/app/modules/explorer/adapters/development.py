@@ -30,7 +30,7 @@ _DESTINATION = re.compile(
     re.IGNORECASE,
 )
 _KNOWN_ADM = re.compile(
-    r"\b(Hà Nội|Ha Noi|Hanoi|Đà Nẵng|Da Nang|Huế|Hue|"
+    r"\b(Hà Nội|Ha Noi|Hanoi|HN|Đà Nẵng|Da Nang|Huế|Hue|"
     r"TP\.?\s*HCM|TP\.?\s*Hồ Chí Minh|Sài Gòn|Ho Chi Minh City)\b",
     re.IGNORECASE,
 )
@@ -75,6 +75,7 @@ def _normalize_adm(value: str) -> str:
     aliases = {
         "ha noi": "Hanoi",
         "hanoi": "Hanoi",
+        "hn": "Hanoi",
         "da nang": "Da Nang",
         "tp hcm": "Ho Chi Minh City",
         "tp ho chi minh": "Ho Chi Minh City",

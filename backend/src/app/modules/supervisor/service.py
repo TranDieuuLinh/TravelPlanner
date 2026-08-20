@@ -1,12 +1,25 @@
+import logging
+
+from app.modules.explorer.public import ExplorerReview
 from app.modules.supervisor.contract import (
     ClassifierResult,
     SupervisorDecision,
     SupervisorInput,
 )
 from app.modules.supervisor.errors import SupervisorClassificationError
+from app.modules.supervisor.explorer_review import (
+    compose_explorer_review,
+    parse_explorer_review_patch,
+)
 from app.modules.supervisor.fallback import build_fallback_decision
-from app.modules.supervisor.ports import IntentClassifier
-from app.modules.supervisor.ports import ResponseComposer
+from app.modules.supervisor.ports import IntentClassifier, ResponseComposer
+from app.modules.supervisor.source_action import (
+    compose_source_summary,
+    source_action_decision,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class SupervisorService:
@@ -90,15 +103,63 @@ class SupervisorService:
         try:
             result = await self._classifier.classify(payload)
             return self._accept_classifier_result(payload, result)
-        except Exception:
+        except Exception as exc:
             if not self._fallback_enabled:
                 raise SupervisorClassificationError(
                     "Supervisor intent classification failed and fallback is disabled."
                 ) from None
+            logger.warning(
+                "Supervisor classifier failed; using deterministic fallback (%s)",
+                type(exc).__name__,
+            )
             return build_fallback_decision(
                 payload,
                 warning="Không thể gọi Supervisor LLM; đã dùng câu hỏi làm rõ.",
             )
+
+    def decide_explorer_review_reply(
+        self,
+        *,
+        message: str,
+        review: ExplorerReview,
+        tag_definitions: dict[str, list[str]],
+    ) -> SupervisorDecision:
+        patch = parse_explorer_review_patch(
+            message,
+            review,
+            tag_definitions=tag_definitions,
+        )
+        if patch is None:
+            question = (
+                "Bạn muốn chọn điểm đến nào?"
+                if review.kind == "missing_fields"
+                else "Bạn muốn giữ các giá trị mặc định hay chỉnh trường nào?"
+            )
+            return SupervisorDecision(
+                route="finish",
+                confidence=1.0,
+                reason="Pending Explorer review reply needs clarification.",
+                response=question,
+                clarification_question=question,
+            )
+        return SupervisorDecision(
+            route="explorer",
+            confidence=1.0,
+            reason="User reply was converted to TripContextPatch.",
+            trip_context_patch=patch,
+        )
+
+    @staticmethod
+    def compose_explorer_review(review: ExplorerReview) -> tuple[str, str | None]:
+        return compose_explorer_review(review)
+
+    @staticmethod
+    def decide_source_action(action):
+        return source_action_decision(action)
+
+    @staticmethod
+    def compose_source_summary(output) -> str:
+        return compose_source_summary(output)
 
     @staticmethod
     def build_context_questionnaire(requests) -> SupervisorDecision:

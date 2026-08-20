@@ -59,11 +59,54 @@ def test_null_cell_is_unreachable_and_invalid_shape_is_rejected() -> None:
 
     matrix = asyncio.run(adapter.matrix(LOCATIONS, "auto"))
     assert matrix.cell("a", "b").reachable is False
-    adapter._matrix_batch_cache.clear()
+    invalid_adapter = ValhallaAdapter("https://valhalla.test", client=client)
     with pytest.raises(RoutingPhaseError) as error:
-        asyncio.run(adapter.matrix(LOCATIONS, "auto"))
+        asyncio.run(invalid_adapter.matrix(LOCATIONS, "auto"))
     asyncio.run(client.aclose())
     assert error.value.code == RoutingErrorCode.matrix_invalid_response
+
+
+def test_pair_cache_only_requests_missing_pairs_for_overlapping_location_sets() -> None:
+    request_pair_counts: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        sources = payload["sources"]
+        targets = payload["targets"]
+        request_pair_counts.append(len(sources) * len(targets))
+        return httpx.Response(
+            200,
+            json={
+                "sources_to_targets": [
+                    [{"time": 60, "distance": 1} for _ in targets]
+                    for _ in sources
+                ]
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = ValhallaAdapter("https://valhalla.test", client=client)
+    first_locations = (
+        MatrixLocation("a", 21.0, 105.8, "geo:a"),
+        MatrixLocation("b", 21.1, 105.9, "geo:b"),
+        MatrixLocation("c", 21.2, 106.0, "geo:c"),
+    )
+    second_locations = (
+        MatrixLocation("a", 21.0, 105.8, "geo:a"),
+        MatrixLocation("b", 21.1, 105.9, "geo:b"),
+        MatrixLocation("d", 21.3, 106.1, "geo:d"),
+    )
+
+    first = asyncio.run(adapter.matrix(first_locations, "auto"))
+    second = asyncio.run(adapter.matrix(second_locations, "auto"))
+    asyncio.run(client.aclose())
+
+    assert first.logical_pair_count == 6
+    assert first.pair_cache_hit_count == 0
+    assert second.logical_pair_count == 6
+    assert second.pair_cache_hit_count == 2
+    assert second.provider_pair_count == 4
+    assert sum(request_pair_counts[1:]) == 4
 
 
 def test_large_matrix_is_batched_without_exceeding_provider_pair_limit() -> None:

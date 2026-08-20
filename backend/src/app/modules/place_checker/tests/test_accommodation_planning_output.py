@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.modules.place_checker.accommodation_planning_output import (
+from app.modules.place_checker.planning.accommodation_output import (
     select_accommodations,
 )
 from app.modules.place_checker.enums import CostTier, VerificationStatus

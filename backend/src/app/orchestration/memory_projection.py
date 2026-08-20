@@ -251,13 +251,12 @@ def build_blocked_clarification(output) -> tuple[str, str]:
         p
         for p in getattr(output, "checked_places", [])
         if getattr(p, "mandatory", False)
-        and getattr(getattr(p, "evaluation", None), "state", None)
-        in {
-            "blocked",
-            getattr(
-                getattr(getattr(p, "evaluation", None), "state", None), "value", None
-            ),
-        }
+        and getattr(
+            getattr(getattr(p, "evaluation", None), "state", None),
+            "value",
+            getattr(getattr(p, "evaluation", None), "state", None),
+        )
+        == "blocked"
     ]
     if blocked_mandatory:
         names = [

@@ -266,7 +266,6 @@ def compose_explorer_service(
         source_max_concurrency=settings.explorer_source_max_concurrency,
         synthesis_max_concurrency=settings.explorer_synthesis_max_concurrency,
         synthesis_limiter=synthesis_limiter,
-        minimum_synthesis_coverage=settings.explorer_minimum_synthesis_coverage,
         dedupe_provider=settings.explorer_dedupe_provider,
         note_provider=settings.explorer_note_provider,
         url_timeout_seconds=settings.explorer_url_timeout_seconds,

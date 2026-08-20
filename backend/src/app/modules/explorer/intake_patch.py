@@ -14,8 +14,10 @@ from app.modules.explorer.contract import (
     PlaceSource,
     RequestedItem,
 )
+from app.modules.explorer.defaults import estimate_budget_if_needed
 from app.modules.explorer.ports import InsightCatalog, TagCatalog
 from app.modules.explorer.trip_defaults import timezone_for_destination
+from app.shared.tools.daily_budget import DestinationDailyBudgetEstimator
 
 ScalarOperation = Literal[
     "set", "increment", "decrement", "reset_to_default", "keep"
@@ -157,6 +159,7 @@ def apply_trip_context_patch(
     raw_user_message: str,
     tag_catalog: TagCatalog | None = None,
     insight_catalog: InsightCatalog | None = None,
+    budget_estimator: DestinationDailyBudgetEstimator | None = None,
 ) -> ExplorerOutput:
     """Apply one user turn after Explorer extraction and before Place Checker."""
     if output.status == "error":
@@ -168,28 +171,48 @@ def apply_trip_context_patch(
     people = _apply_people(output.people, patch.people)
     budget = _apply_budget(output.budget, patch.budget)
     update["people"] = people
-    update["budget"] = budget
     update["places"] = _apply_places(output.places or [], patch.places, raw_user_message)
     update["input_items"] = _apply_items(
         output.input_items or [], patch.input_items, raw_user_message
     )
-    preferences = _apply_strings(
-        output.short_preferences, patch.short_preferences, tag_catalog
+    preference_inputs = _apply_strings(
+        _preference_inputs(output), patch.short_preferences, tag_catalog
     )
-    avoids = _apply_strings(output.short_avoids, patch.short_avoids, tag_catalog)
-    if not output.input_adm and adm and insight_catalog is not None:
-        preferences, avoids = insight_catalog.enrich(
-            budget_level=budget.level,
-            children=people.children,
-            infants=people.infants,
-            preferences=preferences,
-            avoids=avoids,
-            seed=f"{output.intake_id}:{adm}:{budget.level}",
-        )
-    update["short_preferences"] = [value for value in preferences if value not in avoids]
-    update["short_avoids"] = avoids
+    avoid_inputs = _apply_strings(
+        _avoid_inputs(output), patch.short_avoids, tag_catalog
+    )
     update["special_notes"] = _apply_strings(
         output.special_notes, patch.special_notes, None
+    )
+    estimator = budget_estimator or DestinationDailyBudgetEstimator()
+    recalculate_default_budget = budget.source == "default" and any(
+        value is not None and value.operation != "keep"
+        for value in (patch.input_adm, patch.days, patch.people, patch.budget)
+    )
+    update["budget"] = estimate_budget_if_needed(
+        budget,
+        destination=adm,
+        days=update["days"],
+        people=people,
+        estimator=estimator,
+        force=recalculate_default_budget,
+    )
+    preferences, avoids = preference_inputs, avoid_inputs
+    if adm and insight_catalog is not None:
+        preferences, avoids = insight_catalog.enrich(
+            budget_level=update["budget"].level,
+            children=people.children,
+            infants=people.infants,
+            preferences=preference_inputs,
+            avoids=avoid_inputs,
+            seed=f"{output.intake_id}:{adm}:{update['budget'].level}",
+        )
+    update["preference_inputs"] = preference_inputs
+    update["avoid_inputs"] = avoid_inputs
+    update["short_preferences"] = [value for value in preferences if value not in avoids]
+    update["short_avoids"] = avoids
+    update["defaulted_fields"] = _updated_defaulted_fields(
+        output.defaulted_fields, patch
     )
     update["timezone"] = timezone_for_destination(adm)
     update["status"] = "partial" if adm and output.status == "partial" else (
@@ -199,6 +222,34 @@ def apply_trip_context_patch(
         None if adm else "Bạn muốn đi tỉnh hoặc thành phố nào?"
     )
     return output.model_copy(update=update)
+
+
+def _preference_inputs(output: ExplorerOutput) -> list[str]:
+    if output.preference_inputs or "shortPreferences" in output.defaulted_fields:
+        return output.preference_inputs
+    return output.short_preferences
+
+
+def _avoid_inputs(output: ExplorerOutput) -> list[str]:
+    return output.avoid_inputs or output.short_avoids
+
+
+def _updated_defaulted_fields(current, patch: TripContextPatch) -> list:
+    fields = list(current)
+    for name, value in (
+        ("days", patch.days),
+        ("people", patch.people),
+        ("budget", patch.budget),
+        ("shortPreferences", patch.short_preferences),
+    ):
+        if value is None or value.operation == "keep":
+            continue
+        if value.operation == "reset_to_default":
+            if name not in fields:
+                fields.append(name)
+        elif name in fields:
+            fields.remove(name)
+    return fields
 
 
 def _apply_adm(current: str | None, patch: StringScalarPatch | None) -> str | None:

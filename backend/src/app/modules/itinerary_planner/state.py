@@ -23,3 +23,7 @@ class ItineraryPlannerState(TypedDict, total=False):
     error: str
     error_code: str
     preflight_failure: PlannerPreflightFailure
+    beam_failure_reason: str
+    beam_failure_message: str
+    selected_optimizer: str
+    fallback_used: bool

@@ -1,6 +1,8 @@
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.modules.explorer.public import TripContextPatch
 from app.modules.information_finder.public import AnswerBlock
 
 
@@ -10,6 +12,7 @@ SupervisorRoute = Literal[
     "plan_editor",
     "finish",
 ]
+SourceAction = Literal["plan_from_source", "summarize_source"]
 
 
 class SupervisorInput(BaseModel):
@@ -43,6 +46,8 @@ class ClassifierResult(BaseModel):
 class SupervisorDecision(ClassifierResult):
     clarification_question: str | None = Field(default=None, max_length=500)
     warnings: list[str] = Field(default_factory=list, max_length=10)
+    trip_context_patch: TripContextPatch | None = None
+    source_action: SourceAction | None = None
 
 
 class ComposedAnswer(BaseModel):

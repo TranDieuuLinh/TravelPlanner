@@ -92,12 +92,20 @@ Tạo một ma trận logic cho:
 unique coordinates của valid places + valid food
 ```
 
-Adapter chia ma trận thành các khối `sources x targets` sao cho mỗi request có
-tối đa 2.500 cặp, chọn kích thước khối để giảm số request và giới hạn tối đa
-sáu request đồng thời. Các block được ghép lại đúng thứ tự node trước khi trả
-`TravelMatrix`; cache và solver vẫn chỉ thấy một global matrix. Nếu bất kỳ block
-nào timeout, lỗi HTTP hoặc sai kích thước, toàn bộ primary matrix fail theo cùng
-structured error và provider boundary mới quyết định fallback.
+Adapter tra cache theo từng directed coordinate pair trước, sau đó chia các
+cache miss thành khối `sources x targets` không vượt 2.500 cặp và giới hạn tối
+đa sáu request đồng thời. Cache key gồm graph version, routing profile, origin
+và destination canonical coordinate; `A -> B` không dùng chung key với
+`B -> A`. Khi cache hit đạt ngưỡng, adapter gom các source có cùng tập target
+còn thiếu để tránh gọi lại cell đã có. Các block được ghép lại đúng thứ tự node
+trước khi trả `TravelMatrix`; solver vẫn thấy một global matrix đầy đủ.
+
+Cell `unreachable` chỉ được cache khi Valhalla trả response hợp lệ và có TTL
+ngắn hơn cell reachable. Timeout, HTTP error, response sai shape và kết quả
+straight-line fallback không được ghi vào Valhalla pair cache. Nếu bất kỳ block
+nào lỗi, toàn bộ primary matrix fail theo structured error và provider boundary
+mới quyết định fallback; các block đã thành công trước đó vẫn có thể được dùng
+lại trong lần gọi sau.
 
 Profile ban đầu là driving/auto. Matrix có hướng, không giả định:
 
@@ -164,7 +172,8 @@ Sau pruning, kiểm tra theo từng ngày:
 
 ```text
 mỗi feasible node có ít nhất một incoming và outgoing arc
-meal nodes có thể nối với activity trước/sau
+meal nodes giữ sáu activity gần nhất khả thi ở cả chiều vào và chiều ra, để
+tránh một edge hợp lệ cục bộ nhưng không thể ghép với thứ tự breakfast/lunch/dinner
 priority nodes không bị cô lập do K quá nhỏ
 ```
 

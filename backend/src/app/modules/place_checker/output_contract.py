@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
-from app.modules.place_checker.analysis_contract import (
+from app.modules.place_checker.analysis.contract import (
     BudgetAnalysis,
     CapacityAnalysis,
     CoverageAnalysis,
@@ -28,18 +28,18 @@ from app.modules.place_checker.enums import (
     UnresolvedEntityType,
     VerificationStatus,
 )
-from app.modules.place_checker.evaluation_contract import PlannerConstraint
-from app.modules.place_checker.food_selection_contract import (
+from app.modules.place_checker.evaluation.contract import PlannerConstraint
+from app.modules.place_checker.selection.food.contract import (
     FoodMealCoverage,
     FoodStyleCoverage,
     SelectedFoodRestaurant,
 )
-from app.modules.place_checker.item_contract import ResolvedInputItem, SpecialExperience
-from app.modules.place_checker.retrieval_contract import RetrievalBatch
-from app.modules.place_checker.scoring_contract import (
+from app.modules.place_checker.resolution.item_contract import ResolvedInputItem, SpecialExperience
+from app.modules.place_checker.retrieval.contract import RetrievalBatch
+from app.modules.place_checker.scoring.contract import (
     CandidateRankingBatch,
 )
-from app.modules.place_checker.style_candidate_contract import (
+from app.modules.place_checker.selection.style_contract import (
     StyleCandidateCoverage,
     StyleCandidateSelection,
 )

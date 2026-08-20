@@ -21,6 +21,7 @@ import {
   sourceProviderKind,
   type SourceProviderKind,
 } from "@/features/planner/lib/source-provider";
+import { URL_SOURCE_ACTION_PROMPTS } from "@/features/planner/lib/url-only-input";
 
 function sourceProviderKindForUrl(url: string): SourceProviderKind {
   return sourceProviderKind(url, undefined) ?? "url";
@@ -275,6 +276,25 @@ export function PlannerChatComposer({
             value={prompt}
           />
           <div className="composerToolbar">
+            {urls.length > 0 && !prompt.trim() ? (
+              <div
+                aria-label="Chọn việc cần làm với liên kết"
+                className="composerSourceActions"
+                role="group"
+              >
+                {URL_SOURCE_ACTION_PROMPTS.map((action) => (
+                  <button
+                    className="sourceActionButton"
+                    disabled={busy}
+                    key={action.value}
+                    onClick={() => onPromptChange(action.value)}
+                    type="button"
+                  >
+                    <span>{action.label}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <button
               aria-label={
                 disabled
@@ -286,7 +306,7 @@ export function PlannerChatComposer({
                       : "Gửi yêu cầu"
               }
               className="sendButton"
-              disabled={busy || (!prompt.trim() && urls.length === 0)}
+              disabled={busy || !prompt.trim()}
               type="submit"
             >
               <svg aria-hidden="true" viewBox="0 0 24 24">

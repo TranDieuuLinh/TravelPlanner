@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from datetime import datetime
-import json
+from collections.abc import Callable
 from typing import Any
 
 from app.modules.place_checker.contract import AdmResolution, AdmResolutionStatus
@@ -14,16 +14,22 @@ from app.modules.place_checker.adapters.postgres_catalog_batch import (
     PostgresCatalogBatchMixin,
 )
 from app.modules.place_checker.adapters.postgres_retry import PostgresCatalogRetryMixin
+from app.modules.place_checker.adapters.postgres_relationship_mapping import (
+    PostgresRelationshipMappingMixin,
+)
 from app.modules.place_checker.adapters.postgres_food_query import (
     SPECIAL_FOOD_RESTAURANT_SQL,
+)
+from app.modules.place_checker.adapters.postgres_named_place_query import (
+    NAMED_PLACE_SEARCH_SQL,
 )
 from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARCH_SQL
 from app.modules.place_checker.adapters.postgres_style_catalog import (
     PostgresStyleCandidateMixin,
 )
-from app.modules.place_checker.food_selection_contract import FoodRestaurantCandidate
-from app.modules.place_checker.planning_time_windows import meals_for_hours
-from app.modules.place_checker.resolution_contract import PlaceMetadata
+from app.modules.place_checker.selection.food.contract import FoodRestaurantCandidate
+from app.modules.place_checker.planning.time_windows import meals_for_hours
+from app.modules.place_checker.resolution.contract import PlaceMetadata
 from app.shared.tools.search_places import AdministrativeArea, PlaceProviderCandidate
 from app.shared.tools.search_places.normalization import normalize_text
 
@@ -39,14 +45,24 @@ class PostgresPlaceCatalog(
     PostgresStyleCandidateMixin,
     PostgresCatalogBatchMixin,
     PostgresCatalogMappingMixin,
+    PostgresRelationshipMappingMixin,
 ):
     """Read-only PlaceChecker adapter over the normalized Knowledge Graph."""
 
     provider_name = "knowledge_graph"
+    supports_search_mode = True
+    supports_address_hint = True
 
-    def __init__(self, database_url: str, *, command_timeout: float = 15.0) -> None:
+    def __init__(
+        self,
+        database_url: str,
+        *,
+        command_timeout: float = 15.0,
+        tag_filter: Callable[[list[str]], list[str]] | None = None,
+    ) -> None:
         self.database_url = _asyncpg_url(database_url)
         self.command_timeout = command_timeout
+        self.tag_filter = tag_filter
         self._pool = None
         self._pool_lock = asyncio.Lock()
 
@@ -125,24 +141,48 @@ class PostgresPlaceCatalog(
         place_type_hint: str | None,
         limit: int,
         anchor_place_id: str | None = None,
+        search_mode: str = "requirement",
+        address_hint: str | None = None,
     ) -> list[PlaceProviderCandidate]:
-        normalized = [normalize_text(name) for name in lookup_names if normalize_text(name)]
+        normalized = [
+            normalize_text(name) for name in lookup_names if normalize_text(name)
+        ]
         query = normalized[0] if normalized else ""
         requested_types = self._types_for_hint(place_type_hint)
         # PostgreSQL performs indexed candidate generation; SearchPlacesTool
         # applies the final multi-signal score to this bounded top-K window.
         fetch_limit = min(60, max(1, limit))
-        similarity_threshold = 0.22 if anchor_place_id else 0.30
-        rows = await self._fetch(
-            PLACE_SEARCH_SQL,
-            query,
-            input_adm.adm_id,
-            sorted(requested_types),
-            fetch_limit,
-            anchor_place_id,
-            similarity_threshold,
+        named_search = search_mode == "named_place"
+        similarity_threshold = (
+            0.30 if named_search else (0.22 if anchor_place_id else 0.30)
         )
-        return [self._candidate(row, input_adm) for row in rows]
+        if named_search:
+            query_args = [
+                query,
+                input_adm.adm_id,
+                sorted(requested_types),
+                fetch_limit,
+                similarity_threshold,
+                address_hint,
+            ]
+        else:
+            query_args = [
+                query,
+                input_adm.adm_id,
+                sorted(requested_types),
+                fetch_limit,
+                anchor_place_id,
+                similarity_threshold,
+            ]
+        rows = await self._fetch(
+            NAMED_PLACE_SEARCH_SQL if named_search else PLACE_SEARCH_SQL,
+            *query_args,
+        )
+        candidates = [self._candidate(row, input_adm) for row in rows]
+        if self.tag_filter is not None:
+            for candidate in candidates:
+                candidate.tags = self.tag_filter(candidate.tags)
+        return candidates
 
     async def get_many(self, place_ids: list[str]) -> dict[str, PlaceMetadata]:
         if not place_ids:
@@ -237,26 +277,27 @@ class PostgresPlaceCatalog(
         for row in related_property_rows:
             related_properties[row["entity_id"]][row["key"]] = row["value"]
         for row in relationship_rows:
-            relationship = self._relationships(
+            mapped_relationships = self._relationships(
                 [
                     self._metadata_relationship(
                         row,
                         target_properties=related_properties.get(row["to_entity_id"]),
                     )
                 ]
-            )[0]
+            )
+            if not mapped_relationships:
+                continue
+            relationship = mapped_relationships[0]
             relationships[row["entity_id"]].append(relationship)
             if row["relationship_type"] == "Special_Experience":
                 tags[row["entity_id"]].append("experience:special_experience")
             elif row["relationship_type"] == "Offer_Item":
                 tags[row["entity_id"]].append(f"item:{row['related_name']}")
-            elif row["relationship_type"] == "Has_Style":
-                tags[row["entity_id"]].append(f"style:{row['related_name']}")
             elif row["relationship_type"] == "Special_Near":
                 tags[row["entity_id"]].append(
                     f"relation:{row['relationship_type'].casefold()}"
                 )
-        return {
+        metadata = {
             row["id"]: self._metadata(
                 row["id"],
                 row["entity_type"],
@@ -267,6 +308,10 @@ class PostgresPlaceCatalog(
             )
             for row in entity_rows
         }
+        if self.tag_filter is not None:
+            for item in metadata.values():
+                item.tags = self.tag_filter(item.tags)
+        return metadata
 
     async def find_food_restaurants(
         self,
@@ -323,55 +368,3 @@ class PostgresPlaceCatalog(
             for candidate in candidates
             if required & set(meals_for_hours(candidate.metadata.opening_hours))
         ]
-
-    @staticmethod
-    def _metadata_relationship(
-        row, *, target_properties=None, style_properties=None
-    ):
-        target_properties = target_properties or style_properties
-        raw = row["recommendations"]
-        try:
-            recommendations = json.loads(raw) if isinstance(raw, str) else (raw or {})
-        except (TypeError, ValueError):
-            recommendations = {}
-        payload = recommendations if isinstance(recommendations, dict) else {}
-        evidence = recommendations if isinstance(recommendations, list) else []
-        confidences = [
-            item.get("confidence")
-            for item in evidence
-            if isinstance(item, dict) and isinstance(item.get("confidence"), (int, float))
-        ]
-        relationship_type = row["relationship_type"]
-        distance = payload.get("distance_km")
-        threshold = payload.get("threshold_km")
-        if relationship_type == "Special_Near":
-            ratio = distance / threshold if distance is not None and threshold else 1
-            score = max(0.65, 0.95 - 0.30 * ratio)
-        elif relationship_type == "Special_Experience":
-            score = 0.55 if payload.get("status") == "pending" else 0.78
-        elif relationship_type == "Offer_Item":
-            score = max(confidences, default=0.45 if payload.get("status") == "pending" else 0.72)
-        else:
-            score = min(0.75, 0.45 + float(payload.get("priority", 40)) / 400)
-        relationship_properties = dict(target_properties or {})
-        if relationship_type == "Offer_Item":
-            relationship_properties["entityType"] = row.get("related_entity_type")
-        relationship_properties.update(payload.get("properties") or {})
-        return {
-            "relationshipType": relationship_type,
-            "direction": row["direction"],
-            "scope": row["scope"],
-            "fromEntityId": row["from_entity_id"],
-            "toEntityId": row["to_entity_id"],
-            "relatedEntityId": row["related_entity_id"],
-            "relatedName": row["related_name"],
-            "status": payload.get("status"),
-            "confidence": max(confidences) if confidences else None,
-            "priority": payload.get("priority"),
-            "distanceKm": distance,
-            "thresholdKm": threshold,
-            "source": row["source"],
-            "sourceNote": row["source_note"],
-            "properties": relationship_properties,
-            "score": min(1, max(0, score)),
-        }

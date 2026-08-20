@@ -1,10 +1,10 @@
-from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
-from app.modules.place_checker.food_anchor_policy import select_food_anchors
+from app.modules.place_checker.evaluation.contract import PlaceEvaluationBatch
+from app.modules.place_checker.selection.food.anchor_policy import select_food_anchors
 from app.modules.place_checker.tests.analysis_fixtures import evaluated_place
 from app.shared.contracts.place import Coordinates
 
 
-def test_anchor_policy_keeps_mandatory_and_caps_optional_candidates() -> None:
+def test_anchor_policy_keeps_all_real_activity_anchors() -> None:
     places = [
         evaluated_place("mandatory", mandatory=True, category="travel_place"),
         *[
@@ -23,7 +23,7 @@ def test_anchor_policy_keeps_mandatory_and_caps_optional_candidates() -> None:
 
     anchors = select_food_anchors(PlaceEvaluationBatch(places=places), days=3)
 
-    assert len(anchors) == 8
+    assert len(anchors) == 21
     assert anchors[0].place_id == "mandatory"
     assert [item.place_id for item in anchors[1:4]] == [
         "optional:0",
@@ -32,14 +32,14 @@ def test_anchor_policy_keeps_mandatory_and_caps_optional_candidates() -> None:
     ]
 
 
-def test_anchor_policy_does_not_drop_mandatory_places_over_soft_cap() -> None:
+def test_anchor_policy_includes_entertainment_and_excludes_food_venues() -> None:
     places = [
-        evaluated_place(
-            f"mandatory:{index}", mandatory=True, category="travel_place"
-        )
-        for index in range(14)
+        evaluated_place("travel", mandatory=True, category="travel_place"),
+        evaluated_place("evening", mandatory=False, category="entertainment"),
+        evaluated_place("restaurant", mandatory=False, category="restaurant"),
+        evaluated_place("drink", mandatory=False, category="drink_dessert"),
     ]
 
     anchors = select_food_anchors(PlaceEvaluationBatch(places=places), days=2)
 
-    assert len(anchors) == 14
+    assert [item.place_id for item in anchors] == ["travel", "evening"]

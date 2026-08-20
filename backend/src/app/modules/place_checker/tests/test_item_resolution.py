@@ -17,8 +17,8 @@ from app.modules.place_checker.enums import (
     ItemResolutionStatus,
     SourceTier,
 )
-from app.modules.place_checker.item_resolution import InputItemResolutionService
-from app.modules.place_checker.resolution_contract import (
+from app.modules.place_checker.resolution.item_service import InputItemResolutionService
+from app.modules.place_checker.resolution.contract import (
     EnrichedIdentityPlace,
     PlaceMetadata,
 )
