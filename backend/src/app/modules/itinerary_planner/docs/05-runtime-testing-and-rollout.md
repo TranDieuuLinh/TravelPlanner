@@ -1,6 +1,6 @@
 # Phase 5: Runtime, route repair, testing và rollout
 
-Cập nhật lần cuối: 2026-08-18
+Cập nhật lần cuối: 2026-08-20
 
 Trạng thái: đã triển khai route-detail enrichment cho selected arcs và
 accommodation transfers, fallback có warning khi thiếu geometry, fallback đường
@@ -45,8 +45,12 @@ thread với seed khác nhau, giữ incumbent tốt nhất và dừng sau 10 rou
 tiếp không cải thiện. Greedy/local-search order được đưa vào CP-SAT bằng
 solution hint; CP-SAT vẫn có quyền sửa selection, time và route để thỏa hard
 constraint.
-Valhalla matrix và route-detail request cũng không có timeout mặc định; lỗi
-HTTP/provider thực sự vẫn đi qua approximate fallback và phát warning.
+Valhalla matrix và route-detail request có timeout mặc định 180 giây; có thể
+điều chỉnh qua `VALHALLA_TIMEOUT_SECONDS` khi deployment cần SLA. Kết quả từng
+matrix batch thành công được cache tối đa 128 entry trong 10 phút trên cùng
+Valhalla adapter. Vì vậy nếu một batch lỗi, lần gọi matrix sau chỉ request lại
+batch còn thiếu; lỗi HTTP/provider thực sự vẫn đi qua approximate fallback và
+phát warning.
 Greedy không dùng tổng activity duration làm điều kiện loại sớm. Nó tạo activity
 skeleton trước, giữ placeholder cho ba meal, rồi ưu tiên restaurant theo tổng
 travel từ activity trước qua restaurant đến activity sau. Daily CP-SAT vẫn sở

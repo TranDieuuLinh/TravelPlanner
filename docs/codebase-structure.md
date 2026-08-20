@@ -1,6 +1,6 @@
 # Cấu trúc codebase hiện tại
 
-Cập nhật lần cuối: 2026-08-18.
+Cập nhật lần cuối: 2026-08-20.
 
 ## Các ứng dụng cấp cao nhất
 
@@ -9,8 +9,9 @@ Cập nhật lần cuối: 2026-08-18.
 - `admin-frontend/`: giao diện Next.js riêng cho quản trị viên.
 - `packages/`: các package frontend dùng chung trong npm workspace; hiện có
   `api-client/` cho API error và request helper dùng chung.
-- `docker-compose.yml`: cấu hình backend, PostgreSQL/pgvector local và routing
-  services; backend dùng database local qua service `postgres`.
+- `docker-compose.yml`: cấu hình backend và routing services, không provision
+  PostgreSQL. Backend dùng database local ngoài Compose hoặc database cloud qua
+  `DATABASE_URL`; container dùng `host.docker.internal` để truy cập DB trên host.
 
 ## Cấu trúc backend
 

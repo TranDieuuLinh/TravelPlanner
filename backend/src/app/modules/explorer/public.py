@@ -1,6 +1,7 @@
 import asyncio
 
 from app.modules.explorer.contract import (
+    ExplorerApiOutput,
     ExplorerBudget,
     ExplorerImageInput,
     ExplorerInput,
@@ -40,6 +41,7 @@ from app.modules.explorer.adapters import (
     YtDlpCaptionClient,
 )
 from app.modules.explorer.graph import build_explorer_graph as _compile_explorer_graph
+from app.modules.explorer.api_output import to_explorer_api_output
 from app.modules.explorer.service import ExplorerService
 from app.shared.llm import LlmClient
 
@@ -240,8 +242,10 @@ def build_explorer_graph(service: ExplorerService | None = None):
 
 
 __all__ = [
-    "ExplorerBudget", "ExplorerImageInput", "ExplorerInput", "ExplorerOutput",
+    "ExplorerApiOutput", "ExplorerBudget", "ExplorerImageInput", "ExplorerInput",
+    "ExplorerOutput",
     "ExplorerPeople", "ExplorerPlace", "PlaceSource", "RequestedItem", "SourceNote",
     "build_explorer_graph",
     "create_explorer_service",
+    "to_explorer_api_output",
 ]

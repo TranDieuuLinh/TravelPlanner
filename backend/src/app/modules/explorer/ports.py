@@ -99,3 +99,7 @@ class ImageOcrCache(Protocol):
 
 class ExplorerSnapshotRepository(Protocol):
     async def save(self, intake_id: str, snapshot_kind: str, payload: dict) -> None: ...
+
+
+class PlaceTagCatalog(Protocol):
+    def tags_for(self, place_name: str) -> list[str]: ...

@@ -59,6 +59,7 @@ def test_null_cell_is_unreachable_and_invalid_shape_is_rejected() -> None:
 
     matrix = asyncio.run(adapter.matrix(LOCATIONS, "auto"))
     assert matrix.cell("a", "b").reachable is False
+    adapter._matrix_batch_cache.clear()
     with pytest.raises(RoutingPhaseError) as error:
         asyncio.run(adapter.matrix(LOCATIONS, "auto"))
     asyncio.run(client.aclose())
@@ -124,6 +125,55 @@ def test_default_batches_cover_111_locations_with_at_most_2500_pairs() -> None:
         max(len(sources) * len(targets) for _, sources, _, targets in batches)
         <= 2_500
     )
+
+
+def test_successful_matrix_batches_are_reused_after_one_batch_fails() -> None:
+    locations = tuple(
+        MatrixLocation(str(index), 21.0 + index / 10, 105.8, f"geo:{index}")
+        for index in range(3)
+    )
+    requests: list[tuple[tuple[float, ...], tuple[float, ...]]] = []
+    failed_once = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal failed_once
+        payload = json.loads(request.content)
+        sources = tuple(item["lat"] for item in payload["sources"])
+        targets = tuple(item["lat"] for item in payload["targets"])
+        requests.append((sources, targets))
+        if (
+            sources == (21.2,)
+            and targets == (21.0, 21.1, 21.2)
+            and not failed_once
+        ):
+            failed_once = True
+            return httpx.Response(503)
+        return httpx.Response(
+            200,
+            json={
+                "sources_to_targets": [
+                    [{"time": 60, "distance": 1} for _ in targets]
+                    for _ in sources
+                ]
+            },
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    adapter = ValhallaAdapter(
+        "https://valhalla.test",
+        client=client,
+        max_matrix_pairs=4,
+    )
+
+    with pytest.raises(RoutingPhaseError):
+        asyncio.run(adapter.matrix(locations, "auto"))
+    first_call_count = len(requests)
+    matrix = asyncio.run(adapter.matrix(locations, "auto"))
+    asyncio.run(client.aclose())
+
+    assert first_call_count == 3
+    assert len(requests) == first_call_count + 1
+    assert matrix.node_ids == tuple(str(index) for index in range(3))
 
 
 def test_route_detail_returns_only_requested_leg_geometry() -> None:

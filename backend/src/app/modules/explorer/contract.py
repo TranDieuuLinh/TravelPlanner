@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from typing import Literal
 from urllib.parse import urlparse
@@ -188,3 +189,180 @@ class ExplorerOutput(ExplorerModel):
     warnings: list[str] = Field(default_factory=list)
     completeness: ExplorerCompleteness | None = None
     error: AgentError | None = None
+
+
+PublicEvidenceType = Literal["raw_prompt", "url"]
+
+
+def _public_evidence_type(*, is_url: bool) -> PublicEvidenceType:
+    return "url" if is_url else "raw_prompt"
+
+
+class ExplorerApiPlaceSource(ExplorerModel):
+    evidence_type: PublicEvidenceType
+    source_url: str | None = Field(default=None, max_length=2048)
+    source_time_hint: str | None = Field(default=None, max_length=80)
+    address_hint: str | None = Field(default=None, max_length=300)
+
+    @classmethod
+    def from_internal(cls, source: PlaceSource) -> "ExplorerApiPlaceSource":
+        return cls(
+            evidence_type=_public_evidence_type(is_url=source.origin == "url"),
+            source_url=source.source_url,
+            source_time_hint=source.source_time_hint,
+            address_hint=source.address_hint,
+        )
+
+
+class ExplorerApiRequestedItem(ExplorerModel):
+    name: str
+    item_type: ItemType
+
+
+class ExplorerApiSourceNote(ExplorerModel):
+    summary: str
+
+    @classmethod
+    def from_internal(cls, note: SourceNote) -> "ExplorerApiSourceNote":
+        return cls(summary=note.summary)
+
+
+class ExplorerApiPlace(ExplorerModel):
+    name: str
+    address_hint: str | None = None
+    tags: list[str]
+    source_places: list[ExplorerApiPlaceSource]
+    url_notes: list[ExplorerApiSourceNote]
+
+    @classmethod
+    def from_internal(
+        cls,
+        place: ExplorerPlace,
+        *,
+        notes: list[SourceNote],
+        tags_for: Callable[[str], list[str]],
+    ) -> "ExplorerApiPlace":
+        return cls(
+            name=place.name,
+            address_hint=place.address_hint,
+            tags=tags_for(place.name),
+            source_places=cls._unique_sources(place.source_places),
+            url_notes=[ExplorerApiSourceNote.from_internal(note) for note in notes],
+        )
+
+    @staticmethod
+    def _unique_sources(sources: list[PlaceSource]) -> list[ExplorerApiPlaceSource]:
+        unique: list[ExplorerApiPlaceSource] = []
+        seen: set[tuple[str, str | None, str | None, str | None]] = set()
+        for source in sources:
+            public = ExplorerApiPlaceSource.from_internal(source)
+            signature = (
+                public.evidence_type,
+                public.source_url,
+                public.source_time_hint,
+                public.address_hint,
+            )
+            if signature not in seen:
+                unique.append(public)
+                seen.add(signature)
+        return unique
+
+
+class ExplorerApiBudget(ExplorerModel):
+    level: BudgetLevel
+    target_amount: int | None = None
+    currency: str
+    basis: BudgetBasis
+
+
+class ExplorerApiOutput(ExplorerModel):
+    status: ExplorerStatus
+    intake_id: str
+    input_adm: str | None = Field(default=None, alias="input_ADM")
+    places: list[ExplorerApiPlace] | None = None
+    input_items: list[ExplorerApiRequestedItem] | None = None
+    days: int
+    start_date: date
+    timezone: str
+    budget: ExplorerApiBudget
+    people: ExplorerPeople
+    short_preferences: list[str]
+    short_avoids: list[str]
+
+    @classmethod
+    def from_internal(
+        cls,
+        output: ExplorerOutput,
+        *,
+        tags_for: Callable[[str], list[str]],
+    ) -> "ExplorerApiOutput":
+        notes = output.url_notes or []
+        return cls(
+            status=output.status,
+            intake_id=output.intake_id,
+            input_adm=output.input_adm,
+            places=(
+                [
+                    ExplorerApiPlace.from_internal(
+                        place,
+                        notes=cls._notes_for_place(place, notes),
+                        tags_for=tags_for,
+                    )
+                    for place in output.places
+                ]
+                if output.places is not None
+                else None
+            ),
+            input_items=(
+                [
+                    ExplorerApiRequestedItem(name=item.name, item_type=item.item_type)
+                    for item in output.input_items
+                ]
+                if output.input_items is not None
+                else None
+            ),
+            days=output.days,
+            start_date=output.start_date,
+            timezone=output.timezone,
+            budget=ExplorerApiBudget(
+                level=output.budget.level,
+                target_amount=output.budget.target_amount,
+                currency=output.budget.currency,
+                basis=output.budget.basis,
+            ),
+            people=output.people,
+            short_preferences=cls._dictionary_tags(
+                output.short_preferences, tags_for
+            ),
+            short_avoids=cls._dictionary_tags(output.short_avoids, tags_for),
+        )
+
+    @staticmethod
+    def _dictionary_tags(
+        values: list[str], tags_for: Callable[[str], list[str]]
+    ) -> list[str]:
+        return list(
+            dict.fromkeys(
+                tag
+                for value in values
+                for tag in tags_for(value)
+            )
+        )
+
+    @staticmethod
+    def _notes_for_place(
+        place: ExplorerPlace, notes: list[SourceNote]
+    ) -> list[SourceNote]:
+        place_key = " ".join(place.name.casefold().split())
+        matched: list[SourceNote] = []
+        seen: set[tuple[str, str | None]] = set()
+        for note in notes:
+            note_place = " ".join((note.place_name or "").casefold().split())
+            summary = " ".join(note.summary.casefold().split())
+            if note_place != place_key and place_key not in summary:
+                continue
+            signature = (summary, note.source_url)
+            if signature not in seen:
+                matched.append(note)
+                seen.add(signature)
+        return matched

@@ -26,7 +26,7 @@ from app.shared.tools.transport_cost import XanhSmTransportCostEstimator
 def build_valhalla_itinerary_planner_graph(
     base_url: str,
     *,
-    timeout_seconds: float | None = None,
+    timeout_seconds: float = 180.0,
     provider_version: str = "local",
     log_search_progress: bool = False,
 ):
@@ -45,7 +45,7 @@ def build_valhalla_itinerary_planner_graph(
 def build_valhalla_beam_search_itinerary_planner_graph(
     base_url: str,
     *,
-    timeout_seconds: float | None = None,
+    timeout_seconds: float = 180.0,
     provider_version: str = "local",
     beam_config: BeamSearchConfig | None = None,
 ):
@@ -66,7 +66,7 @@ def build_valhalla_beam_search_itinerary_planner_graph(
 def build_valhalla_beam_first_itinerary_planner_graph(
     base_url: str,
     *,
-    timeout_seconds: float | None = None,
+    timeout_seconds: float = 180.0,
     provider_version: str = "local",
     beam_config: BeamSearchConfig | None = None,
     log_search_progress: bool = False,
@@ -98,7 +98,7 @@ def build_valhalla_beam_first_itinerary_planner_graph(
 def build_valhalla_directions_service(
     base_url: str,
     *,
-    timeout_seconds: float = 15,
+    timeout_seconds: float = 180.0,
     provider_version: str = "local",
 ) -> DirectionsService:
     valhalla = ValhallaAdapter(

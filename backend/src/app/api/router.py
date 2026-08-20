@@ -15,7 +15,11 @@ from app.modules.observability.public import router as observability_router
 from app.modules.observability.service import ObservabilityService
 from app.modules.itinerary_planner.public import router as itinerary_planner_router
 from app.modules.place_checker.public import manual_search_router
-from app.modules.explorer.public import ExplorerInput, ExplorerOutput
+from app.modules.explorer.public import (
+    ExplorerApiOutput,
+    ExplorerInput,
+    to_explorer_api_output,
+)
 from app.modules.supervisor.public import SupervisorClassificationError
 from app.modules.trip_chat.public import plan_mutations_router, router as trip_chat_router
 
@@ -36,7 +40,7 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.post("/v1/explorer/invoke", response_model=ExplorerOutput)
+@router.post("/v1/explorer/invoke", response_model=ExplorerApiOutput)
 async def invoke_explorer(
     payload: Annotated[
         ExplorerInput,
@@ -73,7 +77,7 @@ async def invoke_explorer(
     ],
     request: Request,
     graph=Depends(get_explorer_graph),
-) -> ExplorerOutput:
+) -> ExplorerApiOutput:
     request_id = (
         request.headers.get("x-trace-id")
         or request.headers.get("x-request-id")
@@ -120,7 +124,7 @@ async def invoke_explorer(
             },
             duration_ms=round((perf_counter() - started_at) * 1000, 2),
         )
-        return output
+        return to_explorer_api_output(output)
     except Exception as exc:
         await observability.record_agent_invoke(
             request_id=request_id,

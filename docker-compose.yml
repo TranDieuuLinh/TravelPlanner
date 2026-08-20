@@ -1,27 +1,6 @@
-name: TrungLinhLoi-Travel
+name: travelplanner
 
 services:
-  postgres:
-    image: pgvector/pgvector:pg18
-    environment:
-      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-travelplanner}
-      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-travelplanner}
-      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-travelplanner_local}
-    ports:
-      - "${LOCAL_POSTGRES_PORT:-55432}:5432"
-    volumes:
-      - travelplanner-postgres18:/var/lib/postgresql
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${LOCAL_POSTGRES_USER:-travelplanner} -d ${LOCAL_POSTGRES_DB:-travelplanner}",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    restart: unless-stopped
-
   backend:
     build:
       context: ./backend
@@ -35,6 +14,9 @@ services:
       - "${BACKEND_PORT:?Set BACKEND_PORT in backend/.env}:8000"
     volumes:
       - ./backend:/app
+      - ./auto-attach:/auto-attach:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command:
       [
         "uvicorn",
@@ -49,8 +31,6 @@ services:
       ]
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
       valhalla:
         condition: service_healthy
     healthcheck:
@@ -115,6 +95,3 @@ services:
     volumes:
       - ./routing-data/opentripplanner:/var/opentripplanner
     restart: unless-stopped
-
-volumes:
-  travelplanner-postgres18:

@@ -1,6 +1,6 @@
 # Travel Planner Agents
 
-Cập nhật lần cuối: 2026-08-18.
+Cập nhật lần cuối: 2026-08-20.
 
 Greenfield modular backend for a LangGraph-based travel-planning workflow.
 
@@ -151,19 +151,34 @@ curl -X POST http://127.0.0.1:8000/v1/agent/invoke \
 For Explorer-only contract testing, use `POST /v1/explorer/invoke` with
 `rawPrompt`, `urls`, and/or `images`. Send `forceRefresh: true` to bypass the
 URL cache. This bypasses Supervisor, PlaceChecker,
-and ItineraryPlanner and returns the complete `ExplorerOutput`.
+and ItineraryPlanner and returns the compact public `ExplorerApiOutput`.
+Public place tags are matched by name against `auto-attach/tags-auto.yml`; the
+file is read for every response so edits do not require a backend restart.
 For Instagram pages that require a logged-in session, export a Netscape-format
 cookie file outside source control and set `EXPLORER_YTDLP_COOKIE_FILE` to its
 absolute path. TikTok does not use the yt-dlp fallback. Cookie files are ignored
 by the backend `.gitignore`; never commit or log them.
-Docker Compose loads provider, Explorer, and local PostgreSQL/pgvector settings
-from `backend/.env` when that file exists. The single Compose file includes the
-`postgres` service and the backend connects to it through the Docker service
-name:
+Docker Compose loads provider and database settings from `backend/.env`. It
+does not provision PostgreSQL; local and cloud PostgreSQL are two external
+configuration options selected through `DATABASE_URL`:
+
+```dotenv
+# Backend in Docker -> PostgreSQL installed/running on the host
+DATABASE_URL=postgresql://USER:PASSWORD@host.docker.internal:5432/DBNAME
+
+# Cloud PostgreSQL
+DATABASE_URL=postgresql://USER:PASSWORD@CLOUD_HOST:5432/DBNAME?sslmode=require
+```
+
+Use `localhost` for a local PostgreSQL server only when running Uvicorn directly
+on the host. Start the application services with:
 
 ```bash
 docker compose --env-file backend/.env up -d
 ```
+
+The selected database must already exist, include pgvector where required, and
+have the migrations above applied.
 
 Run tests:
 
