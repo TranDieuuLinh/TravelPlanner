@@ -27,6 +27,7 @@ export type CurrentTripChat = CurrentTripChatSummary & {
     content: string;
     sources?: TripChatSource[];
     contentBlocks?: AnswerBlock[];
+    suggestions?: Array<{ field: string; label: string; value: string | number; currency?: string }>;
     createdAt: string;
   }>;
 };
@@ -167,6 +168,7 @@ export function mapCurrentTripChat(
       createdAt: message.createdAt,
       messageKind: message.role,
       contentBlocks: message.contentBlocks ?? [],
+      suggestions: message.suggestions ?? [],
     })),
     turns: [],
   };

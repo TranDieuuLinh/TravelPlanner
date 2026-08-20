@@ -3954,6 +3954,9 @@ function Planner() {
           id: Date.now() + 1,
           role: "assistant",
           text: generation.response.response,
+          contentBlocks: generation.response.contentBlocks,
+          sources: generation.response.sources,
+          suggestions: generation.response.suggestions,
         },
       ]);
     } catch (caught) {
@@ -4835,6 +4838,7 @@ function Planner() {
                 <div className="plannerChatContent" id="planner-chat-content">
                   <PlannerChatMessages
                     messages={messages}
+                    onSuggestionSelect={(value) => void sendMessage(value)}
                     ref={messageListRef}
                   />
                   {awaitingInitialPlan ? (

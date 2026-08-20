@@ -6,12 +6,32 @@ from app.modules.supervisor.contract import (
 from app.modules.supervisor.errors import SupervisorClassificationError
 from app.modules.supervisor.fallback import build_fallback_decision
 from app.modules.supervisor.ports import IntentClassifier
+from app.modules.supervisor.ports import ResponseComposer
 
 
 class SupervisorService:
+    @staticmethod
+    def format_information_output(output) -> str:
+        """Fallback response composer for agent facts."""
+        if not output.facts:
+            return "Chưa tìm thấy thông tin đủ đáng tin cậy để trả lời câu hỏi này."
+        source_numbers = {
+            source.source_id: index
+            for index, source in enumerate(output.sources, start=1)
+        }
+        lines = []
+        for fact in output.facts:
+            markers = "".join(
+                f"[{source_numbers[source_id]}]"
+                for source_id in fact.source_ids
+                if source_id in source_numbers
+            )
+            lines.append(f"{fact.text.strip()} {markers}".rstrip())
+        return "\n\n".join(lines)
     def __init__(
         self,
         classifier: IntentClassifier | None = None,
+        composer: ResponseComposer | None = None,
         *,
         fallback_enabled: bool = True,
         confidence_threshold: float = 0.65,
@@ -19,8 +39,30 @@ class SupervisorService:
         if not 0 <= confidence_threshold <= 1:
             raise ValueError("Supervisor confidence threshold must be between 0 and 1.")
         self._classifier = classifier
+        self._composer = composer
         self._fallback_enabled = fallback_enabled
         self._confidence_threshold = confidence_threshold
+
+    async def compose_information_response(
+        self, *, message: str, conversation_summary: str | None, output
+    ) -> str:
+        fallback = self.format_information_output(output)
+        if self._composer is None:
+            return fallback
+        payload = {
+            "contextSummary": conversation_summary or "",
+            "currentUserMessage": message,
+            "agent": "information_finder",
+            "toolPlan": ["search_db", "search_web"],
+            "facts": [fact.model_dump(mode="json", by_alias=True) for fact in output.facts],
+            "sources": [source.model_dump(mode="json", by_alias=True) for source in output.sources],
+            "currentItineraryEditState": "placeholder",
+        }
+        try:
+            response = await self._composer.compose(payload)
+            return response.strip() or fallback
+        except Exception:
+            return fallback
 
     async def decide(self, payload: SupervisorInput) -> SupervisorDecision:
         if payload.clarification_required:
@@ -93,6 +135,7 @@ class SupervisorService:
             response=question,
         )
 
+
     def _accept_classifier_result(
         self, payload: SupervisorInput, result: ClassifierResult
     ) -> SupervisorDecision:
@@ -130,5 +173,6 @@ class SupervisorService:
                 "finish": "Structured classifier selected a completed response.",
             }[result.route],
             response=result.response if result.route == "finish" else None,
+            entity_names=result.entity_names,
         )
         return decision

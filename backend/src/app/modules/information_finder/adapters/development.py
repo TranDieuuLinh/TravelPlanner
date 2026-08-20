@@ -141,8 +141,7 @@ class ExtractiveAnswerGenerator:
     """Truthful development fallback that only quotes supplied source snippets."""
 
     max_claims = 3
-    max_chars_per_claim = 280
-    max_words_per_fact = 25
+    max_chars_per_claim = 1000
 
     async def generate(
         self, query: str, sources: list[RetrievedSource]
@@ -157,7 +156,6 @@ class ExtractiveAnswerGenerator:
                 title=source.title,
                 max_chars=self.max_chars_per_claim,
             )
-            snippet = _limit_words(snippet, self.max_words_per_fact)
             if not snippet:
                 continue
             claims.append(
@@ -198,8 +196,3 @@ class ExtractiveAnswerGenerator:
         )
 
 
-def _limit_words(text: str, max_words: int) -> str:
-    words = text.split()
-    if len(words) <= max_words:
-        return text.strip()
-    return " ".join(words[:max_words]).rstrip(" ,;:")

@@ -248,6 +248,11 @@ async def invoke_agent(
             information_output.content_blocks if information_output else []
         ),
         sources=information_output.sources if information_output else [],
+        suggestions=(
+            information_output.suggestions
+            if information_output and information_output.suggestions
+            else result.get("suggestions", [])
+        ),
     )
     await observability.record_agent_invoke(
         request_id=request_id, route=response.route, success=True,

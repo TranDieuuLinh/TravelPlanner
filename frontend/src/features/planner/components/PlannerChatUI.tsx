@@ -41,6 +41,7 @@ export type PlannerChatMessage = {
   sources?: TripChatSource[];
   contentBlocks?: AnswerBlock[];
   streaming?: boolean;
+  suggestions?: Array<{ field: string; label: string; value: string | number; currency?: string }>;
 };
 
 type PlannerChatHeaderProps = {
@@ -134,7 +135,7 @@ export function PlannerChatHeader({
 }
 
 export const PlannerChatMessages = forwardRef(function PlannerChatMessages(
-  { messages }: { messages: PlannerChatMessage[] },
+  { messages, onSuggestionSelect }: { messages: PlannerChatMessage[]; onSuggestionSelect?: (value: string) => void },
   ref: Ref<HTMLDivElement>
 ) {
   return (
@@ -163,6 +164,20 @@ export const PlannerChatMessages = forwardRef(function PlannerChatMessages(
             ) : (
               message.text
             )}
+            {message.role === "assistant" && message.suggestions?.length ? (
+              <div className="chatSuggestionList" role="group" aria-label="Gợi ý lựa chọn">
+                {message.suggestions.map((suggestion) => (
+                  <button
+                    className="chatSuggestionButton"
+                    key={`${suggestion.field}:${suggestion.value}`}
+                    onClick={() => onSuggestionSelect?.(String(suggestion.value))}
+                    type="button"
+                  >
+                    {suggestion.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
       ))}

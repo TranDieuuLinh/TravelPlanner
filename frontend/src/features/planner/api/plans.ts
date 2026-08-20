@@ -504,6 +504,7 @@ export type TripChatMessage = {
   contentBlocks?: AnswerBlock[];
   sources: TripChatSource[];
   createdAt: string;
+  suggestions?: Array<{ field: string; label: string; value: string | number; currency?: string }>;
 };
 
 export type TripChatSource = {

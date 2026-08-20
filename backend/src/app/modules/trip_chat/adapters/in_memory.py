@@ -90,6 +90,7 @@ class InMemoryTripChatRepository:
             warnings=assistant.get("warnings", []),
             content_blocks=assistant.get("content_blocks", []),
             sources=assistant.get("sources", []),
+            suggestions=assistant.get("suggestions", []),
             created_at=now,
         )
 

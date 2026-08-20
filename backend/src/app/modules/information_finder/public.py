@@ -20,6 +20,10 @@ from app.modules.information_finder.contract import (
 )
 from app.modules.information_finder.graph import build_information_finder_graph
 from app.modules.information_finder.service import InformationFinderService
+from app.modules.information_finder.tools.budget_ranges import (
+    BudgetRangeResult,
+    BudgetRangeTool,
+)
 
 __all__ = [
     "InformationFinderInput",
@@ -42,4 +46,6 @@ __all__ = [
     "TextSpan",
     "VerseBlock",
     "build_information_finder_graph",
+    "BudgetRangeResult",
+    "BudgetRangeTool",
 ]

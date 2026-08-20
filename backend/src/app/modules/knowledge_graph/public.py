@@ -1,7 +1,7 @@
 from app.core.config import Settings
 from app.modules.knowledge_graph.adapters.draft_places import PostgresDraftPlaceStore
 from app.modules.knowledge_graph.adapters.postgres import PostgresKnowledgeGraphStore
-from app.modules.knowledge_graph.contract import EntityPreview
+from app.modules.knowledge_graph.contract import EntityPreview, PriceObservation
 from app.modules.knowledge_graph.router import public_router, router
 from app.modules.knowledge_graph.service import KnowledgeGraphService
 
@@ -20,6 +20,7 @@ __all__ = [
     "build_draft_place_store",
     "build_knowledge_graph_service",
     "EntityPreview",
+    "PriceObservation",
     "public_router",
     "router",
 ]

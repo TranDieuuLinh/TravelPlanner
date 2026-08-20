@@ -105,7 +105,7 @@ class PostgresTripChatRepository:
                 return None
             messages = await connection.fetch(
                     """SELECT id, role, content, route, clarification_question, warnings,
-                          content_blocks, sources, created_at
+                          content_blocks, sources, suggestions, created_at
                    FROM agent_trip_chat_messages WHERE chat_id=$1 ORDER BY sequence""",
                 chat_id,
             )
@@ -146,9 +146,9 @@ class PostgresTripChatRepository:
                 await connection.execute(
                     """INSERT INTO agent_trip_chat_messages
                        (id, chat_id, sequence, role, content, created_at,
-                        route, clarification_question, warnings, content_blocks, sources)
-                       VALUES ($1,$2,$3,'user',$4,$5,NULL,NULL,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb),
-                              ($6,$2,$3+1,'assistant',$7,$5,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb)""",
+                       route, clarification_question, warnings, content_blocks, sources, suggestions)
+                       VALUES ($1,$2,$3,'user',$4,$5,NULL,NULL,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb),
+                              ($6,$2,$3+1,'assistant',$7,$5,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb,$13::jsonb)""",
                     str(uuid4()),
                     chat_id,
                     sequence + 1,
@@ -161,6 +161,7 @@ class PostgresTripChatRepository:
                     json.dumps(assistant.get("warnings", [])),
                     json.dumps(assistant.get("content_blocks", [])),
                     json.dumps(assistant.get("sources", [])),
+                    json.dumps(assistant.get("suggestions", [])),
                 )
                 await connection.execute(
                     """UPDATE agent_trip_chats SET revision=revision+1,
@@ -492,5 +493,6 @@ class PostgresTripChatRepository:
                 else []
             ) or [],
             sources=_json(row["sources"]) or [],
+            suggestions=_json(row["suggestions"]) or [],
             created_at=row["created_at"],
         )

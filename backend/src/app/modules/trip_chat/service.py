@@ -467,6 +467,11 @@ class TripChatService:
                     information_output.sources if information_output else []
                 )
             ],
+            "suggestions": (
+                list(information_output.suggestions)
+                if information_output and information_output.suggestions
+                else list(result.get("suggestions", []))
+            ),
         }
 
         logger.info(
