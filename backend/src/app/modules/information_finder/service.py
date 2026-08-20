@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import logging
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -57,6 +58,7 @@ class InformationFinderOptions:
 
 
 DETERMINISTIC_CHUNKING_VERSION = "deterministic-v1"
+logger = logging.getLogger(__name__)
 
 
 class InformationFinderService:
@@ -94,7 +96,7 @@ class InformationFinderService:
             return None
         return await self.budget_ranges.search(region, category=category, currency=currency)
 
-    async def find(self, query: str) -> InformationFinderOutput:
+    async def find(self, query: str, *, force_refresh: bool = False) -> InformationFinderOutput:
         normalized_query = normalize_query(query)
         warnings: list[str] = []
         embedding_available = True
@@ -117,7 +119,9 @@ class InformationFinderService:
             local = []
             warnings.append(f"embedding_fallback:{exc.code}")
         now = datetime.now(timezone.utc)
-        fresh_local = [source for source in local if source.expires_at > now]
+        fresh_local = list(local) if force_refresh else [
+            source for source in local if source.expires_at > now
+        ]
         decision = self.freshness.for_query(normalized_query)
         local_candidates = sorted(
             fresh_local,
@@ -125,7 +129,7 @@ class InformationFinderService:
             reverse=True,
         )[: self.options.answer_source_limit]
         combined = list(local_candidates)
-        should_search = decision.force_refresh
+        should_search = force_refresh or decision.force_refresh
         search_queries: list[str] = []
 
         if self.search_query_planner is not None:
@@ -238,6 +242,11 @@ class InformationFinderService:
         try:
             generated = await self.answers.generate(normalized_query, ranked)
             invalid_ids = self._invalid_answer_source_ids(generated, ranked)
+            if invalid_ids:
+                logger.warning(
+                    "information_finder_answer_invalid type=citation invalid_source_ids=%s",
+                    invalid_ids,
+                )
             repair = getattr(self.answers, "generate_repair", None)
             if invalid_ids and callable(repair):
                 repair_attempted = True
@@ -251,6 +260,13 @@ class InformationFinderService:
                 generated, ranked
             )
         except Exception as exc:
+            error_code = getattr(exc, "code", type(exc).__name__).lower()
+            logger.warning(
+                "information_finder_answer_failed stage=%s type=%s invalid_source_ids=%s",
+                "repair" if repair_attempted else "initial",
+                error_code,
+                locals().get("invalid_ids", []),
+            )
             repair = getattr(self.answers, "generate_repair", None)
             if not repair_attempted and callable(repair):
                 try:
@@ -265,22 +281,34 @@ class InformationFinderService:
                         raise AnswerProviderInvalidOutput(
                             "answer repair cited unavailable source IDs"
                         )
-                except Exception:
-                    safe_no_answer = True
-                    warnings.append("answer_repair_failed:safe_no_answer")
-            elif repair_attempted:
-                safe_no_answer = True
-                warnings.append("answer_repair_failed:safe_no_answer")
-            elif not self.options.answer_fallback_enabled or self.fallback_answers is None:
+                except Exception as repair_exc:
+                    logger.warning(
+                        "information_finder_answer_repair_failed type=%s invalid_source_ids=%s",
+                        getattr(repair_exc, "code", type(repair_exc).__name__).lower(),
+                        locals().get("invalid_ids", []),
+                    )
+                    warnings.append("answer_repair_failed")
+            if not rendered_answer and self.options.answer_fallback_enabled and self.fallback_answers is not None:
+                try:
+                    generated = await self.fallback_answers.generate(normalized_query, ranked)
+                    rendered_answer, normalized_blocks, _ = validate_and_render_answer(
+                        generated, ranked
+                    )
+                    used_extractive_fallback = True
+                    warnings.append(f"answer_extractive_fallback:{error_code}")
+                    logger.info("information_finder_extractive_fallback_succeeded source_count=%d", len(ranked))
+                except Exception as fallback_exc:
+                    logger.warning(
+                        "information_finder_extractive_fallback_failed type=%s",
+                        getattr(fallback_exc, "code", type(fallback_exc).__name__).lower(),
+                    )
+            elif not repair_attempted and not self.options.answer_fallback_enabled:
                 raise
-            else:
-                generated = await self.fallback_answers.generate(normalized_query, ranked)
-                rendered_answer, normalized_blocks, _ = validate_and_render_answer(
-                    generated, ranked
-                )
-                used_extractive_fallback = True
-                error_code = getattr(exc, "code", type(exc).__name__)
-                warnings.append(f"answer_extractive_fallback:{error_code}")
+            elif not repair_attempted and self.fallback_answers is None:
+                raise
+            if not rendered_answer:
+                safe_no_answer = True
+                warnings.append("safe_no_answer:no_cited_content")
 
         if safe_no_answer:
             return InformationFinderOutput(

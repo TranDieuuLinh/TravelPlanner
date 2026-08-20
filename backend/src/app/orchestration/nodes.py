@@ -157,14 +157,25 @@ class RootNodes:
 
     async def run_information_finder(self, state: RootState) -> dict:
         result = await self.information_finder.ainvoke(
-            {"query": information_query(state)}
+            {
+                "query": information_query(state),
+                "force_refresh": state.get("force_refresh", False),
+            }
         )
         output = result["output"]
-        response, patch = await self.supervisor_service.compose_information_response(
-            message=state.get("message", ""),
-            conversation_summary=state.get("conversation_summary"),
-            output=output,
+        source_ids = {source.source_id for source in output.sources}
+        has_valid_evidence = bool(output.facts and output.sources) and all(
+            claim.source_ids and set(claim.source_ids).issubset(source_ids)
+            for claim in output.facts
         )
+        if has_valid_evidence:
+            response, patch = await self.supervisor_service.compose_information_response(
+                message=state.get("message", ""),
+                conversation_summary=state.get("conversation_summary"),
+                output=output,
+            )
+        else:
+            response, patch = output.answer.strip(), {}
         if patch.get("content_blocks"):
             resolver = getattr(self.information_finder_service, "entity_resolver", None)
             patch["content_blocks"] = await materialize_entity_spans(
