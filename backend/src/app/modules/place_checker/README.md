@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai PlaceChecker
 
-Cập nhật lần cuối: 2026-08-19.
+Cập nhật lần cuối: 2026-08-20.
 
 Thư mục này chứa kế hoạch triển khai stage PlaceChecker. Các module Python
 production sẽ được thêm bên cạnh `docs/` khi từng task được thực hiện.
@@ -9,6 +9,7 @@ production sẽ được thêm bên cạnh `docs/` khi từng task được th�
 
 ```text
 Explorer
+  -> ExplorerHandoffProjector
   -> PlaceChecker
   -> TripThemePlanner
   -> PlaceSelector
@@ -110,13 +111,11 @@ preference, style và tag-repetition trong lịch cuối.
   "inputADM": "Hanoi",
   "places": [],
   "inputItems": [],
-  "urlNotes": null,
   "days": 4,
   "budget": {
-    "level": "low",
-    "targetAmount": null,
+    "amountPerPerson": 2500000,
     "currency": "VND",
-    "source": "raw_prompt"
+    "level": "low"
   },
   "people": {
     "adults": 1,
@@ -124,15 +123,28 @@ preference, style và tag-repetition trong lịch cuối.
     "infants": 0
   },
   "shortPreferences": [],
-  "shortAvoids": ["nightlife"]
+  "shortAvoids": ["nightlife"],
+  "specialNotes": []
 }
 ```
 
 Địa điểm lấy từ URL được biểu diễn bằng phần tử trong
-`places[].sourcePlaces[]` có `origin` là `url`. `urlNotes` có thể là `null` và
-được chuẩn hóa thành danh sách rỗng. Boundary giữ các provenance field của
-Explorer gồm `platform`, `extractorVersion`, `modelVersion` và `cacheStatus`;
-candidate không bị loại chỉ vì mang metadata nguồn này.
+`places[].sourcePlaces[]` có `evidenceType="url"` và `sourceUrl`. Note đã liên
+kết nằm tại `sourcePlaces[].urlNotes[]` và chỉ chứa `summary`; không có
+top-level `urlNotes`. Boundary không chuyển `tags`, `confidence`, `origin`,
+`evidence`, `observedAt`, `sourceType`, extractor/model version hoặc cache
+metadata. Direct PlaceChecker payload tự gửi extra key sẽ thành
+candidate-level validation issue.
+
+`ExplorerHandoffProjector` là boundary duy nhất của root: merge Conversation
+Memory theo precedence, resolve tag bằng `auto-attach/tags-auto.yml`, validate
+lại canonical Explorer output, map provenance và tạo `PlaceCheckerInput`. Root
+không gate theo `ready`/`partial` hoặc `input_ADM`; thiếu destination được trả
+dạng `blocked`, còn Explorer/provider/runtime failure được trả dạng `error` có
+cấu trúc.
+
+Operation sửa trip context và phần việc Supervisor được mô tả tại
+[`Explorer Supervisor handoff`](../explorer/docs/supervisor-trip-context-handoff.md).
 
 Explorer truyền JSON camelCase. Pydantic chấp nhận camelCase này và chuyển sang
 snake_case trong Python; output JSON mẫu hiện dùng snake_case theo contract nội

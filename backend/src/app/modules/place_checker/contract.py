@@ -3,15 +3,15 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
-import re
 
 from pydantic import (
-    BaseModel,
     AliasChoices,
+    BaseModel,
     ConfigDict,
     Field,
     ValidationError,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
@@ -23,12 +23,15 @@ from app.modules.place_checker.enums import (
     SourceTier,
     TravelPace,
 )
-from app.shared.contracts.place import Coordinates, PlaceCandidate, VerifiedPlace
+from app.modules.place_checker.compat_output_contract import PlaceCheckerOutput as PlaceCheckerOutput
+from app.modules.place_checker.handoff_adapter import (
+    expand_compact_budget,
+    expand_compact_item,
+    expand_compact_place,
+    serialize_compact_handoff,
+)
+from app.shared.contracts.place import Coordinates, PlaceCandidate
 from app.shared.contracts.trip import TripIntent
-
-
-CoverageStatus = Literal["sufficient", "insufficient"]
-
 
 def _to_camel(value: str) -> str:
     head, *tail = value.split("_")
@@ -68,7 +71,7 @@ class PlaceCandidateInput(ContractModel):
     tags: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def coordinates_are_a_pair(self) -> "PlaceCandidateInput":
+    def coordinates_are_a_pair(self) -> PlaceCandidateInput:
         if (self.latitude is None) != (self.longitude is None):
             raise ValueError("latitude and longitude must be provided together")
         return self
@@ -113,7 +116,7 @@ class BudgetInput(ContractModel):
         if value is None:
             return None
         normalized = value.upper()
-        if not re.fullmatch(r"[A-Z]{3}", normalized):
+        if len(normalized) != 3 or not normalized.isalpha():
             raise ValueError("currency must be a three-letter code")
         return normalized
 
@@ -123,6 +126,10 @@ class BudgetInput(ContractModel):
             raise ValueError("currency is required when target_amount is provided")
         return self
 
+    @property
+    def amount_per_person(self) -> Decimal | None:
+        return self.target_amount
+
 
 class PeopleInput(ContractModel):
     adults: int = Field(ge=0, le=100)
@@ -130,7 +137,7 @@ class PeopleInput(ContractModel):
     infants: int = Field(ge=0, le=100)
 
     @model_validator(mode="after")
-    def group_size_is_supported(self) -> "PeopleInput":
+    def group_size_is_supported(self) -> PeopleInput:
         if self.total < 1:
             raise ValueError("at least one traveler is required")
         if self.total > 100:
@@ -160,7 +167,7 @@ class AdmResolution(ContractModel):
     alternatives: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def resolved_adm_is_complete(self) -> "AdmResolution":
+    def resolved_adm_is_complete(self) -> AdmResolution:
         required = (
             self.adm_id,
             self.canonical_name,
@@ -178,12 +185,8 @@ class CapacityRange(ContractModel):
     maximum_minutes: int = Field(ge=0)
 
     @model_validator(mode="after")
-    def values_are_ordered(self) -> "CapacityRange":
-        if not (
-            self.minimum_minutes
-            <= self.typical_minutes
-            <= self.maximum_minutes
-        ):
+    def values_are_ordered(self) -> CapacityRange:
+        if not (self.minimum_minutes <= self.typical_minutes <= self.maximum_minutes):
             raise ValueError("capacity values must be ordered")
         return self
 
@@ -209,13 +212,17 @@ class PlaceCheckerInput(ContractModel):
     )
     places: list[PlaceCandidateInput] = Field(default_factory=list, max_length=100)
     input_items: list[InputItem] = Field(default_factory=list, max_length=50)
-    url_notes: list[UrlNote] = Field(default_factory=list, max_length=200)
+    url_notes: list[UrlNote] = Field(default_factory=list, max_length=200, exclude=True)
     days: int = Field(ge=1, le=30)
     budget: BudgetInput
     people: PeopleInput
     short_preferences: list[str] = Field(default_factory=list)
     short_avoids: list[str] = Field(default_factory=list)
-    validation_issues: list[CandidateValidationIssue] = Field(default_factory=list)
+    special_notes: list[str] = Field(default_factory=list, max_length=50)
+    validation_issues: list[CandidateValidationIssue] = Field(
+        default_factory=list,
+        exclude=True,
+    )
 
     model_config = ConfigDict(
         alias_generator=_to_camel,
@@ -230,7 +237,10 @@ class PlaceCheckerInput(ContractModel):
         if not isinstance(value, dict):
             return value
         data = dict(value)
-        if not {"inputADM", "input_ADM", "input_adm"}.intersection(data) and "intent" in data:
+        if (
+            not {"inputADM", "input_ADM", "input_adm"}.intersection(data)
+            and "intent" in data
+        ):
             data = cls._adapt_legacy_payload(data)
 
         for alias, field_name in (
@@ -238,6 +248,7 @@ class PlaceCheckerInput(ContractModel):
             ("urlNotes", "url_notes"),
             ("shortPreferences", "short_preferences"),
             ("shortAvoids", "short_avoids"),
+            ("specialNotes", "special_notes"),
         ):
             if field_name not in data and alias in data:
                 data[field_name] = data.pop(alias)
@@ -260,32 +271,43 @@ class PlaceCheckerInput(ContractModel):
             if isinstance(nested, BaseModel):
                 data[field_name] = nested.model_dump()
 
+        notes = list(data.get("url_notes", []))
+        raw_items = data.get("input_items", [])
+        if isinstance(raw_items, list):
+            data["input_items"] = [expand_compact_item(item) for item in raw_items]
+        budget = data.get("budget")
+        if isinstance(budget, dict):
+            data["budget"] = expand_compact_budget(budget)
+
         raw_places = data.get("places", [])
         if not isinstance(raw_places, list):
             return data
         valid_places: list[PlaceCandidateInput] = []
-        issues = list(data.get("validation_issues", []))
+        issues: list[CandidateValidationIssue] = []
         for index, raw_place in enumerate(raw_places):
             try:
-                valid_places.append(PlaceCandidateInput.model_validate(raw_place))
-            except ValidationError as exc:
+                expanded, nested_notes = expand_compact_place(raw_place)
+                valid_places.append(PlaceCandidateInput.model_validate(expanded))
+                notes.extend(nested_notes)
+            except (ValidationError, ValueError) as exc:
                 name = raw_place.get("name") if isinstance(raw_place, dict) else None
+                message = (
+                    exc.errors(include_url=False)[0]["msg"]
+                    if isinstance(exc, ValidationError)
+                    else str(exc)
+                )
                 issues.append(
                     CandidateValidationIssue(
                         index=index,
                         name=name,
                         code="INVALID_PLACE_CANDIDATE",
-                        message=exc.errors(include_url=False)[0]["msg"],
+                        message=message,
                     )
                 )
         data["places"] = valid_places
+        data["url_notes"] = notes
         data["validation_issues"] = issues
         return data
-
-    @field_validator("url_notes", mode="before")
-    @classmethod
-    def normalize_nullable_notes(cls, value: Any) -> Any:
-        return [] if value is None else value
 
     @staticmethod
     def _adapt_legacy_payload(data: dict[str, Any]) -> dict[str, Any]:
@@ -293,7 +315,6 @@ class PlaceCheckerInput(ContractModel):
         places: list[dict[str, Any]] = []
         for candidate_value in data.get("candidates", []):
             candidate = PlaceCandidate.model_validate(candidate_value)
-            origin = "url" if candidate.source_url else "input"
             coordinates = candidate.coordinates
             places.append(
                 {
@@ -301,7 +322,7 @@ class PlaceCheckerInput(ContractModel):
                     "confidence": candidate.confidence,
                     "source_places": [
                         {
-                            "origin": origin,
+                            "origin": "url" if candidate.source_url else "input",
                             "evidence_type": "legacy_candidate",
                             "source_url": candidate.source_url,
                             "evidence": candidate.name,
@@ -323,6 +344,7 @@ class PlaceCheckerInput(ContractModel):
                 "target_amount": intent.budget,
                 "currency": "VND" if intent.budget is not None else None,
                 "source": "legacy_trip_intent",
+                "basis": "per_person",
             },
             "people": {
                 "adults": intent.people,
@@ -331,7 +353,12 @@ class PlaceCheckerInput(ContractModel):
             },
             "short_preferences": intent.preferences,
             "short_avoids": intent.avoids,
+            "special_notes": [],
         }
+
+    @model_serializer(mode="plain")
+    def serialize_compact_handoff(self) -> dict[str, Any]:
+        return serialize_compact_handoff(self)
 
     @property
     def intent(self) -> TripIntent:
@@ -371,10 +398,3 @@ class PlaceCheckerInput(ContractModel):
                 )
             )
         return result
-
-
-class PlaceCheckerOutput(BaseModel):
-    places: list[VerifiedPlace] = Field(default_factory=list)
-    rejected_candidates: list[PlaceCandidate] = Field(default_factory=list)
-    coverage_status: CoverageStatus
-    warnings: list[str] = Field(default_factory=list)

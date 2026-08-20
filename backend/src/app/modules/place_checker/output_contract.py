@@ -43,6 +43,7 @@ from app.modules.place_checker.style_candidate_contract import (
     StyleCandidateCoverage,
     StyleCandidateSelection,
 )
+from app.shared.contracts.agent import AgentError
 from app.shared.contracts.place import Coordinates
 from app.shared.contracts.source_note import SourceNote
 
@@ -98,9 +99,7 @@ class PlaceCheckerResult(ContractModel):
     style_candidate_selections: list[StyleCandidateSelection] = Field(
         default_factory=list
     )
-    style_candidate_coverage: list[StyleCandidateCoverage] = Field(
-        default_factory=list
-    )
+    style_candidate_coverage: list[StyleCandidateCoverage] = Field(default_factory=list)
     unresolved_style_inputs: list[str] = Field(default_factory=list)
     unresolved_item_style_inputs: list[str] = Field(default_factory=list)
     budget_analysis: BudgetAnalysis
@@ -123,6 +122,13 @@ class PlaceCheckerResult(ContractModel):
             coverage=self.coverage_analysis,
             gaps=self.gap_analysis,
         )
+
+
+class PlaceCheckerFailure(ContractModel):
+    schema_version: str = "place_checker.v1"
+    status: Literal["blocked", "error"]
+    error: AgentError
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PlannerPlaceContext(ContractModel):

@@ -85,7 +85,12 @@ def test_source_flow_preserves_explicit_prompt_preferences() -> None:
         }],
     })
 
-    assert output.short_preferences == ["culture", "coffee", "local_experience"]
+    assert output.short_preferences == [
+        "Văn hóa",
+        "đồ uống",
+        "địa phương",
+        "hoạt động",
+    ]
 
 
 def test_general_preferences_do_not_become_input_items() -> None:
@@ -97,13 +102,24 @@ def test_general_preferences_do_not_become_input_items() -> None:
     })
 
     assert output.input_items is None
-    assert output.short_preferences == ["culture", "local_food", "walking"]
+    assert output.short_preferences == [
+        "Văn hóa",
+        "địa phương",
+        "ẩm thực",
+        "giá rẻ",
+    ]
 
 
-def test_explicit_trip_styles_use_canonical_preference_values() -> None:
+def test_unmatched_trip_styles_are_dropped_by_runtime_taxonomy() -> None:
     output = invoke({"rawPrompt": "Du lịch Hà Nội 3 ngày kiểu chill và đi chậm"})
 
-    assert output.short_preferences == ["slow_travel", "relaxed"]
+    assert len(output.short_preferences) == 4
+    assert output.short_preferences[0] == "giá rẻ"
+    assert set(output.short_preferences) <= {
+        "giá rẻ", "địa phương", "ẩm thực", "Văn hóa", "thiên nhiên",
+        "biển", "núi", "cảnh quan",
+    }
+    assert output.short_avoids == ["sang trọng"]
 
 
 def test_named_venue_keeps_only_proper_name_and_links_prompt_item() -> None:

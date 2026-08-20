@@ -35,21 +35,28 @@ def test_planning_flow_returns_clarification() -> None:
 
     assert result.get("itinerary") is None
     assert result["clarification_question"] == "Bạn muốn đi tỉnh hoặc thành phố nào?"
+    assert result["place_output"].status == "blocked"
+    assert result["place_output"].error.code == "PLACE_CHECKER_DESTINATION_REQUIRED"
 
 
 def test_image_without_prompt_routes_to_explorer() -> None:
     graph = create_root_graph()
-    result = asyncio.run(graph.ainvoke(
-        {
-            "request_id": "request-image",
-            "message": "",
-            "images": [{
-                "fileName": "capture.png", "mimeType": "image/png",
-                "ocrText": "Du lịch ở Huế, tham quan Đại Nội",
-            }],
-        },
-        config={"configurable": {"thread_id": str(uuid4())}},
-    ))
+    result = asyncio.run(
+        graph.ainvoke(
+            {
+                "request_id": "request-image",
+                "message": "",
+                "images": [
+                    {
+                        "fileName": "capture.png",
+                        "mimeType": "image/png",
+                        "ocrText": "Du lịch ở Huế, tham quan Đại Nội",
+                    }
+                ],
+            },
+            config={"configurable": {"thread_id": str(uuid4())}},
+        )
+    )
 
     assert result["decision"].route == "explorer"
     assert result["explorer_output"].input_adm == "Huế"
@@ -84,7 +91,10 @@ def test_same_thread_routes_english_destination_follow_up_to_information() -> No
 
     asyncio.run(
         graph.ainvoke(
-            {"request_id": "context-info-1", "message": "Tôi muốn biết thêm về Hà Nội."},
+            {
+                "request_id": "context-info-1",
+                "message": "Tôi muốn biết thêm về Hà Nội.",
+            },
             config=config,
         )
     )

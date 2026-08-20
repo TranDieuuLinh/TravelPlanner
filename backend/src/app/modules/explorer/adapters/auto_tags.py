@@ -13,8 +13,8 @@ def _normalized_words(value: str) -> str:
     )
 
 
-class YamlPlaceTagCatalog:
-    """Read the editable tag dictionary for every public Explorer response."""
+class YamlTagCatalog:
+    """Read the editable Explorer tag taxonomy on every operation."""
 
     def __init__(self, path: str | Path | None = None) -> None:
         self.path = Path(path).expanduser() if path else self._default_path()
@@ -37,17 +37,36 @@ class YamlPlaceTagCatalog:
             "Cannot find auto-attach/tags-auto.yml; set EXPLORER_TAGS_AUTO_PATH."
         )
 
-    def tags_for(self, place_name: str) -> list[str]:
-        definitions = self._read_definitions()
-        normalized_name = f" {_normalized_words(place_name)} "
+    def definitions(self) -> dict[str, list[str]]:
+        return self._read_definitions()
+
+    def tags_for(self, value: str) -> list[str]:
+        return self._tags_for(value, self.definitions())
+
+    @staticmethod
+    def _tags_for(value: str, definitions: dict[str, list[str]]) -> list[str]:
+        normalized_value = f" {_normalized_words(value)} "
         return [
             tag
             for tag, keywords in definitions.items()
-            if any(
-                f" {_normalized_words(keyword)} " in normalized_name
+            if _normalized_words(tag) == _normalized_words(value)
+            or any(
+                f" {_normalized_words(keyword)} " in normalized_value
                 for keyword in keywords
             )
         ]
+
+    def resolve(self, values: list[str]) -> list[str]:
+        definitions = self.definitions()
+        return list(dict.fromkeys(
+            tag
+            for value in values
+            for tag in self._tags_for(value, definitions)
+        ))
+
+    def filter_allowed(self, values: list[str]) -> list[str]:
+        allowed = set(self.definitions())
+        return list(dict.fromkeys(value for value in values if value in allowed))
 
     def _read_definitions(self) -> dict[str, list[str]]:
         raw = yaml.safe_load(self.path.read_text(encoding="utf-8"))
@@ -66,3 +85,7 @@ class YamlPlaceTagCatalog:
                 )
             definitions[tag] = keywords
         return definitions
+
+
+# Compatibility for callers created before tags were limited to trip preferences.
+YamlPlaceTagCatalog = YamlTagCatalog

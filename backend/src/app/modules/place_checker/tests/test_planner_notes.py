@@ -70,7 +70,6 @@ def test_tiktok_source_evidence_survives_when_url_note_is_unattached() -> None:
         evidence_type="transcript",
         evidence="8h30: Đi dạo Phố đi bộ Hồ Gươm",
         source_url="https://www.tiktok.com/@creator/video/1",
-        platform="tiktok",
     )
     result.checked_places[0] = first.model_copy(
         update={

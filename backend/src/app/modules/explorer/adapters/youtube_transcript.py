@@ -5,17 +5,13 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app.modules.explorer.adapters.url_sources import (
-    _ytdlp_extract,
-    metadata_artifacts,
-)
+from app.modules.explorer.adapters.url_sources import _ytdlp_extract
 from app.modules.explorer.errors import ExplorerOperationError
-from app.modules.explorer.models import SourceArtifact, SourceExtractionResult
+from app.modules.explorer.models import SourceArtifact
 from app.shared.llm import InlineMedia, LlmClient, LlmError
 
 
@@ -84,7 +80,12 @@ class YtDlpCaptionClient:
             ) from exc
         language = self._select_language(metadata)
         if language is None:
-            return None
+            return TranscriptBundle(
+                artifacts=[],
+                metadata=metadata,
+                duration_seconds=self._duration(metadata),
+                source="youtube_metadata",
+            )
         options = {
             **metadata_options,
             "writesubtitles": True,
@@ -106,10 +107,20 @@ class YtDlpCaptionClient:
             key=lambda path: (".vi" not in path.name.casefold(), path.name),
         )
         if not files:
-            return None
+            return TranscriptBundle(
+                artifacts=[],
+                metadata=metadata,
+                duration_seconds=self._duration(metadata),
+                source="youtube_metadata",
+            )
         artifacts = self._parse_vtt(files[0], url)
         if not artifacts:
-            return None
+            return TranscriptBundle(
+                artifacts=[],
+                metadata=metadata,
+                duration_seconds=self._duration(metadata),
+                source="youtube_metadata",
+            )
         return TranscriptBundle(
             artifacts=artifacts,
             metadata=metadata,
@@ -338,46 +349,3 @@ class GeminiAudioTranscriber:
                 "MEDIA_PROBE_FAILED", "Không đọc được duration audio YouTube."
             )
         return float(stdout.decode().strip())
-
-
-class YouTubeTranscriptSourceExtractor:
-    def __init__(
-        self,
-        captions,
-        audio,
-        transcriber,
-        *,
-        max_concurrency: int = 1,
-    ) -> None:
-        self.captions = captions
-        self.audio = audio
-        self.transcriber = transcriber
-        self._limiter = asyncio.Semaphore(max(1, max_concurrency))
-
-    async def extract(self, url: str, *, source_index: int, raw_prompt: str | None):
-        async with self._limiter:
-            return await self._extract(url, source_index=source_index)
-
-    async def _extract(self, url: str, *, source_index: int):
-        with TemporaryDirectory(prefix="explorer-youtube-") as work_dir:
-            try:
-                bundle = await self.captions.fetch(url, work_dir)
-            except ExplorerOperationError:
-                bundle = None
-            if bundle is None:
-                audio_path, metadata = await self.audio.download(url, work_dir)
-                transcript, duration = await self.transcriber.transcribe(
-                    audio_path, work_dir, url
-                )
-                artifacts = [*metadata_artifacts(metadata, url), *transcript]
-            else:
-                duration = bundle.duration_seconds
-                artifacts = [*metadata_artifacts(bundle.metadata, url), *bundle.artifacts]
-        return SourceExtractionResult(
-            sourceIndex=source_index, sourceKind="url", sourceRef=url,
-            status="succeeded", artifacts=artifacts,
-            sourceDurationSeconds=duration,
-            analyzedDurationSeconds=duration,
-            coverageRatio=1.0 if duration is not None else None,
-            coverageStatus="complete" if duration is not None else "unknown",
-        )

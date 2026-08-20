@@ -1,14 +1,18 @@
 import asyncio
 
+from app.modules.explorer.adapters.postgres import asyncpg_dsn
 from app.modules.explorer.adapters.url_cache import (
     InMemoryUrlSourceCache,
     _decode_artifacts,
     _decode_coverage,
     canonicalize_source_url,
 )
-from app.modules.explorer.adapters.postgres import asyncpg_dsn
 from app.modules.explorer.contract import ExplorerInput, ExplorerPlace, PlaceSource
-from app.modules.explorer.models import ExplorerDraft, SourceArtifact, SourceExtractionResult
+from app.modules.explorer.models import (
+    ExplorerDraft,
+    SourceArtifact,
+    SourceExtractionResult,
+)
 from app.modules.explorer.service import ExplorerService
 
 
@@ -23,12 +27,14 @@ class CountingUrlExtractor:
             sourceKind="url",
             sourceRef=url,
             status="succeeded",
-            artifacts=[SourceArtifact(
-                artifactType="caption",
-                text="Huế",
-                sourceUrl=url,
-                language="vi",
-            )],
+            artifacts=[
+                SourceArtifact(
+                    artifactType="caption",
+                    text="Huế",
+                    sourceUrl=url,
+                    language="vi",
+                )
+            ],
         )
 
 
@@ -65,30 +71,38 @@ class FallbackDraftGenerator:
         self.calls += 1
         return ExplorerDraft(
             input_adm="Hanoi",
-            places=[ExplorerPlace(
-                name="Structured Place",
-                sourcePlaces=[PlaceSource(
-                    origin="url",
-                    evidenceType="web_text",
-                    sourceUrl=sources[0].source_ref,
-                    evidence="## 1. Structured Place",
-                )],
-            )],
+            places=[
+                ExplorerPlace(
+                    name="Structured Place",
+                    sourcePlaces=[
+                        PlaceSource(
+                            origin="url",
+                            evidenceType="web_text",
+                            sourceUrl=sources[0].source_ref,
+                            evidence="## 1. Structured Place",
+                        )
+                    ],
+                )
+            ],
         )
 
 
 class FastDraftGenerator:
     async def from_sources(self, *, raw_prompt, sources):
         return ExplorerDraft(
-            places=[ExplorerPlace(
-                name="Semantic Place",
-                sourcePlaces=[PlaceSource(
-                    origin="url",
-                    evidenceType="caption",
-                    sourceUrl=sources[0].source_ref,
-                    evidence="Semantic Place",
-                )],
-            )]
+            places=[
+                ExplorerPlace(
+                    name="Semantic Place",
+                    sourcePlaces=[
+                        PlaceSource(
+                            origin="url",
+                            evidenceType="caption",
+                            sourceUrl=sources[0].source_ref,
+                            evidence="Semantic Place",
+                        )
+                    ],
+                )
+            ]
         )
 
 
@@ -108,16 +122,20 @@ def extract(service: ExplorerService, payload: ExplorerInput):
 
 
 def test_canonical_url_removes_trackers_and_normalizes_youtube() -> None:
-    assert canonicalize_source_url(
-        "HTTPS://youtu.be/abc123/?utm_source=x&t=7#caption"
-    ) == "https://www.youtube.com/watch?v=abc123&t=7"
+    assert (
+        canonicalize_source_url("HTTPS://youtu.be/abc123/?utm_source=x&t=7#caption")
+        == "https://www.youtube.com/watch?v=abc123&t=7"
+    )
 
 
 def test_canonical_url_removes_all_tiktok_query_parameters() -> None:
-    assert canonicalize_source_url(
-        "https://www.tiktok.com/@two_peas_abroad/video/7619325732052831510"
-        "?q=things%20to%20do%20in%20Hanoi&t=1786464699496"
-    ) == "https://www.tiktok.com/@two_peas_abroad/video/7619325732052831510"
+    assert (
+        canonicalize_source_url(
+            "https://www.tiktok.com/@two_peas_abroad/video/7619325732052831510"
+            "?q=things%20to%20do%20in%20Hanoi&t=1786464699496"
+        )
+        == "https://www.tiktok.com/@two_peas_abroad/video/7619325732052831510"
+    )
 
 
 def test_asyncpg_dsn_accepts_sqlalchemy_postgres_schemes() -> None:
@@ -152,7 +170,7 @@ def test_current_cache_context_restores_transcript_coverage() -> None:
             "coverageRatio": 1.0,
             "coverageStatus": "complete",
         },
-        "8",
+        "9",
     )
 
     assert coverage == {
@@ -167,11 +185,9 @@ def test_cache_hit_skips_second_url_extraction() -> None:
     extractor = CountingUrlExtractor()
     service = service_with(extractor)
 
-    first = extract(service, ExplorerInput(urls=["https://example.com/post?utm_source=x"]))
-    second = extract(service, ExplorerInput(urls=["https://example.com/post"]))
+    extract(service, ExplorerInput(urls=["https://example.com/post?utm_source=x"]))
+    extract(service, ExplorerInput(urls=["https://example.com/post"]))
 
-    assert first.cache_status == "miss"
-    assert second.cache_status == "hit"
     assert extractor.calls == 1
 
 
@@ -181,9 +197,8 @@ def test_force_refresh_bypasses_hit_and_replaces_cache() -> None:
     payload = ExplorerInput(urls=["https://example.com/post"])
     extract(service, payload)
 
-    refreshed = extract(service, payload.model_copy(update={"force_refresh": True}))
+    extract(service, payload.model_copy(update={"force_refresh": True}))
 
-    assert refreshed.cache_status == "bypassed"
     assert extractor.calls == 2
 
 
@@ -194,7 +209,6 @@ def test_cache_failure_does_not_block_extraction() -> None:
     result = extract(service, ExplorerInput(urls=["https://example.com/post"]))
 
     assert result.status == "succeeded"
-    assert result.cache_status == "miss"
     assert extractor.calls == 1
 
 
@@ -237,17 +251,21 @@ def test_source_synthesis_timeout_uses_uncached_deterministic_fallback() -> None
         sourceKind="url",
         sourceRef="https://example.com/slow",
         status="succeeded",
-        artifacts=[SourceArtifact(
-            artifactType="caption",
-            text="Hà Nội",
-            sourceUrl="https://example.com/slow",
-        )],
+        artifacts=[
+            SourceArtifact(
+                artifactType="caption",
+                text="Hà Nội",
+                sourceUrl="https://example.com/slow",
+            )
+        ],
     )
 
-    draft = asyncio.run(service.source_draft(
-        ExplorerInput(rawPrompt="Đi Hà Nội", forceRefresh=True),
-        [source],
-    ))
+    draft = asyncio.run(
+        service.source_draft(
+            ExplorerInput(rawPrompt="Đi Hà Nội", forceRefresh=True),
+            [source],
+        )
+    )
 
     assert draft.input_adm == "Hanoi"
     assert fallback.calls == 1
@@ -272,7 +290,9 @@ def test_successful_semantic_synthesis_also_keeps_structured_web_places() -> Non
         status="succeeded",
     )
 
-    draft = asyncio.run(service.source_draft(ExplorerInput(urls=[source.source_ref]), [source]))
+    draft = asyncio.run(
+        service.source_draft(ExplorerInput(urls=[source.source_ref]), [source])
+    )
 
     assert [place.name for place in draft.places] == [
         "Semantic Place",

@@ -61,8 +61,11 @@ Planner validation/preflight failure trả `422`; provider, matrix hoặc solver
 `detail.retryable`. Observability ghi các response này là failure thay vì
 `success=true` với `plannerOutput=null`.
 
-Explorer output `partial` vẫn được phép đi tiếp sang Place Checker khi có
-`input_ADM`; các nguồn lỗi/timeout được giữ trong `warnings` và
+Mọi Explorer result đều đi qua `ExplorerHandoffProjector`; route không còn lọc
+theo `ready`/`partial` hoặc sự có mặt của `input_ADM`. Projector merge
+Conversation Memory, chuẩn hóa tag và validate; thiếu destination trở thành
+PlaceChecker failure `blocked`, còn Explorer/provider failure trở thành `error`
+có cấu trúc. Các nguồn lỗi/timeout vẫn được giữ trong `warnings` và
 `completeness.sources`. Place Checker `food[].venueType` luôn là `restaurant`
 ngay cả khi category thô từ provider là `travel_place` nhưng policy theo tên,
 tag, pool và provider note đã phân loại candidate đó là nhà hàng.
@@ -141,55 +144,71 @@ có role gần nhất; nếu không đủ căn cứ phân biệt thì route `fin
 tùy chọn. `forceRefresh=true` buộc URL extraction bỏ qua cache. Explorer output
 không có `schemaVersion` và gồm:
 
-- `status`: `ready`, `partial`, `clarification` hoặc `error`;
 - `intakeId`, `input_ADM`;
 - `days`, `startDate`, `timezone`; nếu prompt không có ngày thì ngày bắt đầu là
   ngày mai, nếu không có duration thì `days=3`. Turn mới có URL/ảnh/địa điểm
   hoặc item mới cũng giữ default này; chỉ follow-up thuần tham chiếu lịch cũ
   mới kế thừa duration từ Conversation Memory;
-- `places`, trong đó mỗi place có `name`, `addressHint`, `tags`, `sourcePlaces`
-  đã dedupe và `urlNotes` liên quan; public JSON không trả confidence của place.
-  `tags` chỉ được lấy từ key trong `auto-attach/tags-auto.yml`, đối chiếu keyword
-  với tên place và file được đọc lại khi tạo mỗi response. `sourcePlaces` chỉ
-  trả `evidenceType` cấp cao (`raw_prompt` hoặc `url`), `sourceUrl`,
-  `sourceTimeHint` và `addressHint`; ảnh người dùng gửi trực tiếp thuộc nhóm
-  `raw_prompt`. Provenance chi tiết như origin, evidence, observed time,
-  platform, extractor/model version và cache status chỉ được giữ nội bộ để
-  chuyển sang Place Checker;
-- `inputItems`, chỉ trả `name` và `itemType` cho food, drink hoặc activity cụ
-  thể được nêu rõ trong raw prompt; action, liên kết place, evidence và
+- `places`, trong đó mỗi place public có `name` và `sourcePlaces` đã dedupe.
+  `sourcePlaces` trả `evidenceType` cấp cao
+  (`raw_prompt` hoặc `url`), `sourceUrl`, `sourceTimeHint`, `addressHint` và
+  `urlNotes` liên quan; ảnh người dùng gửi trực tiếp thuộc nhóm `raw_prompt`.
+  `tags`, confidence, origin, evidence, observed time, `platform`,
+  extractor/model version và cache status không thuộc public output hoặc
+  PlaceChecker input;
+- `inputItems`, chỉ trả `name`, `itemType` và `relatedPlaceName` cho food, drink
+  hoặc activity cụ thể được nêu rõ trong raw prompt; action, evidence và
   confidence vẫn là dữ liệu nội bộ; sở thích/chủ đề chung được đưa vào
   `shortPreferences`;
-- `places[].urlNotes` chỉ giữ `summary` cho chi tiết hữu ích từ
+- `places[].sourcePlaces[].urlNotes` chỉ giữ `summary` cho chi tiết hữu ích từ
   URL/ảnh/OCR/STT/metadata. Note chỉ được xuất khi `placeName` khớp hoặc summary
   nhắc đúng tên place; top-level `urlNotes`, `placeName`, `evidenceType` và
   `sourceUrl` lặp lại trong nested note đã bị bỏ;
-- `days`, `budget`, `people`, `shortPreferences`, `shortAvoids`; JSON public
+- `days`, `budget={amountPerPerson,currency,level}`, `people`,
+  `shortPreferences`, `shortAvoids`, `specialNotes`; JSON public
   không trả budget source, clarification, warnings, completeness hoặc
-  structured `AgentError`. `shortPreferences` và `shortAvoids` cũng được map
-  qua `tags-auto.yml`, chỉ trả key khai báo trong file và bỏ value nội bộ không
-  có tag tương ứng. Các field chẩn đoán vẫn được graph dùng nội bộ.
+  structured `AgentError`. Với prompt provider Gemini, taxonomy mới nhất từ
+  `tags-auto.yml` được đưa vào system prompt và JSON Schema enum; output được
+  kiểm tra lại để hai danh sách chỉ chứa exact key trong file. Adapter
+  deterministic resolve tín hiệu cũ qua cùng taxonomy; public boundary chỉ lọc
+  key hợp lệ, không tự map lại semantic value. Public JSON cũng không trả `status`; trạng thái `ready`,
+  `partial`, `clarification` hoặc `error` vẫn được `ExplorerService` và graph
+  dùng nội bộ. Các field chẩn đoán vẫn được graph dùng nội bộ.
 
 Tên place chỉ chứa tên riêng của địa điểm/cơ sở. Khi raw prompt nói một hành
 động hoặc món gắn với cơ sở có tên, hành động/món nằm trong `inputItems`; liên
 kết `relatedPlaceName` và evidence chỉ giữ nội bộ. Evidence từ source tương tự
-nằm trong `urlNotes`. Explorer không resolve place.
+nằm trong `sourcePlaces[].urlNotes`. Explorer không resolve place.
 
-Policy mặc định: `days=3` và chỉ raw prompt được ghi đè; `people=2 adults` và
-chỉ raw prompt được ghi đè; budget ưu tiên raw prompt, whole-trip image,
-whole-trip URL, rồi `low`. Giá vé/món riêng không phải whole-trip budget.
+Policy mặc định: `days=3`, `people=2 adults`, budget level `low`, currency VND
+và `specialNotes=[]`. Budget handoff luôn là tổng toàn chuyến cho một người;
+group total do user nhập được chia đúng một lần. Khi user không nhập số tiền,
+projector tính `amountPerPerson` theo profile ADM/level hiện có và giữ `null`
+nếu chưa có profile. Preference/avoid giữ dữ liệu user trước rồi bổ sung từ
+`insight-user.yml`; mọi giá trị public vẫn phải là key của `tags-auto.yml`.
+Giá vé/món riêng không phải whole-trip budget.
 Draft generator có adapter deterministic và structured Gemini; prompt provider
 được chọn bằng `EXPLORER_DRAFT_PROVIDER`, source provider bằng
-`EXPLORER_SOURCE_DRAFT_PROVIDER`.
+`EXPLORER_SOURCE_DRAFT_PROVIDER`. `tags-auto.yml` được đọc lại ở mỗi lần tạo
+prompt draft và mỗi lần normalize/output, nên thay đổi taxonomy có hiệu lực mà
+không restart backend; draft lấy từ cache cũng được normalize bằng bản hiện tại.
 
 `SourceArtifact` là contract nội bộ giữa importer và bước synthesis, không phải
 field public của `ExplorerOutput`. Artifact phân biệt `url_metadata`, `caption`,
-`stt`, `frame_ocr`, `web_text` và `image_ocr`, đồng thời giữ URL/time hint. URL
+`transcript`, `stt`, `frame_ocr`, `web_text` và `image_ocr`, đồng thời giữ
+URL/time hint. URL
 cache canonicalize TikTok/Instagram/Facebook bằng cách bỏ toàn bộ query trước
 khi tra `source_documents`, tương thích artifact cache legacy v6. URL và ảnh
-trong cùng request được chạy song song. YouTube ưu tiên full subtitle/automatic
-caption mà không tải video; nếu không có caption mới tải audio-only, chia chunk
-có timestamp và mặc định chỉ transcribe một chunk Gemini tại một thời điểm.
+trong cùng request được chạy song song. URL media đánh giá primary evidence từ
+native transcript/caption, title, description, location và tags bằng structured
+semantic preflight cùng policy deterministic. Primary chỉ đủ khi có destination
+hoặc named place, đủ travel detail và confidence tối thiểu; prompt yêu cầu
+`tất cả`/`đầy đủ` luôn ép fallback. Lỗi preflight cũng fallback an toàn thay vì
+bỏ media. YouTube ưu tiên full subtitle/automatic caption mà không tải video;
+metadata-only đủ coverage cũng không tải media. Nếu primary thiếu mới tải
+audio-only để STT; transcript vẫn thiếu thì chạy riêng frame OCR, không STT lặp.
+Audio được chia chunk có timestamp và mặc định chỉ transcribe một chunk Gemini
+tại một thời điểm.
 Transcript dài được extract place
 theo từng chunk; mỗi chunk dùng một structured request trả đồng thời place, ADM
 và note thay vì ba request provider riêng. Query `t=` hoặc
@@ -198,9 +217,11 @@ text chunk mặc định 20.000 ký tự với tối đa 8.000 output token đ�
 nhiều request khi transcript dài. Mặc định tối đa năm chunk được xử lý song
 song và toàn bộ synthesis trong một Explorer service bị giới hạn sáu request
 Gemini đang chạy; chunk thành công được giữ khi chỉ chunk khác cần retry.
-TikTok ưu tiên Safari HTML: parse JSON nhúng, kiểm tra CDN allowlist rồi stream
-MP4 có giới hạn; lỗi source không fallback sang `yt-dlp`. Instagram dùng `yt-dlp`
-theo thứ tự standard, Chrome và Chrome Android. ffprobe chỉ chạy OCR/STT cho
+TikTok ưu tiên Safari HTML: parse JSON nhúng và kiểm tra metadata trước; chỉ khi
+primary coverage thiếu mới kiểm tra CDN allowlist rồi stream MP4 có giới hạn.
+Lỗi source không fallback sang `yt-dlp`. Instagram cũng kiểm tra metadata
+`yt-dlp` trước, rồi mới tải media theo thứ tự standard, Chrome và Chrome Android
+nếu cần. ffprobe chỉ chạy OCR/STT cho
 stream video/audio thực sự tồn tại; website dùng
 HTTP, `curl-cffi` Safari, rồi fallback Playwright Chromium trước khi qua
 trafilatura. Frame OCR lấy mẫu mỗi 3 giây, bị giới hạn 48 frame và 10 ảnh mỗi
@@ -212,11 +233,11 @@ công và đưa code nhánh lỗi vào `warnings`. Một source lỗi hoàn toà
 ghi trong `warnings`; batch vẫn đi tiếp nếu còn ít nhất một source dùng được.
 Raw prompt tùy chọn trong source flow được parse song song với source synthesis;
 các tín hiệu rõ từ prompt được merge theo precedence trước normalize.
-Kết quả source nội bộ có `cacheStatus` (`hit`, `miss`, `bypassed`) để quan sát
-luồng cache, nhưng field này không được gửi cho Gemini synthesis và không thuộc
-`ExplorerOutput` public. Cache PostgreSQL dùng canonical URL, TTL và extractor
-version; adapter tương thích đọc artifact version 6 của `old_one` và ghi version
-8 theo `SourceArtifact` hiện tại, kèm metadata coverage. Draft synthesis được cache riêng theo prompt,
+Cache hit/miss/bypass được ghi log theo control flow, không được gắn vào source
+result hoặc JSON handoff. Cache PostgreSQL vẫn dùng canonical URL, TTL và cột
+extractor version để loại artifact không tương thích; adapter đọc artifact
+version 6/8 và ghi version 9 theo `SourceArtifact` hiện tại, kèm
+metadata coverage. Draft synthesis được cache riêng theo prompt,
 artifact evidence, model namespace và policy version; draft cache không thuộc
 public output và bị bypass khi `forceRefresh=true`.
 Source result còn theo dõi duration/coverage transcript, tổng số synthesis
@@ -231,9 +252,13 @@ coverage, retry/error, precedence và persistence policy thuộc `ExplorerServic
 Mọi URL/image/media provider được inject qua port; adapter không phụ thuộc
 graph, node hoặc state nội bộ.
 
-`PlaceCheckerInput` nhận trực tiếp `input_ADM`, `places`, `inputItems`,
-`urlNotes`, `days`, `budget`, `people`, `shortPreferences` và `shortAvoids` từ
-Explorer qua root orchestration. Chỉ output `ready` được chuyển tiếp.
+`ExplorerHandoffProjector` là boundary duy nhất tạo `PlaceCheckerInput`. Current
+Explorer output được ưu tiên, Conversation Memory chỉ bổ sung context còn thiếu;
+places được merge một lần, preferences/avoids được resolve bằng taxonomy hiện
+tại trong `tags-auto.yml`, rồi toàn bộ `ExplorerOutput` và `PlaceCheckerInput`
+được validate lại. PlaceChecker nhận `inputADM`, `places`, `inputItems`, `days`,
+`budget`, `people`, `shortPreferences`, `shortAvoids` và `specialNotes`; không
+nhận top-level `urlNotes` hoặc status `ready`/`partial` của Explorer.
 
 Rich `PlaceCheckerResult` giữ evaluation, provenance và diagnostic. Sau đó
 `PlaceCheckerPlannerOutputBuilder` tạo compact
@@ -491,7 +516,8 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | `GeminiLlmClient.generate` / `generate_media` | `shared/llm` | system/user prompt, tùy chọn tools hoặc inline image/audio | Text response; dùng key pool chung, tối đa một request đang chạy trên mỗi key |
 | `UrlSourceRouter` | `explorer` | URL YouTube/TikTok/Instagram/website | `SourceExtractionResult` chứa artifact có provenance |
 | `PostgresUrlSourceCache` | `explorer` | canonical URL, TTL, extractor version | artifact URL chuẩn hóa từ `source_documents` |
-| `GeminiMediaAnalyzer` | `explorer` | video/audio/ảnh | OCR frame và STT chunk chạy song song |
+| `GeminiPrimaryEvidenceEvaluator` | `explorer` | transcript/caption/metadata đã chuẩn hóa | semantic facts; policy local quyết định đủ coverage hay fallback media |
+| `GeminiMediaAnalyzer` | `explorer` | video/audio/ảnh và nhánh tùy chọn | OCR frame, STT chunk hoặc chỉ OCR cho YouTube đã có transcript |
 | `WebsiteSourceExtractor` | `explorer` | URL website public | HTTP, curl-cffi Safari, Playwright, rồi Markdown trafilatura |
 | `SearchPlacesTool.search` | `shared/tools/search_places` | `PlaceSearchRequest` | `PlaceSearchResult` có status, selected, top matches, provider attempts và resolution reason |
 | `GoogleMapsPlaywrightSearch.search` | `shared/tools/search_places` | Query, canonical ADM, type hint và limit | Candidate Google Maps chuẩn hóa, lưu `pending` với provenance trước khi trả |

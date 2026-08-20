@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -55,10 +56,6 @@ class PlaceSource(ExplorerModel):
     source_time_hint: str | None = Field(default=None, max_length=80)
     address_hint: str | None = Field(default=None, max_length=300)
     observed_at: datetime | None = None
-    platform: str | None = Field(default=None, max_length=40)
-    extractor_version: str | None = Field(default=None, max_length=80)
-    model_version: str | None = Field(default=None, max_length=120)
-    cache_status: Literal["hit", "miss", "bypassed"] | None = None
 
 
 class ExplorerPlace(ExplorerModel):
@@ -141,7 +138,9 @@ class ExplorerInput(ExplorerModel):
         for value in values:
             parsed = urlparse(value.strip())
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                raise ValueError("Source URLs must use http or https and include a host.")
+                raise ValueError(
+                    "Source URLs must use http or https and include a host."
+                )
         return values
 
 
@@ -185,6 +184,7 @@ class ExplorerOutput(ExplorerModel):
     people: ExplorerPeople = Field(default_factory=ExplorerPeople)
     short_preferences: list[str] = Field(default_factory=list)
     short_avoids: list[str] = Field(default_factory=list)
+    special_notes: list[str] = Field(default_factory=list, max_length=50)
     clarification_question: str | None = Field(default=None, max_length=500)
     warnings: list[str] = Field(default_factory=list)
     completeness: ExplorerCompleteness | None = None
@@ -198,27 +198,6 @@ def _public_evidence_type(*, is_url: bool) -> PublicEvidenceType:
     return "url" if is_url else "raw_prompt"
 
 
-class ExplorerApiPlaceSource(ExplorerModel):
-    evidence_type: PublicEvidenceType
-    source_url: str | None = Field(default=None, max_length=2048)
-    source_time_hint: str | None = Field(default=None, max_length=80)
-    address_hint: str | None = Field(default=None, max_length=300)
-
-    @classmethod
-    def from_internal(cls, source: PlaceSource) -> "ExplorerApiPlaceSource":
-        return cls(
-            evidence_type=_public_evidence_type(is_url=source.origin == "url"),
-            source_url=source.source_url,
-            source_time_hint=source.source_time_hint,
-            address_hint=source.address_hint,
-        )
-
-
-class ExplorerApiRequestedItem(ExplorerModel):
-    name: str
-    item_type: ItemType
-
-
 class ExplorerApiSourceNote(ExplorerModel):
     summary: str
 
@@ -227,12 +206,35 @@ class ExplorerApiSourceNote(ExplorerModel):
         return cls(summary=note.summary)
 
 
+class ExplorerApiPlaceSource(ExplorerModel):
+    evidence_type: PublicEvidenceType
+    source_url: str | None = Field(default=None, max_length=2048)
+    source_time_hint: str | None = Field(default=None, max_length=80)
+    address_hint: str | None = Field(default=None, max_length=300)
+    url_notes: list[ExplorerApiSourceNote]
+
+    @classmethod
+    def from_internal(
+        cls, source: PlaceSource, *, notes: list[SourceNote]
+    ) -> "ExplorerApiPlaceSource":
+        return cls(
+            evidence_type=_public_evidence_type(is_url=source.origin == "url"),
+            source_url=source.source_url,
+            source_time_hint=source.source_time_hint,
+            address_hint=source.address_hint,
+            url_notes=[ExplorerApiSourceNote.from_internal(note) for note in notes],
+        )
+
+
+class ExplorerApiRequestedItem(ExplorerModel):
+    name: str
+    item_type: ItemType
+    related_place_name: str | None = None
+
+
 class ExplorerApiPlace(ExplorerModel):
     name: str
-    address_hint: str | None = None
-    tags: list[str]
     source_places: list[ExplorerApiPlaceSource]
-    url_notes: list[ExplorerApiSourceNote]
 
     @classmethod
     def from_internal(
@@ -240,22 +242,26 @@ class ExplorerApiPlace(ExplorerModel):
         place: ExplorerPlace,
         *,
         notes: list[SourceNote],
-        tags_for: Callable[[str], list[str]],
     ) -> "ExplorerApiPlace":
         return cls(
             name=place.name,
-            address_hint=place.address_hint,
-            tags=tags_for(place.name),
-            source_places=cls._unique_sources(place.source_places),
-            url_notes=[ExplorerApiSourceNote.from_internal(note) for note in notes],
+            source_places=cls._unique_sources(place.source_places, notes),
         )
 
-    @staticmethod
-    def _unique_sources(sources: list[PlaceSource]) -> list[ExplorerApiPlaceSource]:
+    @classmethod
+    def _unique_sources(
+        cls, sources: list[PlaceSource], notes: list[SourceNote]
+    ) -> list[ExplorerApiPlaceSource]:
         unique: list[ExplorerApiPlaceSource] = []
+        by_signature: dict[
+            tuple[str, str | None, str | None, str | None],
+            ExplorerApiPlaceSource,
+        ] = {}
         seen: set[tuple[str, str | None, str | None, str | None]] = set()
         for source in sources:
-            public = ExplorerApiPlaceSource.from_internal(source)
+            public = ExplorerApiPlaceSource.from_internal(
+                source, notes=cls._notes_for_source(source, notes)
+            )
             signature = (
                 public.evidence_type,
                 public.source_url,
@@ -265,18 +271,40 @@ class ExplorerApiPlace(ExplorerModel):
             if signature not in seen:
                 unique.append(public)
                 seen.add(signature)
+                by_signature[signature] = public
+            else:
+                stored = by_signature[signature]
+                stored.url_notes = cls._unique_notes(
+                    [*stored.url_notes, *public.url_notes]
+                )
         return unique
+
+    @staticmethod
+    def _notes_for_source(
+        source: PlaceSource, notes: list[SourceNote]
+    ) -> list[SourceNote]:
+        source_is_url = source.origin == "url"
+        return [
+            note
+            for note in notes
+            if (note.source_url is not None) == source_is_url
+            and (not source_is_url or note.source_url == source.source_url)
+        ]
+
+    @staticmethod
+    def _unique_notes(
+        notes: list[ExplorerApiSourceNote],
+    ) -> list[ExplorerApiSourceNote]:
+        return list({note.summary: note for note in notes}.values())
 
 
 class ExplorerApiBudget(ExplorerModel):
-    level: BudgetLevel
-    target_amount: int | None = None
+    amount_per_person: int | None = None
     currency: str
-    basis: BudgetBasis
+    level: BudgetLevel
 
 
 class ExplorerApiOutput(ExplorerModel):
-    status: ExplorerStatus
     intake_id: str
     input_adm: str | None = Field(default=None, alias="input_ADM")
     places: list[ExplorerApiPlace] | None = None
@@ -288,17 +316,17 @@ class ExplorerApiOutput(ExplorerModel):
     people: ExplorerPeople
     short_preferences: list[str]
     short_avoids: list[str]
+    special_notes: list[str]
 
     @classmethod
     def from_internal(
         cls,
         output: ExplorerOutput,
         *,
-        tags_for: Callable[[str], list[str]],
+        filter_tags: Callable[[list[str]], list[str]],
     ) -> "ExplorerApiOutput":
         notes = output.url_notes or []
         return cls(
-            status=output.status,
             intake_id=output.intake_id,
             input_adm=output.input_adm,
             places=(
@@ -306,7 +334,6 @@ class ExplorerApiOutput(ExplorerModel):
                     ExplorerApiPlace.from_internal(
                         place,
                         notes=cls._notes_for_place(place, notes),
-                        tags_for=tags_for,
                     )
                     for place in output.places
                 ]
@@ -315,7 +342,11 @@ class ExplorerApiOutput(ExplorerModel):
             ),
             input_items=(
                 [
-                    ExplorerApiRequestedItem(name=item.name, item_type=item.item_type)
+                    ExplorerApiRequestedItem(
+                        name=item.name,
+                        item_type=item.item_type,
+                        related_place_name=item.related_place_name,
+                    )
                     for item in output.input_items
                 ]
                 if output.input_items is not None
@@ -325,27 +356,24 @@ class ExplorerApiOutput(ExplorerModel):
             start_date=output.start_date,
             timezone=output.timezone,
             budget=ExplorerApiBudget(
-                level=output.budget.level,
-                target_amount=output.budget.target_amount,
+                amount_per_person=cls._amount_per_person(output),
                 currency=output.budget.currency,
-                basis=output.budget.basis,
+                level=output.budget.level,
             ),
             people=output.people,
-            short_preferences=cls._dictionary_tags(
-                output.short_preferences, tags_for
-            ),
-            short_avoids=cls._dictionary_tags(output.short_avoids, tags_for),
+            short_preferences=filter_tags(output.short_preferences),
+            short_avoids=filter_tags(output.short_avoids),
+            special_notes=output.special_notes,
         )
 
     @staticmethod
-    def _dictionary_tags(
-        values: list[str], tags_for: Callable[[str], list[str]]
-    ) -> list[str]:
-        return list(
-            dict.fromkeys(
-                tag
-                for value in values
-                for tag in tags_for(value)
+    def _amount_per_person(output: ExplorerOutput) -> int | None:
+        amount = output.budget.target_amount
+        if amount is None or output.budget.basis == "per_person":
+            return amount
+        return int(
+            (Decimal(amount) / Decimal(output.people.total)).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
             )
         )
 

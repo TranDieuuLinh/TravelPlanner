@@ -11,7 +11,11 @@ from app.modules.itinerary_planner.public import (
     ItineraryPlannerOutput,
     PlannerPreflightFailure,
 )
-from app.modules.place_checker.public import PlaceCheckerOutput, PlaceCheckerResult
+from app.modules.place_checker.public import (
+    PlaceCheckerFailure,
+    PlaceCheckerOutput,
+    PlaceCheckerResult,
+)
 from app.modules.plan_editor.public import EditOperation
 from app.modules.supervisor.public import SupervisorDecision
 from app.shared.contracts.itinerary import Itinerary
@@ -36,7 +40,7 @@ class RootState(TypedDict, total=False):
     decision: SupervisorDecision
     explorer_output: ExplorerOutput
     information_output: InformationFinderOutput
-    place_output: PlaceCheckerOutput | PlaceCheckerResult
+    place_output: PlaceCheckerOutput | PlaceCheckerResult | PlaceCheckerFailure
     planner_input: ItineraryPlannerInput
     planner_output: ItineraryPlannerOutput
     planner_preflight_failure: PlannerPreflightFailure

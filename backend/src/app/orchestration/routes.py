@@ -11,16 +11,8 @@ def route_supervisor(
 
 def route_after_explorer(
     state: RootState,
-) -> Literal["place_checker", "information_finder", "finish"]:
-    if state.get("pending_user_context"):
-        return "information_finder"
-    output = state["explorer_output"]
-    return "place_checker" if explorer_can_plan(output) else "finish"
-
-
-def explorer_can_plan(output) -> bool:
-    """A partial source import may continue when trip identity is complete."""
-    return output.status in {"ready", "partial"} and bool(output.input_adm)
+) -> Literal["place_checker"]:
+    return "place_checker"
 
 
 def route_after_place_checker(
@@ -29,4 +21,8 @@ def route_after_place_checker(
     output = state["place_output"]
     status = getattr(output, "status", None)
     status_value = getattr(status, "value", status)
-    return "finish" if status_value == "blocked" else "itinerary_planner"
+    return (
+        "itinerary_planner"
+        if status_value in {"completed", "conditional", "partial"}
+        else "finish"
+    )

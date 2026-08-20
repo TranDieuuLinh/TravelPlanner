@@ -1,6 +1,6 @@
 # Task 10: Output và tích hợp workflow
 
-Cập nhật lần cuối: 2026-08-18
+Cập nhật lần cuối: 2026-08-20
 
 ## Mục tiêu
 
@@ -48,13 +48,24 @@ status và lifecycle state.
 ## Luồng tích hợp
 
 ```text
-Explorer output
--> PlaceCheckerInput projection
+Supervisor (chỉ chọn route)
+-> ExplorerOutput canonical
+-> ExplorerHandoffProjector
+   -> merge Conversation Memory theo precedence
+   -> normalize tags bằng tags-auto.yml hiện tại
+   -> validate lại ExplorerOutput
+   -> map provenance và tạo PlaceCheckerInput
 -> PlaceCheckerService.check
--> PlaceCheckerOutput
+-> PlaceChecker success | blocked | error có cấu trúc
 -> SelectedPlaceContext/PlaceSelectionInput projection
 -> TripThemePlanner và PlaceSelector
 ```
+
+Root không còn gate handoff theo Explorer status `ready`/`partial` hoặc
+`input_ADM`. Mọi Explorer result đều tới projector; projector tự phục hồi
+destination từ memory nếu có, nếu không trả `blocked`. Explorer error và lỗi
+provider/runtime được map thành `error` thay vì để exception thô thoát khỏi node.
+Status nội bộ của Explorer không thuộc `PlaceCheckerInput`.
 
 Chỉ `planner_ready` và `conditional` place được đưa vào planning projection.
 Mandatory place bị blocked/unresolved vẫn hiển thị trong PlaceChecker output và
@@ -115,7 +126,7 @@ FinalItineraryPlanner trong checkpoint này.
   "trip": {
     "party": {"adults": 2, "kids": 1},
     "preferences": {
-      "tags": ["history"],
+      "tags": ["lịch sử"],
       "avoidTags": ["nightlife"],
       "styles": ["slow_travel"]
     }
@@ -232,9 +243,9 @@ phòng ở boundary. Output kèm `coordinates` và `pricePerNight`.
 
 ## Budget truyền sang Planner
 
-- Có `targetAmount`: giữ số tiền đã được Explorer chuẩn hóa theo người; direct
-  PlaceChecker payload còn `group_total` được chia đúng một lần.
-- Không có `targetAmount`: lấy P25/P50/P80 theo budget level từ pool
+- Có `amountPerPerson`: giữ số tiền toàn chuyến đã được Explorer chuẩn hóa theo
+  một người.
+- Không có `amountPerPerson`: lấy P25/P50/P80 theo budget level từ pool
   Accommodation, Restaurant và TravelPlace đã query trong cây ADM; dùng ba
   bữa/ngày, 2/3/4 activity và 4/5/6 chặng Xanh SM 5 km rồi phát
   `source=estimated_daily_cost`, `dailyEstimate` cùng `profileVersion`.

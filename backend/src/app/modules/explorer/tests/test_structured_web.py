@@ -10,8 +10,6 @@ def _source(text: str) -> SourceExtractionResult:
         sourceKind="url",
         sourceRef="https://example.com/hanoi-guide",
         status="succeeded",
-        platform="web",
-        cacheStatus="bypassed",
         artifacts=[
             SourceArtifact(
                 artifactType="web_text",
@@ -42,8 +40,6 @@ Body prose mentioning a shop must not become a place.
     provenance = places[0].source_places[0]
     assert provenance.source_url == source.source_ref
     assert provenance.evidence_type == "web_text"
-    assert provenance.cache_status == "bypassed"
-    assert provenance.extractor_version == "structured-web-heading-v1"
 
 
 def test_removes_generic_activity_copy_without_place_name_dictionary() -> None:

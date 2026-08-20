@@ -1,39 +1,50 @@
-import re
+import logging
 
-from app.modules.explorer.public import build_explorer_graph
+from pydantic import ValidationError
+
+from app.modules.explorer.public import YamlTagCatalog, build_explorer_graph
+from app.modules.information_finder.entity_linking import link_verified_entities
 from app.modules.information_finder.public import (
     InformationFinderService,
     build_information_finder_graph,
 )
-from app.modules.information_finder.entity_linking import link_verified_entities
 from app.modules.itinerary_planner.public import (
     ItineraryPlannerInput,
     ItineraryPlannerOutput,
     build_itinerary_planner_graph,
 )
-from app.modules.plan_editor.public import PlanEditorInput, build_plan_editor_graph
+from app.modules.place_checker.errors import (
+    CandidateSourceTimeout,
+    PlaceCatalogUnavailableError,
+)
 from app.modules.place_checker.public import (
-    PlaceCheckerInput,
+    PlaceCheckerFailure,
     PlaceCheckerPipeline,
     PlaceCheckerPlannerOutputBuilder,
     PlaceCheckerPlanningProjector,
     build_place_checker_graph,
     build_place_checker_pipeline_graph,
 )
+from app.modules.plan_editor.public import PlanEditorInput, build_plan_editor_graph
 from app.modules.supervisor.public import (
     SupervisorService,
     build_supervisor_graph,
 )
-from app.modules.supervisor.service import SupervisorService as SupervisorFormatter
-from app.orchestration.root_state import RootState
-from app.orchestration.routes import explorer_can_plan
+from app.orchestration.explorer_handoff import (
+    ExplorerHandoffError,
+    ExplorerHandoffProjector,
+    explorer_output_to_intent,
+)
 from app.orchestration.memory_projection import (
     build_blocked_clarification,
     information_query,
     memory_field,
-    merge_memory_places,
     supervisor_conversation_context,
 )
+from app.orchestration.root_state import RootState
+from app.shared.contracts.agent import AgentError
+
+logger = logging.getLogger(__name__)
 
 
 class RootNodes:
@@ -44,11 +55,16 @@ class RootNodes:
         explorer_service=None,
         place_checker_pipeline: PlaceCheckerPipeline | None = None,
         itinerary_planner_graph=None,
+        handoff_projector: ExplorerHandoffProjector | None = None,
     ) -> None:
         self.information_finder_service = information_finder_service
         self.supervisor_service = supervisor_service or SupervisorService()
         self.supervisor = build_supervisor_graph(self.supervisor_service)
         self.explorer = build_explorer_graph(explorer_service)
+        tag_catalog = getattr(explorer_service, "tag_catalog", None)
+        self.explorer_handoff = handoff_projector or ExplorerHandoffProjector(
+            tag_catalog or YamlTagCatalog()
+        )
         self.information_finder = build_information_finder_graph(
             information_finder_service
         )
@@ -112,115 +128,26 @@ class RootNodes:
             update["response"] = response
         if decision.clarification_question is not None:
             update["clarification_question"] = decision.clarification_question
-            if self.information_finder is not None and pending_context:
-                fields = []
-                for request in pending_context:
-                    field = request.get("field") if isinstance(request, dict) else request.field
-                    if field and field not in fields:
-                        fields.append(field)
-                destination = dest or "điểm đến của chuyến đi"
-                query = (
-                    f"Gợi ý lựa chọn {', '.join(fields)} cho chuyến đi tại {destination}; "
-                    "ưu tiên địa điểm và hoạt động thực tế, có nguồn xác minh"
-                )
-                suggestion_result = await self.information_finder.ainvoke({"query": query})
-                suggestion_output = suggestion_result["output"]
-                update["suggestions"] = list(suggestion_output.suggestions)
-                update["information_output"] = suggestion_output.model_copy(
-                    update={"content_blocks": []}
-                )
         return update
 
     async def run_explorer(self, state: RootState) -> dict:
         result = await self.explorer.ainvoke(
-            {"payload": {
-                "rawPrompt": state.get("message") or None,
-                "urls": state.get("urls", []),
-                "images": state.get("images", []),
-                "forceRefresh": state.get("force_refresh", False),
-            }}
+            {
+                "payload": {
+                    "rawPrompt": state.get("message") or None,
+                    "urls": state.get("urls", []),
+                    "images": state.get("images", []),
+                    "forceRefresh": state.get("force_refresh", False),
+                }
+            }
         )
         output = result["output"]
-        pending = state.get("pending_user_context", [])
-        if self.information_finder_service and pending and any(
-            (item.get("field") if isinstance(item, dict) else item.field) == "budget"
-            for item in pending
-        ):
-            destination = getattr(state.get("explorer_output"), "input_adm", None)
-            budget = await self.information_finder_service.suggest_budget_range(
-                destination or "", category="daily_trip"
-            )
-            if budget and budget.sample_count:
-                output = output.model_copy(update={"suggestions": [
-                    {"field": "budget", "label": "Tiết kiệm", "value": budget.q1, "currency": budget.currency},
-                    {"field": "budget", "label": "Tiêu chuẩn", "value": budget.median, "currency": budget.currency},
-                    {"field": "budget", "label": "Thoải mái", "value": budget.q3, "currency": budget.currency},
-                ]})
-
-        # Context enrichment from conversation memory if present
-        memory = state.get("conversation_memory")
-        if memory:
-            dest = getattr(memory, "destination", None) or (memory.get("destination") if isinstance(memory, dict) else None)
-            dur = getattr(memory, "duration_days", None) or (memory.get("duration_days") or memory.get("durationDays") if isinstance(memory, dict) else None)
-            if dest:
-                output.input_adm = dest
-            raw_prompt = state.get("message") or ""
-            explicit_days = re.search(
-                r"\b\d{1,2}\s*(?:ngày|days?)\b", raw_prompt, re.IGNORECASE
-            )
-            has_new_input = bool(
-                state.get("urls")
-                or state.get("images")
-                or output.places
-                or output.input_items
-            )
-            # A new source/place intake starts from Explorer's default unless
-            # this turn explicitly states a duration. Pure follow-ups such as
-            # "lên plan các điểm bên trên" still inherit the remembered trip
-            # duration.
-            if dur and not explicit_days and not has_new_input:
-                output.days = dur
-            if memory:
-                output.places = merge_memory_places(
-                    output.places or [],
-                    memory,
-                    resolved_references=state.get("resolved_references"),
-                )
-            travelers = memory_field(memory, "travelers")
-            if travelers:
-                output.people = output.people.model_copy(
-                    update={"adults": travelers, "children": 0, "infants": 0}
-                )
-            preferences = memory_field(memory, "preferences", []) or []
-            avoids = memory_field(memory, "avoids", []) or []
-            if preferences:
-                output.short_preferences = list(
-                    dict.fromkeys([*output.short_preferences, *preferences])
-                )
-            if avoids:
-                output.short_avoids = list(dict.fromkeys([*output.short_avoids, *avoids]))
-            budget = memory_field(memory, "budget")
-            if isinstance(budget, str) and budget in {"low", "medium", "high"}:
-                output.budget = output.budget.model_copy(update={"level": budget})
-
-            if output.status == "clarification" and output.input_adm:
-                output.status = "ready"
-                output.clarification_question = None
-
         update = {
             "explorer_output": output,
             "warnings": [*state.get("warnings", []), *output.warnings],
         }
-        if not explorer_can_plan(output):
-            update.update(
-                {
-                    "clarification_question": output.clarification_question,
-                    "response": output.clarification_question
-                    or (output.error.message if output.error else "Explorer failed."),
-                }
-            )
-        else:
-            update["intent"] = output_to_intent(output)
+        if output.input_adm:
+            update["intent"] = explorer_output_to_intent(output)
         return update
 
     async def run_information_finder(self, state: RootState) -> dict:
@@ -242,27 +169,53 @@ class RootNodes:
         }
 
     async def run_place_checker(self, state: RootState) -> dict:
-        if self.rich_place_checker:
-            explorer = state["explorer_output"]
-            payload = PlaceCheckerInput.model_validate(
-                {
-                    "inputADM": explorer.input_adm,
-                    "places": self._place_checker_places(
-                        merge_memory_places(
-                            explorer.places or [],
-                            state.get("conversation_memory"),
-                            resolved_references=state.get("resolved_references"),
-                        )
-                    ),
-                    "inputItems": explorer.input_items,
-                    "urlNotes": explorer.url_notes,
-                    "days": explorer.days,
-                    "budget": explorer.budget,
-                    "people": explorer.people,
-                    "shortPreferences": explorer.short_preferences,
-                    "shortAvoids": explorer.short_avoids,
-                }
+        try:
+            return await self._run_place_checker(state)
+        except ExplorerHandoffError as exc:
+            return self._place_checker_failure(
+                state,
+                code=exc.code,
+                message=str(exc),
+                status=exc.status,
+                retryable=exc.retryable,
             )
+        except ValidationError:
+            logger.warning("PlaceChecker handoff validation failed", exc_info=True)
+            return self._place_checker_failure(
+                state,
+                code="PLACE_CHECKER_INPUT_INVALID",
+                message="Dữ liệu Explorer chưa hợp lệ để kiểm tra địa điểm.",
+                status="blocked",
+            )
+        except (PlaceCatalogUnavailableError, CandidateSourceTimeout):
+            logger.warning("PlaceChecker provider unavailable", exc_info=True)
+            return self._place_checker_failure(
+                state,
+                code="PLACE_CHECKER_PROVIDER_UNAVAILABLE",
+                message="Nguồn dữ liệu địa điểm tạm thời không khả dụng.",
+                status="error",
+                retryable=True,
+            )
+        except Exception:
+            logger.exception("PlaceChecker pipeline failed")
+            return self._place_checker_failure(
+                state,
+                code="PLACE_CHECKER_FAILED",
+                message="Không thể kiểm tra địa điểm cho chuyến đi.",
+                status="error",
+            )
+
+    async def _run_place_checker(self, state: RootState) -> dict:
+        handoff = self.explorer_handoff.project(
+            state["explorer_output"],
+            raw_prompt=state.get("message") or "",
+            memory=state.get("conversation_memory"),
+            resolved_references=state.get("resolved_references"),
+            has_source_input=bool(state.get("urls") or state.get("images")),
+        )
+        explorer = handoff.explorer_output
+        payload = handoff.place_checker_input
+        if self.rich_place_checker:
             graph_result = await self.place_checker.ainvoke(
                 {
                     "request_id": state["request_id"],
@@ -273,12 +226,17 @@ class RootNodes:
             output = graph_result["result"]
             projection = PlaceCheckerPlanningProjector().project(output)
             update = {
+                "explorer_output": explorer,
                 "place_output": output,
-                "warnings": list(dict.fromkeys([
-                    *state.get("warnings", []),
-                    *projection.warnings,
-                    *output.warnings,
-                ])),
+                "warnings": list(
+                    dict.fromkeys(
+                        [
+                            *state.get("warnings", []),
+                            *projection.warnings,
+                            *output.warnings,
+                        ]
+                    )
+                ),
             }
             if output.status.value == "blocked":
                 clarification_q, response_msg = build_blocked_clarification(output)
@@ -301,56 +259,52 @@ class RootNodes:
 
         result = await self.place_checker.ainvoke(
             {
-                "input_adm": state["explorer_output"].input_adm,
-                "places": merge_memory_places(
-                    state["explorer_output"].places or [],
-                    state.get("conversation_memory"),
-                    resolved_references=state.get("resolved_references"),
-                ),
-                "input_items": state["explorer_output"].input_items,
-                "url_notes": state["explorer_output"].url_notes,
-                "days": state["explorer_output"].days,
-                "budget": state["explorer_output"].budget,
-                "people": state["explorer_output"].people,
-                "short_preferences": state["explorer_output"].short_preferences,
-                "short_avoids": state["explorer_output"].short_avoids,
+                "input_adm": payload.input_adm,
+                "places": payload.places,
+                "input_items": payload.input_items,
+                "url_notes": payload.url_notes,
+                "days": payload.days,
+                "budget": payload.budget,
+                "people": payload.people,
+                "short_preferences": payload.short_preferences,
+                "short_avoids": payload.short_avoids,
+                "special_notes": payload.special_notes,
             }
         )
         output = result["output"]
+        warning = (
+            "FinalItineraryPlanner requires the new trip/places/food input "
+            "contract; no itinerary was generated."
+        )
         return {
+            "explorer_output": explorer,
             "place_output": output,
-            "warnings": [*state.get("warnings", []), *output.warnings],
+            "warnings": [*state.get("warnings", []), *output.warnings, warning],
+            "response": warning,
         }
 
     @staticmethod
-    def _place_checker_places(places) -> list[dict]:
-        """Map only the public evidence fields supported by PlaceChecker."""
-        result = []
-        for place in places:
-            result.append(
-                {
-                    "name": place.name,
-                    "addressHint": place.address_hint,
-                    "confidence": place.confidence,
-                    "sourcePlaces": [
-                        source.model_dump(
-                            mode="json",
-                            by_alias=True,
-                            include={
-                                "origin",
-                                "evidence_type",
-                                "source_url",
-                                "evidence",
-                                "source_time_hint",
-                                "address_hint",
-                                "observed_at",
-                            },
-                        )
-                        for source in place.source_places
-                    ],
-                }
-            )
-        return result
+    def _place_checker_failure(
+        state: RootState,
+        *,
+        code: str,
+        message: str,
+        status: str,
+        retryable: bool = False,
+    ) -> dict:
+        failure = PlaceCheckerFailure(
+            status=status,
+            error=AgentError(code=code, message=message, retryable=retryable),
+            warnings=[message],
+        )
+        update = {
+            "place_output": failure,
+            "warnings": list(dict.fromkeys([*state.get("warnings", []), message])),
+            "response": message,
+        }
+        if status == "blocked":
+            update["clarification_question"] = message
+        return update
 
     async def run_itinerary_planner(self, state: RootState) -> dict:
         planner_input = state.get("planner_input")
@@ -437,16 +391,3 @@ class RootNodes:
                 "I can help with travel planning and destination information.",
             )
         }
-
-
-def output_to_intent(output):
-    from app.shared.contracts.trip import TripIntent
-
-    return TripIntent(
-        destination=output.input_adm,
-        days=output.days,
-        budget=float(output.budget.target_amount) if output.budget.target_amount else None,
-        people=output.people.total,
-        preferences=output.short_preferences,
-        avoids=output.short_avoids,
-    )

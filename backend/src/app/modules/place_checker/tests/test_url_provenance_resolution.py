@@ -28,7 +28,6 @@ def test_url_place_cannot_resolve_to_unrelated_catalog_name() -> None:
                 candidate.source_places[0].model_copy(
                     update={
                         "source_url": "https://www.tiktok.com/@creator/video/1",
-                        "platform": "tiktok",
                     }
                 )
             ]
@@ -69,7 +68,6 @@ def test_url_place_resolves_verified_catalog_alias() -> None:
                     evidence_type="transcript",
                     evidence="18h00: Ngắm hoàng hôn Hồ Tây",
                     source_url="https://www.tiktok.com/@creator/video/2",
-                    platform="tiktok",
                 )
             ]
         }

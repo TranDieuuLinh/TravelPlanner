@@ -70,9 +70,14 @@ hay migration và không ghi raw prompt/raw third-party payload. Trước produc
 cần xác định database ownership rồi triển khai durable adapter cho port
 `ExplorerSnapshotRepository`; lỗi lưu snapshot không được phép đi tiếp sang
 PlaceChecker.
-YouTube/Instagram importer dùng `yt-dlp`; TikTok đọc HTML Safari và media CDN
-trực tiếp; website dùng `httpx`, `curl-cffi`, fallback Playwright và
-`trafilatura`; OCR/STT dùng Gemini. Migration
+`TripContextPatch` cho các operation set/add/remove chỉ tồn tại trong graph state
+của lượt hiện tại; thay đổi handoff này không thêm table, column hoặc migration.
+Payload sang PlaceChecker không lưu place tags/confidence hay provenance nội bộ.
+YouTube/Instagram importer dùng `yt-dlp`; TikTok đọc HTML Safari. URL media đánh
+giá transcript/metadata/description trước và chỉ tải media CDN để chạy OCR/STT
+khi primary evidence chưa đủ; policy này không thêm bảng hoặc cột. Website dùng
+`httpx`, `curl-cffi`, fallback Playwright và `trafilatura`; OCR/STT dùng Gemini.
+Migration
 `002_explorer_source_document_cache.sql` nhận ownership bảng
 `source_documents`. Cache chỉ lưu `SourceArtifact` đã chuẩn hóa và lỗi nhánh
 gọn; media tạm và raw third-party payload không được lưu. Media tạm được xóa
@@ -568,7 +573,7 @@ Ngày sửa đổi cuối cùng: 2026-08-11.
 
 Ngày sửa đổi cuối cùng: 2026-08-12. Bảng cache này hiện do module Explorer sở
 hữu; migration là `backend/migrations/002_explorer_source_document_cache.sql`.
-Adapter đọc tương thích artifact version 6 của `old_one`, ghi version 8, dùng
+Adapter đọc tương thích artifact version 6/8, ghi version 9, dùng
 TTL mặc định 7 ngày và unique canonical URL. Đây không phải bảng của
 Information Finder.
 

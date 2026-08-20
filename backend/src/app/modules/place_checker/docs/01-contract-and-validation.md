@@ -21,32 +21,28 @@ Tối thiểu cần định nghĩa:
 - `BudgetInput` và `PeopleInput`;
 - enum cho lifecycle, verification, source tier, severity và output status.
 
-JSON từ Explorer dùng camelCase: `inputADM`, `addressHint`, `sourcePlaces`,
-`evidenceType`, `observedAt`, `inputItems`, `relatedPlaceName`, `urlNotes`,
-`targetAmount`, `shortPreferences` và `shortAvoids`. Field Python giữ
-snake_case. Contract vẫn nhận snake_case để các service nội bộ và dữ liệu cũ
-không bị hỏng.
+JSON từ Explorer dùng camelCase: `inputADM`, `sourcePlaces`, `evidenceType`,
+`sourceUrl`, `sourceTimeHint`, `addressHint`, nested `urlNotes`, `inputItems`,
+`relatedPlaceName`, `amountPerPerson`, `shortPreferences`, `shortAvoids` và
+`specialNotes`. Field Python giữ snake_case.
 
-`SourcePlaceEvidence` cũng giữ metadata provenance của Explorer gồm `platform`,
-`extractorVersion`, `modelVersion` và `cacheStatus`. Các field tùy chọn này phải
-được nhận trước identity resolution; không được biến candidate hợp lệ thành
-validation issue chỉ vì metadata nguồn.
+Runtime metadata `platform`, `extractorVersion`, `modelVersion` và `cacheStatus`
+không thuộc handoff contract. Explorer có thể giữ chúng trong telemetry nội bộ,
+nhưng PlaceChecker chỉ nhận evidence cần cho resolution và planning.
 
 ## Quy tắc kiểm tra dữ liệu
 
 - Trim `inputADM` và bắt buộc non-empty.
 - `days` nằm trong 1-30.
-- Confidence nằm trong 0-1.
 - Latitude và longitude nếu có phải xuất hiện cùng nhau và nằm trong range hợp lệ.
 - Explorer candidate phải có ít nhất một record trong `sourcePlaces`.
-- Evidence origin phải là `input`, `url` hoặc source đã đăng ký rõ ràng.
-- `urlNotes=null` được chuẩn hóa thành `[]`.
-- `observedAt` nếu có phải parse được thành datetime hợp lệ.
+- `evidenceType` chỉ là `raw_prompt` hoặc `url`; URL type bắt buộc có
+  `sourceUrl`, còn raw prompt bắt buộc không có URL.
+- `sourcePlaces[].urlNotes` mặc định là `[]` và mỗi note chỉ có `summary`.
 - `relatedPlaceName` là liên kết mềm từ item tới place đã được Explorer nhận diện.
 - Số people không âm và tổng people phải lớn hơn 0.
-- `target_amount` nếu có phải không âm và phải có currency; `basis` nhận
-  `per_person` hoặc `group_total`. Explorer chuyển group total về per-person
-  trước handoff, còn default `per_person` giữ tương thích input cũ.
+- `amountPerPerson` nếu có phải không âm; currency là mã ba chữ cái. Explorer
+  chuyển group total về per-person trước handoff.
 - Preference và avoid array rỗng là hợp lệ.
 
 Candidate malformed nên trở thành candidate-level validation issue nếu có thể
@@ -56,18 +52,19 @@ request-level failure.
 ## Các bước triển khai
 
 1. Thêm contract model và enum.
-2. Thêm field/model validator và normalize nullable note.
+2. Thêm field/model validator cho evidence type, URL và nested note.
 3. Thêm structured candidate validation issue model.
 4. Thêm serialization test để ngăn day/route field lọt vào contract.
 
 ## Test
 
 - Parse nguyên payload camelCase Hanoi của Explorer và serialize alias ngược lại.
-- Normalize null note.
-- Reject ADM rỗng, day 0/day 31, confidence sai, people âm, total people bằng 0
+- Normalize nested note rỗng.
+- Reject ADM rỗng, day 0/day 31, people âm, total people bằng 0
   và budget malformed.
 - Reject tọa độ thiếu một vế hoặc ngoài range.
-- Bảo toàn raw evidence, address hint và source time hint.
+- Bảo toàn address hint, source URL, source time hint và note summary.
+- Xác nhận serialized payload không có tags/confidence/provenance nội bộ.
 - Xác nhận không provider nào được gọi.
 
 ## Điều kiện hoàn thành

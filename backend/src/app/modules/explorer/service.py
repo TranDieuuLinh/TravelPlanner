@@ -1,32 +1,33 @@
 import asyncio
-from datetime import date
 import logging
 import re
 import unicodedata
+from datetime import date
 from uuid import uuid4
 
-from app.modules.explorer.contract import (
-    ExplorerBudget,
-    ExplorerInput,
-    ExplorerOutput,
-)
-from app.modules.explorer.completeness import build_completeness
 from app.modules.explorer.adm_reconciliation import reconcile_adm_candidates
+from app.modules.explorer.completeness import build_completeness
+from app.modules.explorer.contract import ExplorerBudget, ExplorerInput, ExplorerOutput
 from app.modules.explorer.draft_key import explorer_draft_cache_key
-from app.modules.explorer.errors import ExplorerOperationError
 from app.modules.explorer.intake_policy import normalize_intake_items
-from app.modules.explorer.models import BatchCoverage, ExplorerDraft, SourceExtractionResult
+from app.modules.explorer.models import (
+    BatchCoverage,
+    ExplorerDraft,
+    SourceExtractionResult,
+)
 from app.modules.explorer.ports import (
     ExplorerDraftCache,
     ExplorerDraftGenerator,
     ExplorerSnapshotRepository,
     ImageSourceExtractor,
+    InsightCatalog,
+    TagCatalog,
     UrlSourceCache,
     UrlSourceExtractor,
 )
 from app.modules.explorer.retry import run_with_one_retry
-from app.modules.explorer.source_warnings import source_warnings
 from app.modules.explorer.source_execution import mark_synthesis_timeout, safe_source
+from app.modules.explorer.source_warnings import source_warnings
 from app.modules.explorer.tools import normalize_budget_per_person
 from app.modules.explorer.trip_defaults import (
     prompt_start_date,
@@ -34,7 +35,6 @@ from app.modules.explorer.trip_defaults import (
     tomorrow,
 )
 from app.shared.contracts.agent import AgentError
-
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,8 @@ class ExplorerService:
         source_extraction_timeout_seconds: float = 90,
         source_synthesis_timeout_seconds: float = 60,
         fallback_drafts: ExplorerDraftGenerator | None = None,
+        tag_catalog: TagCatalog | None = None,
+        insight_catalog: InsightCatalog | None = None,
     ) -> None:
         self.drafts = drafts
         self.url_extractor = url_extractor
@@ -68,12 +70,16 @@ class ExplorerService:
         self.source_extraction_timeout_seconds = source_extraction_timeout_seconds
         self.source_synthesis_timeout_seconds = source_synthesis_timeout_seconds
         self.fallback_drafts = fallback_drafts or drafts
+        self.tag_catalog = tag_catalog
+        self.insight_catalog = insight_catalog
 
     def prepare(self, payload: ExplorerInput | dict) -> dict:
         if not isinstance(payload, ExplorerInput):
             payload = ExplorerInput.model_validate(payload)
         prompt = payload.raw_prompt
-        embedded_urls = [url.rstrip(".,;!?)") for url in self._URL.findall(prompt or "")]
+        embedded_urls = [
+            url.rstrip(".,;!?)") for url in self._URL.findall(prompt or "")
+        ]
         if embedded_urls:
             payload = payload.model_copy(
                 update={"urls": list(dict.fromkeys([*payload.urls, *embedded_urls]))}
@@ -90,35 +96,48 @@ class ExplorerService:
         try:
             return await run_with_one_retry(lambda: self.drafts.from_prompt(prompt))
         except Exception:
-            # Prompt-only requests can still use the deterministic extractor
-            # when the optional semantic provider is unavailable. URL/image
-            # imports keep their stricter source-quality handling below.
+            # Prompt-only requests can use deterministic extraction when the
+            # optional semantic provider is unavailable.
             if self.fallback_drafts is self.drafts:
                 raise
             logger.warning("Explorer prompt provider unavailable; using fallback draft")
             return await self.fallback_drafts.from_prompt(prompt)
 
-    async def extract_sources(self, payload: ExplorerInput) -> list[SourceExtractionResult]:
+    async def extract_sources(
+        self, payload: ExplorerInput
+    ) -> list[SourceExtractionResult]:
         jobs = []
         for index, url in enumerate(payload.urls):
-            jobs.append(safe_source(
-                kind="url", index=index, reference=url,
-                operation=lambda url=url, index=index: self._extract_url(
-                    payload, url=url, source_index=index
-                ),
-                timeout_seconds=self.source_extraction_timeout_seconds,
-            ))
+            jobs.append(
+                safe_source(
+                    kind="url",
+                    index=index,
+                    reference=url,
+                    operation=lambda url=url, index=index: self._extract_url(
+                        payload, url=url, source_index=index
+                    ),
+                    timeout_seconds=self.source_extraction_timeout_seconds,
+                )
+            )
         offset = len(payload.urls)
         for local_index, image in enumerate(payload.images):
             index = offset + local_index
-            jobs.append(safe_source(
-                kind="image", index=index, reference=image.file_name,
-                operation=lambda image=image, index=index: self.image_extractor.extract(
-                    image, source_index=index, raw_prompt=payload.raw_prompt,
-                    force_refresh=payload.force_refresh,
-                ),
-                timeout_seconds=self.source_extraction_timeout_seconds,
-            ))
+            jobs.append(
+                safe_source(
+                    kind="image",
+                    index=index,
+                    reference=image.file_name,
+                    operation=lambda image=image, index=index: (
+                        self.image_extractor.extract(
+                            image,
+                            source_index=index,
+                            raw_prompt=payload.raw_prompt,
+                            force_refresh=payload.force_refresh,
+                        )
+                    ),
+                    timeout_seconds=self.source_extraction_timeout_seconds,
+                )
+            )
         return list(await asyncio.gather(*jobs))
 
     async def _extract_url(
@@ -150,9 +169,6 @@ class ExplorerService:
             source_index=source_index,
             raw_prompt=payload.raw_prompt,
         )
-        result = result.model_copy(update={
-            "cache_status": "bypassed" if payload.force_refresh else "miss"
-        })
         if self.url_cache is not None:
             try:
                 await self.url_cache.save(url, result)
@@ -234,16 +250,16 @@ class ExplorerService:
             return self._merge_structured_places(source_draft, structured_draft)
         source_draft, prompt_draft = await asyncio.gather(
             source_job,
-            run_with_one_retry(lambda: self.drafts.from_prompt(payload.raw_prompt or "")),
+            run_with_one_retry(
+                lambda: self.drafts.from_prompt(payload.raw_prompt or "")
+            ),
         )
         if self.fallback_drafts is self.drafts:
             return self._merge_prompt_draft(source_draft, prompt_draft)
         structured_draft = await self.fallback_drafts.from_sources(
             raw_prompt=None, sources=usable
         )
-        source_draft = self._merge_structured_places(
-            source_draft, structured_draft
-        )
+        source_draft = self._merge_structured_places(source_draft, structured_draft)
         return self._merge_prompt_draft(source_draft, prompt_draft)
 
     @staticmethod
@@ -275,38 +291,57 @@ class ExplorerService:
         items, preferences = normalize_intake_items(
             draft.input_items, draft.short_preferences, raw_prompt, normalize=self._key
         )
-        return draft.model_copy(update={
-            "places": places,
-            "input_items": items,
-            "short_preferences": preferences,
-            "short_avoids": list(dict.fromkeys(draft.short_avoids)),
-        })
+        avoids = list(dict.fromkeys(draft.short_avoids))
+        special_notes = list(
+            dict.fromkeys(note.strip() for note in draft.special_notes if note.strip())
+        )
+        if self.tag_catalog is not None:
+            preferences = self.tag_catalog.resolve(preferences)
+            avoids = self.tag_catalog.resolve(avoids)
+        return draft.model_copy(
+            update={
+                "places": places,
+                "input_items": items,
+                "short_preferences": preferences,
+                "short_avoids": avoids,
+                "special_notes": special_notes,
+            }
+        )
 
     @staticmethod
     def _merge_prompt_draft(
         source_draft: ExplorerDraft, prompt_draft: ExplorerDraft
     ) -> ExplorerDraft:
         prompt_budget = prompt_draft.budget
-        return source_draft.model_copy(update={
-            "input_adm": prompt_draft.input_adm or source_draft.input_adm,
-            "adm_candidates": [
-                *source_draft.adm_candidates, *prompt_draft.adm_candidates
-            ],
-            "places": [*source_draft.places, *prompt_draft.places],
-            "input_items": [*source_draft.input_items, *prompt_draft.input_items],
-            "budget": (
-                prompt_budget
-                if prompt_budget.source == "raw_prompt"
-                else source_draft.budget
-            ),
-            "people": prompt_draft.people,
-            "short_preferences": [
-                *source_draft.short_preferences, *prompt_draft.short_preferences
-            ],
-            "short_avoids": [
-                *source_draft.short_avoids, *prompt_draft.short_avoids
-            ],
-        })
+        return source_draft.model_copy(
+            update={
+                "input_adm": prompt_draft.input_adm or source_draft.input_adm,
+                "adm_candidates": [
+                    *source_draft.adm_candidates,
+                    *prompt_draft.adm_candidates,
+                ],
+                "places": [*source_draft.places, *prompt_draft.places],
+                "input_items": [*source_draft.input_items, *prompt_draft.input_items],
+                "budget": (
+                    prompt_budget
+                    if prompt_budget.source == "raw_prompt"
+                    else source_draft.budget
+                ),
+                "people": prompt_draft.people,
+                "short_preferences": [
+                    *source_draft.short_preferences,
+                    *prompt_draft.short_preferences,
+                ],
+                "short_avoids": [
+                    *source_draft.short_avoids,
+                    *prompt_draft.short_avoids,
+                ],
+                "special_notes": [
+                    *source_draft.special_notes,
+                    *prompt_draft.special_notes,
+                ],
+            }
+        )
 
     def reconcile_adm(self, draft: ExplorerDraft) -> tuple[str | None, bool]:
         return reconcile_adm_candidates(
@@ -338,31 +373,70 @@ class ExplorerService:
         if budget.source == "default":
             budget = ExplorerBudget(level="low", source="default")
         budget = normalize_budget_per_person(budget, draft.people)
+        if input_adm and self.insight_catalog is not None:
+            try:
+                preferences, avoids = self.insight_catalog.enrich(
+                    budget_level=budget.level,
+                    children=draft.people.children,
+                    infants=draft.people.infants,
+                    preferences=draft.short_preferences,
+                    avoids=draft.short_avoids,
+                    seed=f"{intake_id}:{input_adm}:{budget.level}",
+                )
+                draft = draft.model_copy(
+                    update={
+                        "short_preferences": preferences,
+                        "short_avoids": avoids,
+                    }
+                )
+            except (OSError, ValueError):
+                logger.warning("Explorer user-insight catalog is unavailable", exc_info=True)
+                warnings.append(
+                    "Không thể áp dụng nhóm sở thích mặc định từ insight-user.yml."
+                )
         if not input_adm:
             question = (
                 "Các nguồn có địa điểm hành chính mâu thuẫn. Bạn muốn đi đâu?"
-                if adm_conflict else "Bạn muốn đi tỉnh hoặc thành phố nào?"
+                if adm_conflict
+                else "Bạn muốn đi tỉnh hoặc thành phố nào?"
             )
             return ExplorerOutput(
-                status="clarification", intakeId=intake_id, input_ADM=None,
-                places=draft.places or None, inputItems=draft.input_items or None,
-                urlNotes=draft.url_notes or None, days=prompt_days or 3,
-                startDate=start_date, timezone=timezone,
-                budget=budget, people=draft.people,
-                shortPreferences=draft.short_preferences, shortAvoids=draft.short_avoids,
-                clarificationQuestion=question, warnings=warnings,
+                status="clarification",
+                intakeId=intake_id,
+                input_ADM=None,
+                places=draft.places or None,
+                inputItems=draft.input_items or None,
+                urlNotes=draft.url_notes or None,
+                days=prompt_days or 3,
+                startDate=start_date,
+                timezone=timezone,
+                budget=budget,
+                people=draft.people,
+                shortPreferences=draft.short_preferences,
+                shortAvoids=draft.short_avoids,
+                specialNotes=draft.special_notes,
+                clarificationQuestion=question,
+                warnings=warnings,
                 completeness=completeness,
             )
         status = "ready"
         if completeness and not completeness.complete:
             status = "partial"
         return ExplorerOutput(
-            status=status, intakeId=intake_id, input_ADM=input_adm,
-            places=draft.places or None, inputItems=draft.input_items or None,
-            urlNotes=draft.url_notes or None, days=prompt_days or 3,
-            startDate=start_date, timezone=timezone,
-            budget=budget, people=draft.people,
-            shortPreferences=draft.short_preferences, shortAvoids=draft.short_avoids,
+            status=status,
+            intakeId=intake_id,
+            input_ADM=input_adm,
+            places=draft.places or None,
+            inputItems=draft.input_items or None,
+            urlNotes=draft.url_notes or None,
+            days=prompt_days or 3,
+            startDate=start_date,
+            timezone=timezone,
+            budget=budget,
+            people=draft.people,
+            shortPreferences=draft.short_preferences,
+            shortAvoids=draft.short_avoids,
+            specialNotes=draft.special_notes,
             warnings=warnings,
             completeness=completeness,
         )
@@ -372,14 +446,16 @@ class ExplorerService:
 
     async def persist(self, output: ExplorerOutput, kind: str) -> None:
         payload = output.model_dump(mode="json", by_alias=True, exclude_none=True)
-        await run_with_one_retry(lambda: self.snapshots.save(output.intake_id, kind, payload))
+        await run_with_one_retry(
+            lambda: self.snapshots.save(output.intake_id, kind, payload)
+        )
 
     async def persist_or_failure(
         self, output: ExplorerOutput, kind: str
     ) -> ExplorerOutput | None:
         try:
             await self.persist(output, kind)
-        except Exception:
+        except Exception:  # noqa: BLE001 - persistence adapters define no common error
             return self.failure(
                 output.intake_id,
                 AgentError(
@@ -388,19 +464,6 @@ class ExplorerService:
                 ),
             )
         return None
-
-    @staticmethod
-    def error_from_exception(exc: Exception, fallback_code: str) -> AgentError:
-        if isinstance(exc, ExplorerOperationError):
-            return AgentError(
-                code=exc.code,
-                message=str(exc),
-                retryable=exc.retryable,
-            )
-        return AgentError(
-            code=fallback_code,
-            message="Không thể tạo dữ liệu Explorer.",
-        )
 
     @staticmethod
     def _key(value: str) -> str:

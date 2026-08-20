@@ -1,21 +1,36 @@
 from types import SimpleNamespace
 
-from app.orchestration.routes import explorer_can_plan, route_after_explorer
+import pytest
+
+from app.orchestration.routes import route_after_explorer, route_after_place_checker
 
 
 def output(status: str, destination: str | None):
     return SimpleNamespace(status=status, input_adm=destination)
 
 
-def test_partial_source_import_with_destination_continues_to_place_checker() -> None:
-    explorer = output("partial", "Hanoi")
+@pytest.mark.parametrize("status", ["ready", "partial", "clarification", "error"])
+@pytest.mark.parametrize("destination", ["Hanoi", None])
+def test_every_explorer_result_reaches_handoff(
+    status: str, destination: str | None
+) -> None:
+    explorer = output(status, destination)
 
-    assert explorer_can_plan(explorer)
     assert route_after_explorer({"explorer_output": explorer}) == "place_checker"
 
 
-def test_partial_source_import_without_destination_still_finishes() -> None:
-    explorer = output("partial", None)
+def test_place_checker_error_and_blocked_statuses_finish() -> None:
+    assert (
+        route_after_place_checker({"place_output": output("error", None)}) == "finish"
+    )
+    assert (
+        route_after_place_checker({"place_output": output("blocked", None)}) == "finish"
+    )
 
-    assert not explorer_can_plan(explorer)
-    assert route_after_explorer({"explorer_output": explorer}) == "finish"
+
+def test_only_successful_place_checker_statuses_reach_planner() -> None:
+    for status in ("completed", "conditional", "partial"):
+        assert (
+            route_after_place_checker({"place_output": output(status, None)})
+            == "itinerary_planner"
+        )

@@ -5,8 +5,11 @@ from app.modules.explorer.contract import ExplorerImageInput
 from app.modules.explorer.models import (
     ExplorerDraft,
     MediaAnalysisResult,
+    SourceArtifact,
+    SourceBranch,
     SourceExtractionResult,
 )
+from app.modules.explorer.primary_coverage import PrimaryEvidenceCoverage
 
 
 class ExplorerDraftGenerator(Protocol):
@@ -54,6 +57,16 @@ class UrlMetadataClient(Protocol):
     async def extract(self, url: str) -> dict[str, Any]: ...
 
 
+class PrimaryEvidenceEvaluator(Protocol):
+    async def evaluate(
+        self,
+        artifacts: list[SourceArtifact],
+        *,
+        transcript_timeline_ratio: float | None = None,
+        raw_prompt: str | None = None,
+    ) -> PrimaryEvidenceCoverage: ...
+
+
 @dataclass(frozen=True)
 class DownloadedMedia:
     file_path: str
@@ -66,7 +79,12 @@ class UrlMediaClient(Protocol):
 
 class MediaAnalyzer(Protocol):
     async def analyze(
-        self, media_path: str, work_dir: str, source_url: str
+        self,
+        media_path: str,
+        work_dir: str,
+        source_url: str,
+        *,
+        branches: set[SourceBranch] | None = None,
     ) -> MediaAnalysisResult: ...
 
     async def analyze_image(self, data_base64: str, mime_type: str) -> str: ...
@@ -101,5 +119,22 @@ class ExplorerSnapshotRepository(Protocol):
     async def save(self, intake_id: str, snapshot_kind: str, payload: dict) -> None: ...
 
 
-class PlaceTagCatalog(Protocol):
-    def tags_for(self, place_name: str) -> list[str]: ...
+class TagCatalog(Protocol):
+    def definitions(self) -> dict[str, list[str]]: ...
+
+    def resolve(self, values: list[str]) -> list[str]: ...
+
+    def filter_allowed(self, values: list[str]) -> list[str]: ...
+
+
+class InsightCatalog(Protocol):
+    def enrich(
+        self,
+        *,
+        budget_level: str,
+        children: int,
+        infants: int,
+        preferences: list[str],
+        avoids: list[str],
+        seed: str,
+    ) -> tuple[list[str], list[str]]: ...

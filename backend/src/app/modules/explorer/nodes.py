@@ -1,3 +1,4 @@
+from app.modules.explorer.errors import agent_error_from_exception
 from app.modules.explorer.service import ExplorerService
 from app.modules.explorer.state import ExplorerState
 from app.shared.contracts.agent import AgentError
@@ -14,7 +15,7 @@ class ExplorerNodes:
         try:
             return {"draft": await self.service.prompt_draft(state["payload"].raw_prompt or "")}
         except Exception as exc:
-            return {"failure": self.service.error_from_exception(
+            return {"failure": agent_error_from_exception(
                 exc, "DRAFT_GENERATION_FAILED"
             )}
 
@@ -33,7 +34,7 @@ class ExplorerNodes:
             draft = await self.service.source_draft(state["payload"], state["source_results"])
             return {"draft": draft}
         except Exception as exc:
-            return {"failure": self.service.error_from_exception(
+            return {"failure": agent_error_from_exception(
                 exc, "DRAFT_GENERATION_FAILED"
             )}
 

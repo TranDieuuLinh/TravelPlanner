@@ -85,7 +85,9 @@ def test_information_finder_receives_compact_memory_context():
         async def ainvoke(self, payload):
             calls.append(payload)
             return {
-                "output": SimpleNamespace(answer="ok", warnings=[]),
+                "output": SimpleNamespace(
+                    answer="ok", facts=[], sources=[], suggestions=[], warnings=[]
+                ),
             }
 
     nodes.information_finder = InformationGraph()
@@ -127,6 +129,23 @@ def test_place_checker_fallback_receives_memory_candidates():
     )
 
     assert [place.name for place in calls[0]["places"]] == ["Hồ Tây", "Lăng Bác"]
+
+
+def test_place_checker_exception_becomes_structured_error():
+    nodes = RootNodes()
+
+    class FailingPlaceGraph:
+        async def ainvoke(self, payload):
+            raise RuntimeError("catalog unavailable")
+
+    nodes.place_checker = FailingPlaceGraph()
+    update = asyncio.run(
+        nodes.run_place_checker({"explorer_output": explorer_output(), "warnings": []})
+    )
+
+    assert update["place_output"].status == "error"
+    assert update["place_output"].error.code == "PLACE_CHECKER_FAILED"
+    assert update["response"] == "Không thể kiểm tra địa điểm cho chuyến đi."
 
 
 def test_new_url_input_does_not_inherit_stale_memory_duration():
@@ -172,5 +191,10 @@ def test_follow_up_without_new_input_inherits_memory_duration():
             }
         )
     )
+    handoff = nodes.explorer_handoff.project(
+        update["explorer_output"],
+        raw_prompt="Lên plan các điểm bên trên",
+        memory=memory,
+    )
 
-    assert update["explorer_output"].days == 20
+    assert handoff.explorer_output.days == 20

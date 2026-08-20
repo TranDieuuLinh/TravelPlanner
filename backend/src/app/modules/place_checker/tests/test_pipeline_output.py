@@ -289,30 +289,30 @@ def test_pipeline_graph_accepts_raw_camel_case_payload() -> None:
 
 
 def test_orchestration_blocks_incomplete_candidate_pools_before_planner() -> None:
-    raw = payload().model_dump(
-        mode="json", by_alias=True, exclude={"validation_issues"}
-    )
+    internal = payload()
     explorer_places = [
         {
             key: value
-            for key, value in place.items()
+            for key, value in place.model_dump(
+                mode="json", by_alias=True, exclude_none=True
+            ).items()
             if key not in {"latitude", "longitude", "tags"}
         }
-        for place in raw["places"]
+        for place in internal.places
     ]
     explorer_output = ExplorerOutput.model_validate(
         {
             "status": "ready",
             "intakeId": "intake-1",
-            "input_ADM": raw["inputADM"],
+            "input_ADM": internal.input_adm,
             "places": explorer_places,
-            "inputItems": raw["inputItems"],
-            "urlNotes": raw["urlNotes"],
-            "days": raw["days"],
-            "budget": raw["budget"],
-            "people": raw["people"],
-            "shortPreferences": raw["shortPreferences"],
-            "shortAvoids": raw["shortAvoids"],
+            "inputItems": [item.model_dump() for item in internal.input_items],
+            "urlNotes": [note.model_dump() for note in internal.url_notes],
+            "days": internal.days,
+            "budget": internal.budget.model_dump(),
+            "people": internal.people.model_dump(),
+            "shortPreferences": internal.short_preferences,
+            "shortAvoids": internal.short_avoids,
         }
     )
     nodes = RootNodes(place_checker_pipeline=pipeline())

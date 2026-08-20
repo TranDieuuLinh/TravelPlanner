@@ -19,6 +19,9 @@ from app.modules.explorer.adapters.gemini import (
 from app.modules.explorer.adapters.image_source import GeminiImageSourceExtractor
 from app.modules.explorer.adapters.image_cache import InMemoryImageOcrCache
 from app.modules.explorer.adapters.media_analysis import GeminiMediaAnalyzer
+from app.modules.explorer.adapters.primary_coverage import (
+    GeminiPrimaryEvidenceEvaluator,
+)
 from app.modules.explorer.adapters.tiktok_html import (
     FallbackUrlMediaClient,
     TikTokHtmlMediaClient,
@@ -39,16 +42,20 @@ from app.modules.explorer.adapters.url_sources import (
 )
 from app.modules.explorer.adapters.youtube_transcript import (
     GeminiAudioTranscriber,
-    YouTubeTranscriptSourceExtractor,
     YtDlpAudioClient,
     YtDlpCaptionClient,
 )
+from app.modules.explorer.adapters.youtube_source import (
+    YouTubeTranscriptSourceExtractor,
+)
+from app.modules.explorer.adapters.user_insights import YamlInsightCatalog
 __all__ = [
     "GeminiExplorerDraftGenerator",
     "CurlCffiWebsiteFetcher",
     "GeminiImageSourceExtractor",
     "InMemoryImageOcrCache",
     "GeminiMediaAnalyzer",
+    "GeminiPrimaryEvidenceEvaluator",
     "InMemoryExplorerSnapshotRepository",
     "InMemoryExplorerDraftCache",
     "InMemorySourceExtractionCache",
@@ -73,4 +80,5 @@ __all__ = [
     "YouTubeTranscriptSourceExtractor",
     "YtDlpAudioClient",
     "YtDlpCaptionClient",
+    "YamlInsightCatalog",
 ]

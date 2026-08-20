@@ -12,6 +12,7 @@ from app.modules.explorer.models import SourceArtifact, SourceExtractionResult
 from app.modules.explorer.ports import (
     DownloadedMedia,
     MediaAnalyzer,
+    PrimaryEvidenceEvaluator,
     UrlMediaClient,
     UrlMetadataClient,
     WebsiteFetcher,
@@ -169,12 +170,27 @@ class YtDlpSocialSourceExtractor:
         analyzer: MediaAnalyzer,
         *,
         platform: str,
+        metadata_client: UrlMetadataClient | None = None,
+        coverage_evaluator: PrimaryEvidenceEvaluator | None = None,
     ) -> None:
         self.client = client
         self.analyzer = analyzer
         self.platform = platform
+        self.metadata_client = metadata_client
+        self.coverage_evaluator = coverage_evaluator
 
     async def extract(self, url: str, *, source_index: int, raw_prompt: str | None):
+        primary_artifacts = await self._primary_artifacts(url)
+        if primary_artifacts and await self._primary_is_sufficient(
+            primary_artifacts, raw_prompt=raw_prompt
+        ):
+            return SourceExtractionResult(
+                sourceIndex=source_index,
+                sourceKind="url",
+                sourceRef=url,
+                status="succeeded",
+                artifacts=primary_artifacts,
+            )
         with TemporaryDirectory(prefix="explorer-media-") as work_dir:
             try:
                 downloaded = await self.client.download(url, work_dir)
@@ -184,11 +200,15 @@ class YtDlpSocialSourceExtractor:
                     f"Không tải được media {self.platform}.",
                     retryable=True,
                 ) from exc
-            artifacts = metadata_artifacts(downloaded.metadata, url)
+            artifacts = _deduplicate_artifacts([
+                *primary_artifacts,
+                *metadata_artifacts(downloaded.metadata, url),
+            ])
             analysis = await self.analyzer.analyze(
                 downloaded.file_path, work_dir, url
             )
             artifacts.extend(analysis.artifacts)
+            artifacts = _deduplicate_artifacts(artifacts)
         if not artifacts:
             if analysis.failures:
                 first_error = analysis.failures[0].error
@@ -206,6 +226,32 @@ class YtDlpSocialSourceExtractor:
             artifacts=artifacts,
             branchFailures=analysis.failures,
         )
+
+    async def _primary_artifacts(self, url: str) -> list[SourceArtifact]:
+        if self.metadata_client is None:
+            return []
+        try:
+            metadata = await self.metadata_client.extract(url)
+        except Exception:
+            return []
+        return metadata_artifacts(metadata, url)
+
+    async def _primary_is_sufficient(
+        self,
+        artifacts: list[SourceArtifact],
+        *,
+        raw_prompt: str | None,
+    ) -> bool:
+        if self.coverage_evaluator is None:
+            return False
+        try:
+            coverage = await self.coverage_evaluator.evaluate(
+                artifacts,
+                raw_prompt=raw_prompt,
+            )
+        except Exception:
+            return False
+        return coverage.sufficient
 
 
 class WebsiteSourceExtractor:
@@ -308,6 +354,9 @@ def metadata_artifacts(metadata: dict[str, Any], url: str) -> list[SourceArtifac
     for field, artifact_type in (
         ("title", "url_metadata"),
         ("description", "caption"),
+        ("caption", "caption"),
+        ("transcript", "transcript"),
+        ("transcription", "transcript"),
         ("location", "url_metadata"),
     ):
         value = metadata.get(field)
@@ -324,4 +373,22 @@ def metadata_artifacts(metadata: dict[str, Any], url: str) -> list[SourceArtifac
                 artifactType="url_metadata", text=text,
                 sourceUrl=url, observedAt=observed_at,
             ))
-    return artifacts
+    return _deduplicate_artifacts(artifacts)
+
+
+def _deduplicate_artifacts(
+    artifacts: list[SourceArtifact],
+) -> list[SourceArtifact]:
+    unique: list[SourceArtifact] = []
+    seen: set[tuple[str, str, str | None]] = set()
+    for artifact in artifacts:
+        key = (
+            artifact.artifact_type,
+            " ".join(artifact.text.casefold().split()),
+            artifact.source_time_hint,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(artifact)
+    return unique

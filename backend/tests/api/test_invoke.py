@@ -242,7 +242,7 @@ def test_explorer_invoke_returns_full_explorer_contract(tmp_path):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["status"] == "ready"
+    assert "status" not in payload
     assert payload["input_ADM"] == "Huế"
     assert payload["days"] == 3
     assert "schemaVersion" not in payload

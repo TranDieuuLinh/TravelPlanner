@@ -47,7 +47,7 @@ class FallbackUrlMediaClient:
 
 
 class TikTokHtmlMediaClient:
-    """Download public TikTok media from the JSON embedded in its Safari page."""
+    """Read metadata and download media from TikTok's embedded Safari JSON."""
 
     def __init__(
         self,
@@ -67,21 +67,30 @@ class TikTokHtmlMediaClient:
     async def download(self, url: str, target_dir: str) -> DownloadedMedia:
         return await asyncio.to_thread(self._download_sync, url, target_dir)
 
+    async def extract(self, url: str) -> dict[str, Any]:
+        return await asyncio.to_thread(self._extract_metadata_sync, url)
+
+    def _extract_metadata_sync(self, url: str) -> dict[str, Any]:
+        canonical_url = urlparse(url)._replace(query="", fragment="").geturl()
+        session = self._new_session()
+        try:
+            return self._metadata(self._load_item(session, canonical_url))
+        except ExplorerOperationError:
+            raise
+        except Exception as exc:
+            raise ExplorerOperationError(
+                "TIKTOK_HTML_METADATA_FAILED",
+                "Không đọc được metadata TikTok từ dữ liệu HTML.",
+                retryable=True,
+            ) from exc
+        finally:
+            session.close()
+
     def _download_sync(self, url: str, target_dir: str) -> DownloadedMedia:
         canonical_url = urlparse(url)._replace(query="", fragment="").geturl()
         session = self._new_session()
         try:
-            page = session.get(
-                canonical_url,
-                timeout=self.timeout_seconds,
-                allow_redirects=True,
-            )
-            page.raise_for_status()
-            if len(page.content) > 5 * 1024 * 1024:
-                raise ExplorerOperationError(
-                    "TIKTOK_HTML_TOO_LARGE", "Trang TikTok vượt giới hạn tải."
-                )
-            item = self._extract_item(page.text, canonical_url)
+            item = self._load_item(session, canonical_url)
             media_url = self._media_url(item)
             target = Path(target_dir) / "media.mp4"
             self._stream_media(session, media_url, canonical_url, target)
@@ -96,6 +105,19 @@ class TikTokHtmlMediaClient:
             ) from exc
         finally:
             session.close()
+
+    def _load_item(self, session, canonical_url: str) -> dict[str, Any]:
+        page = session.get(
+            canonical_url,
+            timeout=self.timeout_seconds,
+            allow_redirects=True,
+        )
+        page.raise_for_status()
+        if len(page.content) > 5 * 1024 * 1024:
+            raise ExplorerOperationError(
+                "TIKTOK_HTML_TOO_LARGE", "Trang TikTok vượt giới hạn tải."
+            )
+        return self._extract_item(page.text, canonical_url)
 
     @classmethod
     def _extract_item(cls, page_text: str, url: str) -> dict[str, Any]:

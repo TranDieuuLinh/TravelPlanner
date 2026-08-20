@@ -3,7 +3,6 @@ import re
 from app.modules.explorer.contract import ExplorerPlace, PlaceSource
 from app.modules.explorer.models import SourceArtifact, SourceExtractionResult
 
-
 _NUMBERED_H2 = re.compile(
     r"^\s*##(?!#)\s+(?:[*_\s]*)(?P<number>\d{1,3})\s*[.)]?\s*(?P<title>.+?)\s*$"
 )
@@ -83,9 +82,6 @@ def _artifact_places(
                         sourceUrl=artifact.source_url or source.source_ref,
                         evidence=evidence,
                         observedAt=artifact.observed_at,
-                        platform=source.platform,
-                        extractorVersion="structured-web-heading-v1",
-                        cacheStatus=source.cache_status,
                     )
                 ],
             )

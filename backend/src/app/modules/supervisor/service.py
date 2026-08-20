@@ -14,7 +14,9 @@ class SupervisorService:
     def format_information_output(output) -> str:
         """Fallback response composer for agent facts."""
         if not output.facts:
-            return "Chưa tìm thấy thông tin đủ đáng tin cậy để trả lời câu hỏi này."
+            return output.answer.strip() or (
+                "Chưa tìm thấy thông tin đủ đáng tin cậy để trả lời câu hỏi này."
+            )
         source_numbers = {
             source.source_id: index
             for index, source in enumerate(output.sources, start=1)

@@ -1,3 +1,6 @@
+from app.shared.contracts.agent import AgentError
+
+
 class ExplorerOperationError(RuntimeError):
     def __init__(
         self,
@@ -15,3 +18,14 @@ class ExplorerOperationError(RuntimeError):
 
 class ExplorerPersistenceError(ExplorerOperationError):
     pass
+
+
+def agent_error_from_exception(
+    exc: Exception, fallback_code: str
+) -> AgentError:
+    if isinstance(exc, ExplorerOperationError):
+        return AgentError(code=exc.code, message=str(exc), retryable=exc.retryable)
+    return AgentError(
+        code=fallback_code,
+        message="Không thể tạo dữ liệu Explorer.",
+    )

@@ -209,20 +209,31 @@ tiếp. Source-import chạy URL và ảnh song song, đánh giá coverage trư�
 hợp, rồi hai route hội tụ tại normalize, reconcile ADM và policy mặc định.
 Khi source-import có raw prompt, prompt draft nhẹ và source synthesis chạy song
 song rồi merge theo precedence để không làm mất tín hiệu rõ từ người dùng.
+Prompt draft Gemini đọc `auto-attach/tags-auto.yml` ở từng request, nhận toàn bộ
+taxonomy trong system prompt và chỉ được trả exact key qua JSON Schema enum cho
+`shortPreferences`/`shortAvoids`; service kiểm tra lại output. Nhánh
+deterministic resolve tín hiệu qua cùng file trong bước normalize, vì vậy cả
+draft cache cũ cũng tuân theo taxonomy mới mà không cần restart.
 Success, clarification và failure lưu ba loại snapshot riêng; repository mặc
 định vẫn là in-memory. Mỗi source tạo `SourceArtifact` nội bộ có loại evidence,
 URL, time hint và thời điểm quan sát trước khi Gemini tổng hợp output. YouTube
 ưu tiên đúng một track subtitle/automatic caption (`vi` rồi `en`) bằng
-`yt-dlp --skip-download`, giữ toàn bộ timeline mà không tải video. Nếu không có
-caption, adapter chỉ tải audio stream, chia mặc định thành chunk 5 phút có
-overlap 5 giây và transcribe song song qua Gemini; media tạm bị xóa sau request.
+`yt-dlp --skip-download`, giữ toàn bộ timeline mà không tải video. Trước khi tải
+media, structured preflight đếm destination/place/travel detail trong transcript,
+title, description, location và tags; policy local yêu cầu confidence tối thiểu,
+semantic anchor và evidence hữu ích. Prompt yêu cầu đầy đủ/tất cả hoặc lỗi
+preflight luôn fallback. Metadata-only đủ coverage được dùng trực tiếp. Nếu
+primary thiếu, adapter tải audio stream, chia mặc định thành chunk 5 phút có
+overlap 5 giây và transcribe song song qua Gemini; transcript vẫn thiếu mới tải
+video để chạy riêng frame OCR, không STT lặp. Media tạm bị xóa sau request.
 Timestamp `t=`/`start=` chỉ ưu tiên chunk gần mốc đó vào hàng đợi trước; toàn bộ
 caption/audio vẫn được xử lý.
 TikTok ưu tiên `curl-cffi` Safari đọc JSON
-`__UNIVERSAL_DATA_FOR_REHYDRATION__`, lấy URL CDN thuộc allowlist và stream MP4
-với giới hạn dung lượng; lỗi HTML/media được trả cục bộ và không fallback sang
-`yt-dlp`. Instagram vẫn dùng chuỗi `yt-dlp` legacy. Không cần chuyển cookie từ
-frontend. OCR
+`__UNIVERSAL_DATA_FOR_REHYDRATION__` và đánh giá description/metadata trước;
+chỉ khi coverage thiếu mới lấy URL CDN thuộc allowlist và stream MP4 với giới
+hạn dung lượng. Lỗi HTML/media được trả cục bộ và không fallback sang `yt-dlp`.
+Instagram áp dụng cùng gate trên metadata rồi mới dùng chuỗi tải `yt-dlp`
+legacy. Không cần chuyển cookie từ frontend. OCR
 lấy một frame mỗi 3 giây, giới hạn 48 frame và tối đa 10 ảnh trong mỗi batch
 Gemini. Audio social dùng chunk động dài khoảng 60 giây và không vượt quá ba
 chunk, nên clip ngắn chỉ tạo một STT request. Hai nhánh OCR/STT chạy đồng thời;
@@ -252,7 +263,7 @@ Trước khi tải URL, Explorer tra cache PostgreSQL do module sở hữu trong
 `EXPLORER_URL_CACHE_TTL_SECONDS` (mặc định 7 ngày). Cache đọc được artifact
 legacy v6; TikTok/Instagram/Facebook bỏ toàn bộ query khi tạo cache key để URL
 được chia sẻ từ frontend vẫn khớp cùng video. Adapter ghi contract chuẩn hóa
-version 8 cùng metadata coverage transcript; không lưu raw
+version 9 cùng metadata coverage transcript; vẫn đọc version 6/8 và không lưu raw
 third-party payload. `forceRefresh=true` bỏ qua cache lookup và cập nhật record
 sau extraction. Lỗi đọc/ghi cache chỉ được log và không chặn extractor. Khi
 không có `DATABASE_URL`, development/test dùng cache in-memory theo process.
@@ -272,6 +283,8 @@ Trong module Explorer, trách nhiệm được tách theo đúng lớp LangGraph
 - `nodes.py` là các hàm async mỏng: đọc/ghi state và gọi service;
 - `service.py` sở hữu normalize, coverage, retry/error policy, precedence,
   completion gate và persistence policy;
+- `intake_patch.py` định nghĩa operation set/add/remove/... và reducer cập nhật
+  `ExplorerOutput` trước handoff; Supervisor chỉ phát structured patch;
 - `ports.py` định nghĩa draft/source/cache/media/snapshot capability;
 - `adapters/` triển khai provider cụ thể; composition mặc định chỉ diễn ra tại
   public boundary trong `public.py`.
@@ -282,10 +295,16 @@ hoặc source-import, rồi hội tụ tại `normalize_and_validate`,
 snapshot kết quả tương ứng. Source-import chỉ gọi synthesis nếu batch coverage
 còn evidence dùng được; mỗi source chỉ retry tối đa một lần.
 
-Explorer chỉ trích xuất và giữ provenance, không resolve place. Root
-orchestration chuyển output `ready`, hoặc `partial` vẫn xác định được
-`input_ADM`, sang public input của PlaceChecker; partial không có destination
-vẫn dừng an toàn.
+Explorer chỉ trích xuất và giữ provenance, không resolve place. Sau Explorer,
+root luôn chạy đúng một `ExplorerHandoffProjector`; không còn gate theo status
+`ready`/`partial` hoặc `input_ADM`. Projector ưu tiên dữ liệu rõ của turn hiện
+tại, dùng Conversation Memory để lấp context còn thiếu, merge place một lần,
+resolve preferences/avoids theo `auto-attach/tags-auto.yml`, validate lại
+canonical `ExplorerOutput`, lồng note vào source tương ứng, bỏ place tags,
+confidence và provenance nội bộ rồi tạo `PlaceCheckerInput`. Budget tại boundary
+luôn là tổng toàn chuyến cho một người. Thiếu destination thành failure `blocked` có
+cấu trúc; Explorer/provider/exception runtime thành `error` có code và cờ
+retryable phù hợp. Chỉ PlaceChecker success/conditional/partial mới sang Planner.
 Explorer output mang `days`, `startDate` và `timezone`; mặc định duration là 3
 ngày và ngày bắt đầu là ngày mai khi prompt không chỉ định. Shared `TripIntent`
 cũng dùng mặc định 3 ngày để các luồng legacy không âm thầm quay về plan 1 ngày.
@@ -312,11 +331,13 @@ Khi policy đa tín hiệu đã xếp một candidate vào food pool, projector 
 được phép rò sang contract food hẹp và gây lỗi validation.
 Ngược lại, restaurant label sai cho public-space có marker tổng quát như
 `phố đi bộ`/`walking street` được trả về TravelPlace trước khi dựng meal pool.
-`places[].sourcePlaces` phân biệt nguồn `input` (người dùng chọn trực tiếp),
-`url` (nguồn URL do người dùng cung cấp) và `system` (gợi ý từ assistant,
-Information Finder hoặc transcript cũ, mang tính tùy chọn). Chỉ current-turn
-explicit reference promotion mới chuyển `system` sang `input`; `sourceTimeHint` và
-`addressHint` được giữ nhưng không có `sourceOrder` hay `sourceDay`.
+Internal `places[].sourcePlaces` vẫn phân biệt nguồn `input`, `url` và `system`.
+Public handoff rút gọn thành `evidenceType=raw_prompt|url`; `sourceTimeHint` và
+`addressHint` được giữ, còn `origin`, `evidence`, `observedAt`, confidence và
+place tags không đi qua PlaceChecker boundary.
+`place_checker/handoff_adapter.py` chuyển contract compact này sang evidence
+model giàu dùng nội bộ; scoring/audit của PlaceChecker không phụ thuộc vào JSON
+metadata đã bị loại ở boundary.
 Draft generator nằm sau port; prompt-only và source-import có provider cấu hình
 riêng. Source-import chia từng source/artifact dài thành chunk khoảng 20.000 ký
 tự; mỗi chunk gọi một structured Gemini request trả đồng thời place, ADM và
@@ -334,9 +355,12 @@ cho các lời gọi song song. Source synthesis dùng `GEMINI_MODEL`, frame/ả
 dùng `GEMINI_IMAGE_OCR_MODEL`, còn STT dùng `GEMINI_AUDIO_MODEL`.
 
 Endpoint Explorer nhận trực tiếp `ExplorerInput`, bỏ qua root Supervisor,
-PlaceChecker và Planner, rồi trả nguyên `ExplorerOutput`. Endpoint này dùng để
-test/debug contract nhưng vẫn chạy cùng graph và provider configuration với
-runtime.
+PlaceChecker và Planner, rồi chiếu internal `ExplorerOutput` thành
+`ExplorerApiOutput` rút gọn. Public output không có status/diagnostic nội bộ,
+không có `places[].tags`, chỉ giữ exact taxonomy key trong `shortPreferences`
+và `shortAvoids`, đồng thời lồng note đã liên kết vào
+`places[].sourcePlaces[].urlNotes`. Endpoint vẫn chạy cùng graph và provider
+configuration với runtime.
 
 Authentication is implemented as a vertical `auth` module. It owns the
 `auth_runtime_users` and `auth_runtime_sessions` tables, uses PostgreSQL when `DATABASE_URL` is

@@ -21,10 +21,13 @@ from app.shared.llm import (
     LlmUnauthorizedError,
 )
 
-
 MentionKind = Literal[
-    "PLACE", "DESTINATION", "ADDRESS", "ACTIVITY",
-    "REGION_OUTSIDE_SCOPE", "GENERIC_MENTION",
+    "PLACE",
+    "DESTINATION",
+    "ADDRESS",
+    "ACTIVITY",
+    "REGION_OUTSIDE_SCOPE",
+    "GENERIC_MENTION",
 ]
 
 
@@ -85,7 +88,10 @@ def _schema(value):
 
 class GeminiSourceChunkExtractor:
     def __init__(
-        self, client: LlmClient, *, max_output_tokens: int = 8_000,
+        self,
+        client: LlmClient,
+        *,
+        max_output_tokens: int = 8_000,
         extract_notes: bool = True,
         request_limiter: asyncio.Semaphore | None = None,
     ) -> None:
@@ -94,19 +100,27 @@ class GeminiSourceChunkExtractor:
         self.extract_notes = extract_notes
         self.request_limiter = request_limiter or asyncio.Semaphore(4)
 
-    async def extract(self, *, raw_prompt: str | None, source, artifacts: list) -> ExplorerDraft:
-        payload = json.dumps({
-            "targetADMFromRawPrompt": raw_prompt,
-            "sourceKind": source.source_kind,
-            "sourceRef": source.source_ref,
-            "extractNotes": self.extract_notes,
-            "artifacts": [
-                {"index": index, **artifact.model_dump(
-                    mode="json", by_alias=True, exclude_none=True
-                )}
-                for index, artifact in enumerate(artifacts)
-            ],
-        }, ensure_ascii=False)
+    async def extract(
+        self, *, raw_prompt: str | None, source, artifacts: list
+    ) -> ExplorerDraft:
+        payload = json.dumps(
+            {
+                "targetADMFromRawPrompt": raw_prompt,
+                "sourceKind": source.source_kind,
+                "sourceRef": source.source_ref,
+                "extractNotes": self.extract_notes,
+                "artifacts": [
+                    {
+                        "index": index,
+                        **artifact.model_dump(
+                            mode="json", by_alias=True, exclude_none=True
+                        ),
+                    }
+                    for index, artifact in enumerate(artifacts)
+                ],
+            },
+            ensure_ascii=False,
+        )
         result = await self._call(payload)
         source.raw_mention_count += len(result.mentions)
         kept = sum(item.classification == "PLACE" for item in result.mentions)
@@ -114,7 +128,9 @@ class GeminiSourceChunkExtractor:
         for item in result.mentions:
             if item.classification != "PLACE":
                 key = item.classification.casefold()
-                source.discarded_mentions[key] = source.discarded_mentions.get(key, 0) + 1
+                source.discarded_mentions[key] = (
+                    source.discarded_mentions.get(key, 0) + 1
+                )
         return ExplorerDraft(
             inputAdm=result.destinations[0].value if result.destinations else None,
             admCandidates=[
@@ -147,25 +163,37 @@ class GeminiSourceChunkExtractor:
             return SourceChunkExtraction.model_validate(json.loads(raw))
         except LlmAllKeysUnavailable as exc:
             raise ExplorerOperationError(
-                "SOURCE_KEYS_COOLING_DOWN", "Gemini source keys đang cooldown.",
-                retryable=True, retry_after_seconds=exc.retry_after_seconds,
+                "SOURCE_KEYS_COOLING_DOWN",
+                "Gemini source keys đang cooldown.",
+                retryable=True,
+                retry_after_seconds=exc.retry_after_seconds,
             ) from exc
         except (LlmQuotaError, LlmServerError) as exc:
             raise ExplorerOperationError(
-                "SOURCE_PROVIDER_RATE_LIMITED", "Gemini source đang bị giới hạn.",
+                "SOURCE_PROVIDER_RATE_LIMITED",
+                "Gemini source đang bị giới hạn.",
                 retryable=True,
                 retry_after_seconds=getattr(exc, "retry_after_seconds", 60) or 60,
             ) from exc
         except (LlmTimeoutError, LlmTransportError) as exc:
             raise ExplorerOperationError(
-                "SOURCE_PROVIDER_UNAVAILABLE", "Gemini source tạm không khả dụng.",
+                "SOURCE_PROVIDER_UNAVAILABLE",
+                "Gemini source tạm không khả dụng.",
                 retryable=True,
             ) from exc
         except (LlmConfigurationError, LlmRefusalError, LlmUnauthorizedError) as exc:
-            raise ExplorerOperationError("SOURCE_EXTRACTION_REJECTED", str(exc)) from exc
-        except (LlmResponseError, LlmError, json.JSONDecodeError, ValidationError) as exc:
             raise ExplorerOperationError(
-                "SOURCE_EXTRACTION_INVALID", "Structured source extraction không hợp lệ.",
+                "SOURCE_EXTRACTION_REJECTED", str(exc)
+            ) from exc
+        except (
+            LlmResponseError,
+            LlmError,
+            json.JSONDecodeError,
+            ValidationError,
+        ) as exc:
+            raise ExplorerOperationError(
+                "SOURCE_EXTRACTION_INVALID",
+                "Structured source extraction không hợp lệ.",
                 retryable=True,
             ) from exc
 
@@ -180,19 +208,19 @@ class GeminiSourceChunkExtractor:
             name=item.name,
             addressHint=item.address_hint,
             confidence=item.confidence,
-            sourcePlaces=[PlaceSource(
-                origin="url" if source.source_kind == "url" else "input",
-                evidenceType=artifact.artifact_type,
-                sourceUrl=source.source_ref if source.source_kind == "url" else None,
-                evidence=item.evidence,
-                sourceTimeHint=item.time_hint or artifact.source_time_hint,
-                addressHint=item.address_hint,
-                observedAt=artifact.observed_at,
-                platform=source.platform,
-                extractorVersion=source.extractor_version,
-                modelVersion=source.model_version,
-                cacheStatus=source.cache_status,
-            )],
+            sourcePlaces=[
+                PlaceSource(
+                    origin="url" if source.source_kind == "url" else "input",
+                    evidenceType=artifact.artifact_type,
+                    sourceUrl=source.source_ref
+                    if source.source_kind == "url"
+                    else None,
+                    evidence=item.evidence,
+                    sourceTimeHint=item.time_hint or artifact.source_time_hint,
+                    addressHint=item.address_hint,
+                    observedAt=artifact.observed_at,
+                )
+            ],
         )
 
     @classmethod

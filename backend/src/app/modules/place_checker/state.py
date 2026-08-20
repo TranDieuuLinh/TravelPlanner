@@ -17,6 +17,7 @@ class PlaceCheckerState(TypedDict, total=False):
     people: Any
     short_preferences: list[str]
     short_avoids: list[str]
+    special_notes: list[str]
     intent: TripIntent
     candidates: list[PlaceCandidate]
     resolved_places: list[VerifiedPlace]
