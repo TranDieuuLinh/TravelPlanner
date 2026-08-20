@@ -16,6 +16,7 @@ from app.modules.information_finder.errors import (
 from app.modules.information_finder.prompts import (
     ANSWER_SYSTEM_PROMPT,
     build_answer_prompt,
+    build_answer_repair_prompt,
 )
 from app.shared.llm import (
     LlmClient,
@@ -75,6 +76,23 @@ class StructuredLlmAnswerGenerator:
             max_chars_per_source=self.max_chars_per_source,
             max_total_source_chars=self.max_total_source_chars,
         )
+        return await self._generate_prompt(prompt, len(sources), started)
+
+    async def generate_repair(
+        self, query: str, sources: list[RetrievedSource], invalid_source_ids: list[str]
+    ) -> GeneratedAnswer:
+        started = time.monotonic()
+        prompt = build_answer_repair_prompt(
+            query,
+            sources,
+            invalid_source_ids,
+            max_chars_per_source=self.max_chars_per_source,
+            max_total_source_chars=self.max_total_source_chars,
+        )
+        return await self._generate_prompt(prompt, len(sources), started)
+
+    async def _generate_prompt(self, prompt: str, source_count: int, started: float) -> GeneratedAnswer:
+        error_code = "none"
         try:
             raw = await self.client.generate(
                 prompt,
@@ -114,7 +132,7 @@ class StructuredLlmAnswerGenerator:
         finally:
             logger.info(
                 "information_finder_answer_call source_count=%d latency_ms=%d error_code=%s",
-                len(sources),
+                source_count,
                 int((time.monotonic() - started) * 1000),
                 error_code,
             )

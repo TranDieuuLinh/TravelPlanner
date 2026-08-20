@@ -27,6 +27,8 @@ class InformationFinderOutput(PublicModel):
     answer: str = ""
     facts: list["AnswerClaim"] = Field(default_factory=list)
     content_blocks: list["AnswerBlock"] = Field(default_factory=list)
+    entity_names: list[str] = Field(default_factory=list, max_length=30)
+    entity_candidates: list["EntityCandidate"] = Field(default_factory=list, max_length=30)
     sources: list[SourceReference] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     suggestions: list[dict[str, object]] = Field(default_factory=list)

@@ -204,10 +204,15 @@
 .markdownMessage p { margin: 0; }
 .markdownMessage a { color: var(--brand-dark); text-decoration: underline; text-underline-offset: 3px; }
 .markdownMessage a.citationSource {
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--brand) 10%, transparent);
-  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--brand-dark) 42%, transparent);
-  padding: 0 2px;
+  display: inline-flex;
+  width: 1.2em;
+  height: 1.2em;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  text-decoration: none;
+  vertical-align: -.12em;
 }
 .markdownMessage a.citationSource:hover,
 .markdownMessage a.citationSource:focus-visible {
@@ -227,6 +232,23 @@
   text-decoration: none;
   vertical-align: super;
 }
+.citationSourceIcon {
+  display: inline-block;
+  font-size: 1em;
+  font-weight: 900;
+  line-height: 1;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 .markdownMessage .messageCitation:hover,
 .markdownMessage .messageCitation:focus-visible {
   background: var(--brand-dark);
@@ -238,7 +260,30 @@
   opacity: .7;
   vertical-align: super;
 }
-.answerBlockRenderer { display: grid; gap: 10px; line-height: 1.6; white-space: normal; }
+.answerBubbleGroup { display: grid; gap: 8px; line-height: 1.6; white-space: normal; }
+.plannerChat .chatBubble.hasAnswerBubbleGroups {
+  display: grid;
+  gap: 8px;
+  border: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.chatBubble.hasAnswerBubbleGroups .answerBubbleGroup {
+  border-radius: 16px;
+  background: var(--brand-soft);
+  padding: 12px 14px;
+}
+.chatBubble.hasAnswerBubbleGroups .answerBubbleGroup + .answerBubbleGroup {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 12px;
+}
+.answerBubbleGroup + .answerBubbleGroup {
+  margin-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  padding-top: 10px;
+}
 .answerBlock > * { margin: 0; }
 .answerBlock h3 { margin: 0 0 5px; color: inherit; font-size: .88rem; font-weight: 850; }
 .answerBlock ul, .answerBlock ol { display: grid; gap: 5px; margin: 0; padding-left: 20px; }

@@ -7,7 +7,9 @@ from app.modules.information_finder.entity_linking import link_verified_entities
 from app.modules.information_finder.public import (
     InformationFinderService,
     build_information_finder_graph,
+    materialize_entity_spans,
 )
+from app.shared.entity_linking import EntityResolver, link_verified_entities
 from app.modules.itinerary_planner.public import (
     ItineraryPlannerInput,
     ItineraryPlannerOutput,
@@ -58,6 +60,9 @@ class RootNodes:
         handoff_projector: ExplorerHandoffProjector | None = None,
     ) -> None:
         self.information_finder_service = information_finder_service
+        self.entity_resolver = EntityResolver(
+            information_finder_service.entity_resolver.lookup
+        ) if getattr(information_finder_service, "entity_resolver", None) else None
         self.supervisor_service = supervisor_service or SupervisorService()
         self.supervisor = build_supervisor_graph(self.supervisor_service)
         self.explorer = build_explorer_graph(explorer_service)
@@ -114,11 +119,11 @@ class RootNodes:
             "decision": decision,
             "conversation_context": conversation_context,
             "warnings": decision.warnings,
-            "suggestions": [],
+            "suggestions": list(decision.suggestions),
         }
         if decision.response is not None:
             response = decision.response
-            resolver = getattr(self.information_finder_service, "entity_resolver", None)
+            resolver = self.entity_resolver
             if resolver is not None and decision.entity_names:
                 response = await link_verified_entities(
                     response,
@@ -155,11 +160,20 @@ class RootNodes:
             {"query": information_query(state)}
         )
         output = result["output"]
-        response = await self.supervisor_service.compose_information_response(
+        response, patch = await self.supervisor_service.compose_information_response(
             message=state.get("message", ""),
             conversation_summary=state.get("conversation_summary"),
             output=output,
         )
+        if patch.get("content_blocks"):
+            resolver = getattr(self.information_finder_service, "entity_resolver", None)
+            patch["content_blocks"] = await materialize_entity_spans(
+                patch["content_blocks"],
+                entity_names=output.entity_names,
+                entity_candidates=output.entity_candidates,
+                resolver=resolver,
+            )
+            output = output.model_copy(update=patch)
         if output.suggestions:
             response = "Để tiếp tục, Penguin cần thêm ngân sách. Bạn có thể chọn một gợi ý bên dưới hoặc nhập mức khác."
         return {
@@ -383,11 +397,16 @@ class RootNodes:
             ),
         }
 
-    @staticmethod
-    def finish(state: RootState) -> dict:
+    async def finish(self, state: RootState) -> dict:
+        response = state.get(
+            "response",
+            "I can help with travel planning and destination information.",
+        )
+        response = await link_verified_entities(
+            response,
+            state.get("decision").entity_names if state.get("decision") else [],
+            self.entity_resolver,
+        )
         return {
-            "response": state.get(
-                "response",
-                "I can help with travel planning and destination information.",
-            )
+            "response": response
         }

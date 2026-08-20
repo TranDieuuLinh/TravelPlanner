@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from app.modules.supervisor.contract import ClassifierResult, SupervisorInput
+from app.modules.supervisor.contract import ClassifierResult, ComposedAnswer, SupervisorInput
 
 
 class IntentClassifier(Protocol):
@@ -9,5 +9,5 @@ class IntentClassifier(Protocol):
 
 
 class ResponseComposer(Protocol):
-    async def compose(self, payload: dict) -> str:
+    async def compose(self, payload: dict) -> ComposedAnswer:
         """Compose the final user-facing response from agent output."""

@@ -6,6 +6,7 @@ export type InlineSpan = TextSpan | EntitySpan;
 
 export type AnswerBlock = {
   type: string;
+  bubbleId?: string | null;
   [key: string]: unknown;
 };
 

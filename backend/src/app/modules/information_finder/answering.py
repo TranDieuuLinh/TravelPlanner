@@ -150,6 +150,17 @@ async def generate_and_render_answer(
             generated, sources
         )
     except AnswerProviderError as exc:
+        repair = getattr(answers, "generate_repair", None)
+        if callable(repair):
+            try:
+                generated = await repair(query, sources, [])
+                answer, content_blocks, cited_sources = validate_and_render_answer(
+                    generated, sources
+                )
+                warnings.append("answer_repair_succeeded")
+                return answer, content_blocks, cited_sources, warnings
+            except AnswerProviderError:
+                pass
         if not fallback_enabled or fallback_answers is None:
             raise
         generated = await fallback_answers.generate(query, sources)

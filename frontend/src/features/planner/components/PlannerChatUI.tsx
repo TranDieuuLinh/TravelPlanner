@@ -147,7 +147,7 @@ export const PlannerChatMessages = forwardRef(function PlannerChatMessages(
               <PenguinMascot size={44} variant="curious" />
             </span>
           ) : null}
-          <div className={`chatBubble ${message.role}`}>
+          <div className={`chatBubble ${message.role}${message.contentBlocks?.some((block) => block.bubbleId) ? " hasAnswerBubbleGroups" : ""}`}>
             {message.role === "assistant" ? (
               message.contentBlocks?.length ? (
                 <AnswerBlockRenderer

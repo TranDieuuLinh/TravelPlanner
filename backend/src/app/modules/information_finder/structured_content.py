@@ -79,7 +79,8 @@ def clean_source_sentences(
 def normalize_answer_blocks(blocks: list[AnswerBlock]) -> list[AnswerBlock]:
     """Clean LLM blocks before citations, entity spans, or UI rendering."""
     normalized: list[AnswerBlock] = []
-    for block in blocks:
+    for index, block in enumerate(blocks, start=1):
+        bubble_id = block.bubble_id or f"bubble-{index}"
         if isinstance(block, FactListBlock):
             items = [
                 item.model_copy(
@@ -96,14 +97,14 @@ def normalize_answer_blocks(blocks: list[AnswerBlock]) -> list[AnswerBlock]:
                     item.model_copy(update={"text": _limit_words(item.text, 25)})
                     for item in items
                 ]
-                normalized.append(block.model_copy(update={"items": items}))
+                normalized.append(block.model_copy(update={"items": items, "bubble_id": bubble_id}))
             continue
         if isinstance(block, VerseBlock):
             lines = [clean_text(line) for line in block.lines]
             lines = [line for line in lines if line]
             if lines:
                 normalized.append(
-                    block.model_copy(update={"lines": lines, "inline_spans": []})
+                    block.model_copy(update={"lines": lines, "inline_spans": [], "bubble_id": bubble_id})
                 )
             continue
         if isinstance(block, (RecommendationsBlock, StepsBlock, ComparisonBlock)):
@@ -114,13 +115,13 @@ def normalize_answer_blocks(blocks: list[AnswerBlock]) -> list[AnswerBlock]:
                 if _child_is_useful(child)
             ][:5]
             if children:
-                normalized.append(block.model_copy(update={field: children}))
+                normalized.append(block.model_copy(update={field: children, "bubble_id": bubble_id}))
             continue
         if isinstance(block, (ParagraphBlock, QuoteBlock, NoticeBlock)):
             text = clean_text(block.text)
             if text:
                 normalized.append(
-                    block.model_copy(update={"text": text, "inline_spans": []})
+                    block.model_copy(update={"text": text, "inline_spans": [], "bubble_id": bubble_id})
                 )
     return normalized
 

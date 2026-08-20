@@ -124,3 +124,13 @@ def test_short_trip_prompt_uses_explorer_when_llm_is_unavailable():
 
     assert decision.route == "explorer"
     assert decision.warnings == ["Supervisor LLM chưa được cấu hình."]
+
+
+def test_short_destination_prompt_uses_information_finder_when_llm_is_unavailable():
+    decision = decide(
+        SupervisorService(classifier=None),
+        "Đà Lạt",
+    )
+
+    assert decision.route == "information_finder"
+    assert decision.warnings == ["Supervisor LLM chưa được cấu hình."]

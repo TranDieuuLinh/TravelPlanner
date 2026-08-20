@@ -64,13 +64,16 @@ function Citations({ sourceIds, sources }: { sourceIds: unknown; sources: TripCh
         const number = sources.findIndex((item) => item.sourceId === source.sourceId) + 1;
         return (
           <a
+            aria-label={`Mở nguồn tham khảo ${number}`}
             className="messageCitation"
             href={source.url}
             key={source.sourceId}
             rel="noreferrer"
             target="_blank"
+            title={`Nguồn tham khảo ${number}`}
           >
-            [{number}]
+            <span aria-hidden="true" className="citationSourceIcon">🔗</span>
+            <span className="srOnly">{number}</span>
           </a>
         );
       })}
@@ -146,5 +149,29 @@ export function AnswerBlockRenderer({
   blocks: AnswerBlock[];
   sources?: TripChatSource[];
 }) {
-  return <div className="answerBlockRenderer">{blocks.map((rawBlock, index) => { const block = record(rawBlock); return block ? <div className="answerBlock" key={`${block.type}-${index}`}>{renderBlock(block, sources)}</div> : null; })}</div>;
+  const hasBubbleIds = blocks.some((block) => typeof block.bubbleId === "string" && block.bubbleId.trim());
+  const groups = hasBubbleIds
+    ? blocks.reduce<Array<{ id: string; blocks: AnswerBlock[] }>>((result, block, index) => {
+        const id = typeof block.bubbleId === "string" && block.bubbleId.trim()
+          ? block.bubbleId.trim()
+          : `legacy-${index}`;
+        const current = result[result.length - 1];
+        if (current?.id === id) current.blocks.push(block);
+        else result.push({ id, blocks: [block] });
+        return result;
+      }, [])
+    : [{ id: "legacy", blocks }];
+
+  return (
+    <>
+      {groups.map((group, groupIndex) => (
+        <div className="answerBubbleGroup" key={`${group.id}-${groupIndex}`}>
+          {group.blocks.map((rawBlock, index) => {
+            const block = record(rawBlock);
+            return block ? <div className="answerBlock" key={`${block.type}-${index}`}>{renderBlock(block, sources)}</div> : null;
+          })}
+        </div>
+      ))}
+    </>
+  );
 }

@@ -41,6 +41,12 @@ def build_fallback_decision(
             warning,
             "Clear travel-information intent matched locally.",
         )
+    if _looks_like_destination_prompt(payload.message):
+        return _decision(
+            "information_finder",
+            warning,
+            "Short destination prompt routed to travel information.",
+        )
     if re.fullmatch(r"(xin )?chao[.! ]*", message):
         return SupervisorDecision(
             route="finish",
@@ -95,3 +101,30 @@ def _looks_like_trip_request(value: str) -> bool:
     has_trip_verb = re.search(r"\b(di|du lich|nghi duong|tham quan)\b", value)
     has_duration = re.search(r"\b\d+\s*(ngay|dem)\b", value)
     return bool(has_trip_verb and has_duration)
+
+
+def _looks_like_destination_prompt(value: str) -> bool:
+    """Route a short place-only prompt to Finder during classifier fallback.
+
+    A message such as ``Đà Lạt`` contains no explicit question words, but in a
+    travel chat it conventionally asks for an overview. Keep this heuristic
+    narrow so greetings, long ambiguous requests and planning prompts do not
+    get rerouted.
+    """
+    raw = " ".join(value.strip().split())
+    normalized = _normalize(raw)
+    words = normalized.split()
+    if not 1 < len(words) <= 4:
+        return False
+    if _contains(
+        normalized,
+        "xin chao",
+        "toi muon",
+        "hay",
+        "cho toi",
+        "lap",
+        "ke hoach",
+        "di ",
+    ):
+        return False
+    return not re.search(r"[?!.,;:]", raw)

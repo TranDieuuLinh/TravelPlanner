@@ -47,24 +47,24 @@ class SupervisorService:
 
     async def compose_information_response(
         self, *, message: str, conversation_summary: str | None, output
-    ) -> str:
-        fallback = self.format_information_output(output)
+    ):
+        fallback = output.answer.strip() or self.format_information_output(output)
         if self._composer is None:
-            return fallback
+            return fallback, {}
         payload = {
             "contextSummary": conversation_summary or "",
             "currentUserMessage": message,
             "agent": "information_finder",
-            "toolPlan": ["search_db", "search_web"],
             "facts": [fact.model_dump(mode="json", by_alias=True) for fact in output.facts],
             "sources": [source.model_dump(mode="json", by_alias=True) for source in output.sources],
-            "currentItineraryEditState": "placeholder",
         }
         try:
-            response = await self._composer.compose(payload)
-            return response.strip() or fallback
+            composed = await self._composer.compose(payload)
+            if not composed.content_blocks:
+                return fallback, {}
+            return fallback, {"content_blocks": composed.content_blocks}
         except Exception:
-            return fallback
+            return fallback, {}
 
     async def decide(self, payload: SupervisorInput) -> SupervisorDecision:
         if payload.clarification_required:
@@ -173,5 +173,6 @@ class SupervisorService:
             }[result.route],
             response=result.response if result.route == "finish" else None,
             entity_names=result.entity_names,
+            suggestions=result.suggestions,
         )
         return decision

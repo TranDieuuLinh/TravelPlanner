@@ -12,11 +12,16 @@ from app.modules.information_finder.contract import (
     SourceReference,
 )
 from app.modules.information_finder.errors import (
+    AnswerProviderInvalidOutput,
     EmbeddingProviderError,
     SearchQueryPlanningError,
     SourceChunkingError,
 )
-from app.modules.information_finder.entity_linking import EntityResolver
+from app.modules.information_finder.entity_linking import (
+    EntityResolver,
+    link_verified_entities,
+)
+from app.modules.information_finder.answering import validate_and_render_answer
 from app.modules.information_finder.freshness import FreshnessPolicy
 from app.modules.information_finder.ports import (
     AnswerGenerator,
@@ -226,14 +231,73 @@ class InformationFinderService:
                 ],
             )
         used_extractive_fallback = False
+        repair_attempted = False
+        safe_no_answer = False
+        rendered_answer = ""
+        normalized_blocks = []
         try:
             generated = await self.answers.generate(normalized_query, ranked)
-        except Exception:
-            if not self.options.answer_fallback_enabled or self.fallback_answers is None:
+            invalid_ids = self._invalid_answer_source_ids(generated, ranked)
+            repair = getattr(self.answers, "generate_repair", None)
+            if invalid_ids and callable(repair):
+                repair_attempted = True
+                generated = await repair(normalized_query, ranked, invalid_ids)
+                invalid_ids = self._invalid_answer_source_ids(generated, ranked)
+            if invalid_ids:
+                raise AnswerProviderInvalidOutput(
+                    "answer cited unavailable source IDs"
+                )
+            rendered_answer, normalized_blocks, _ = validate_and_render_answer(
+                generated, ranked
+            )
+        except Exception as exc:
+            repair = getattr(self.answers, "generate_repair", None)
+            if not repair_attempted and callable(repair):
+                try:
+                    repair_attempted = True
+                    generated = await repair(normalized_query, ranked, [])
+                    if not self._invalid_answer_source_ids(generated, ranked):
+                        rendered_answer, normalized_blocks, _ = validate_and_render_answer(
+                            generated, ranked
+                        )
+                        warnings.append("answer_repair_succeeded")
+                    else:
+                        raise AnswerProviderInvalidOutput(
+                            "answer repair cited unavailable source IDs"
+                        )
+                except Exception:
+                    safe_no_answer = True
+                    warnings.append("answer_repair_failed:safe_no_answer")
+            elif repair_attempted:
+                safe_no_answer = True
+                warnings.append("answer_repair_failed:safe_no_answer")
+            elif not self.options.answer_fallback_enabled or self.fallback_answers is None:
                 raise
-            generated = await self.fallback_answers.generate(normalized_query, ranked)
-            used_extractive_fallback = True
-            warnings.append("answer_extractive_fallback:fact_extraction")
+            else:
+                generated = await self.fallback_answers.generate(normalized_query, ranked)
+                rendered_answer, normalized_blocks, _ = validate_and_render_answer(
+                    generated, ranked
+                )
+                used_extractive_fallback = True
+                error_code = getattr(exc, "code", type(exc).__name__)
+                warnings.append(f"answer_extractive_fallback:{error_code}")
+
+        if safe_no_answer:
+            return InformationFinderOutput(
+                answer="",
+                facts=[],
+                content_blocks=[],
+                sources=[],
+                suggestions=[],
+                warnings=warnings,
+            )
+
+        rendered_answer = await link_verified_entities(
+            rendered_answer,
+            generated.entity_names,
+            self.entity_resolver,
+            generated.entity_candidates,
+        )
 
         source_by_id = {source.source_id: source for source in ranked}
         facts: list[AnswerClaim] = []
@@ -250,11 +314,14 @@ class InformationFinderService:
         if not facts:
             warnings.append("No cited facts were extracted from available sources.")
         return InformationFinderOutput(
+            answer=rendered_answer,
             facts=facts,
             # Fallback blocks are source excerpts, not presentation-ready
             # answers. Keep them private so the supervisor composer can
             # normalize the facts before the API exposes the response.
-            content_blocks=[] if used_extractive_fallback else generated.blocks,
+            content_blocks=[] if used_extractive_fallback else normalized_blocks,
+            entity_names=generated.entity_names,
+            entity_candidates=generated.entity_candidates,
             sources=[self._citation(source_by_id[item]) for item in cited_ids],
             suggestions=(
                 []
@@ -263,6 +330,16 @@ class InformationFinderService:
             ),
             warnings=warnings,
         )
+
+    @staticmethod
+    def _invalid_answer_source_ids(generated, sources: list[RetrievedSource]) -> list[str]:
+        allowed = {source.source_id for source in sources}
+        ids: list[str] = []
+        for claim in generated.claims:
+            ids.extend(claim.source_ids)
+        for block in generated.blocks:
+            ids.extend(InformationFinderService._block_source_ids(block))
+        return list(dict.fromkeys(item for item in ids if item not in allowed))
 
     @staticmethod
     def _block_source_ids(block) -> list[str]:
