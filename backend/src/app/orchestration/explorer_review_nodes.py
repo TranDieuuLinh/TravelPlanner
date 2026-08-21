@@ -135,20 +135,12 @@ class ExplorerReviewNodes:
             "message": state["message"],
             "conversation_context": conversation_context,
             "has_source_input": bool(state.get("urls") or state.get("images")),
-            "has_itinerary": (
-                state.get("existing_itinerary") is not None
-                or state.get("existing_planner_output") is not None
-            ),
+            "has_itinerary": state.get("existing_itinerary") is not None,
             "has_edit_operation": state.get("edit_operation") is not None,
-            "current_plan": state.get("existing_planner_output"),
-            "destination": memory_field(memory, "destination"),
-            "duration_days": memory_field(memory, "duration_days"),
-            "mentioned_places": memory_field(memory, "mentioned_places", []) or [],
-            "selected_places": memory_field(memory, "selected_places", []) or [],
-            "clarification_required": (
-                memory_field(memory, "pending_goal") == "clarify_reference"
-            ),
-            "conversation_summary": memory_field(memory, "summary"),
+            **explorer_context,
+            "clarification_required": False,
+            "conversation_summary": state.get("conversation_summary"),
+            "explorer_output": _dump_explorer_output(state.get("explorer_output")),
         }
         if source_action == "summarize_source":
             decision = self.supervisor_service.decide_source_action(source_action)
