@@ -18,18 +18,20 @@ def compose_explorer_review(review: ExplorerReview) -> tuple[str, str | None]:
     context = review.trip_context
     details: list[str] = []
     fields = set(review.defaulted_fields)
+    details.append(f"**📍 {context.input_adm}**")
     if "days" in fields:
-        details.append(f"{context.days} ngày")
+        details.append(f"**📅 {context.days} ngày**")
     if "people" in fields:
-        details.append(_people_label(context.people))
+        details.append(f"**👥 {_people_label(context.people)}**")
     if "budget" in fields:
-        details.append(_budget_label(context.budget))
+        details.append(f"**💰 {_budget_label(context.budget)}**")
     if "shortPreferences" in fields and context.short_preferences:
-        details.append("ưu tiên " + ", ".join(context.short_preferences))
-    summary = "; ".join(details)
+        details.append(
+            f"**✨ Ưu tiên {' | '.join(context.short_preferences)}**"
+        )
+    summary = "  \n".join(details)
     response = (
-        f"Với {context.input_adm}, Penguin đang tạm dùng các giá trị mặc định: "
-        f"{summary}. Bạn muốn chỉnh gì không?"
+        f"{summary}\n\nBạn xem qua các thông tin này nhé — nếu muốn, mình có thể điều chỉnh lại theo ý bạn."
     )
     return response, response
 
@@ -45,8 +47,8 @@ def _people_label(people) -> str:
 
 def _budget_label(budget) -> str:
     levels = {"low": "tiết kiệm", "medium": "trung bình", "high": "cao"}
-    label = f"ngân sách {levels[budget.level]}"
+    label = levels[budget.level].capitalize()
     if budget.amount_per_person is not None:
         amount = f"{budget.amount_per_person:,}".replace(",", ".")
-        label += f" khoảng {amount} {budget.currency}/người cho toàn chuyến"
+        label += f" · {amount} {budget.currency}/người/chuyến"
     return label

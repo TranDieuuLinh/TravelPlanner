@@ -93,7 +93,6 @@ class RootNodes(ExplorerReviewNodes):
         )
         self.plan_editor = build_plan_editor_graph()
         self.plan_editor_service = PlanEditorService()
-        self.finisher = finisher_service or ItineraryFinisher()
 
     async def run_information_finder(self, state: RootState) -> dict:
         result = await self.information_finder.ainvoke(
