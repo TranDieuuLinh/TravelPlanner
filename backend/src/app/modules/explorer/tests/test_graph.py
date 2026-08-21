@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta
 
-from app.modules.explorer.public import build_explorer_graph
+from app.modules.explorer.public import build_explorer_graph, build_explorer_review
 from app.modules.explorer.errors import ExplorerOperationError
 from app.modules.explorer.retry import run_with_one_retry
 
@@ -117,7 +117,17 @@ def test_source_flow_preserves_explicit_prompt_preferences() -> None:
         "đồ uống",
         "địa phương",
         "hoạt động",
+        "giá rẻ",
+        "ẩm thực",
+        "thiên nhiên",
+        "biển",
+        "núi",
+        "cảnh quan",
     ]
+
+    review = build_explorer_review(output)
+    assert review.trip_context is not None
+    assert review.trip_context.short_preferences == output.short_preferences
 
 
 def test_general_preferences_do_not_become_input_items() -> None:
@@ -134,18 +144,26 @@ def test_general_preferences_do_not_become_input_items() -> None:
         "địa phương",
         "ẩm thực",
         "giá rẻ",
+        "thiên nhiên",
+        "biển",
+        "núi",
+        "cảnh quan",
     ]
 
 
-def test_unmatched_trip_styles_are_dropped_by_runtime_taxonomy() -> None:
+def test_unmatched_trip_styles_are_dropped_and_all_insight_tags_are_kept() -> None:
     output = invoke({"rawPrompt": "Du lịch Hà Nội 3 ngày kiểu chill và đi chậm"})
 
-    assert len(output.short_preferences) == 4
-    assert output.short_preferences[0] == "giá rẻ"
-    assert set(output.short_preferences) <= {
-        "giá rẻ", "địa phương", "ẩm thực", "Văn hóa", "thiên nhiên",
-        "biển", "núi", "cảnh quan",
-    }
+    assert output.short_preferences == [
+        "giá rẻ",
+        "địa phương",
+        "ẩm thực",
+        "Văn hóa",
+        "thiên nhiên",
+        "biển",
+        "núi",
+        "cảnh quan",
+    ]
     assert output.short_avoids == ["sang trọng"]
 
 

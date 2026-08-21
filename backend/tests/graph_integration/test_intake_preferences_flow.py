@@ -25,9 +25,16 @@ def test_prompt_preferences_reach_place_checker_before_pool_gate() -> None:
 
     output = update["place_output"]
     pho = next(item for item in output.resolved_items if item.selected)
-    assert output.trip_context.preferences[0] == "văn hóa"
-    assert len(output.trip_context.preferences) == 4
-    assert "giá rẻ" in output.trip_context.preferences
+    assert output.trip_context.preferences == [
+        "văn hóa",
+        "giá rẻ",
+        "địa phương",
+        "ẩm thực",
+        "thiên nhiên",
+        "biển",
+        "núi",
+        "cảnh quan",
+    ]
     assert output.trip_context.avoids == ["sang trọng"]
     assert pho.selected.place_id == "kg:pho"
     assert output.status.value == "blocked"

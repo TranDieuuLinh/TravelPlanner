@@ -1,6 +1,6 @@
 # Travel Planner Agents
 
-Cập nhật lần cuối: 2026-08-20.
+Cập nhật lần cuối: 2026-08-21.
 
 Greenfield modular backend for a LangGraph-based travel-planning workflow.
 
@@ -93,10 +93,12 @@ This is a working architecture scaffold, not a production travel-data system.
   assistant-meta, and out-of-scope `finish` requests. There is no keyword-based
   Supervisor routing provider. The baseline model and routing policy are not
   production-evaluated.
-- Explorer applies 3-day/2-adult/low-budget defaults, derives up to four hidden
-  preference tags from `insight-user.yml`, and exposes structured trip-context
-  patch operations for Supervisor integration. Only missing/conflicting ADM is
-  a blocking clarification.
+- Explorer applies 3-day/2-adult/low-budget defaults, preserves every valid
+  explicit preference, and appends every priority tag from the applicable
+  `insight-user.yml` groups without random sampling or a four-tag cap. Final
+  preference/avoid tags must also be keys in `tags-auto.yml`. Explorer exposes
+  structured trip-context patch operations for Supervisor integration. Only
+  missing/conflicting ADM is a blocking clarification.
 - InformationFinder uses cache-first hybrid PostgreSQL/pgvector retrieval,
   optional Tavily Search, and an optional structured answer generator through
   the shared Gemini client. Without configuration it returns a truthful

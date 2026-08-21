@@ -1,7 +1,5 @@
-import hashlib
 import os
 from pathlib import Path
-import random
 
 import yaml
 
@@ -54,36 +52,59 @@ class YamlInsightCatalog:
         avoids: list[str],
         seed: str,
     ) -> tuple[list[str], list[str]]:
+        # Keep the port-compatible argument, but never use it to sample tags.
         catalog = self._read()
         groups = [catalog["ngân_sách"][_BUDGET_GROUP[budget_level]]]
         if children or infants:
             groups.append(catalog["đối_tượng"]["gia_đình_có_trẻ_em"])
 
-        priority = self.tag_catalog.filter_allowed(
-            [tag for group in groups for tag in group["priority-tags"]]
+        insight_tags = set(
+            self.tag_catalog.filter_allowed(self._declared_tags(catalog))
         )
-        derived_avoids = self.tag_catalog.filter_allowed(
-            [tag for group in groups for tag in group["avoid-tags"]]
-        )
-        merged_avoids = list(dict.fromkeys([*avoids, *derived_avoids]))
-        selected = self.tag_catalog.filter_allowed(preferences)
-        selected = [tag for tag in selected if tag not in merged_avoids]
-
-        candidates = [
+        priority = [
             tag
-            for tag in dict.fromkeys(priority)
-            if tag not in selected and tag not in merged_avoids
+            for tag in self.tag_catalog.filter_allowed(
+                [tag for group in groups for tag in group["priority-tags"]]
+            )
+            if tag in insight_tags
         ]
-        missing = max(0, 4 - len(selected))
-        if missing and candidates:
-            first = candidates.pop(0)
-            additions = [first]
-            if missing > 1 and candidates:
-                digest = hashlib.sha256(seed.encode("utf-8")).digest()
-                rng = random.Random(int.from_bytes(digest[:8], "big"))
-                additions.extend(rng.sample(candidates, min(missing - 1, len(candidates))))
-            selected.extend(additions[:missing])
-        return selected[:4], merged_avoids
+        derived_avoids = [
+            tag
+            for tag in self.tag_catalog.filter_allowed(
+                [tag for group in groups for tag in group["avoid-tags"]]
+            )
+            if tag in insight_tags
+        ]
+        supplied_avoids = [
+            tag
+            for tag in self.tag_catalog.filter_allowed(avoids)
+            if tag in insight_tags
+        ]
+        merged_avoids = list(dict.fromkeys([*supplied_avoids, *derived_avoids]))
+        selected = [
+            tag
+            for tag in self.tag_catalog.filter_allowed(preferences)
+            if tag in insight_tags
+        ]
+        selected = [tag for tag in selected if tag not in merged_avoids]
+        selected.extend(
+            tag
+            for tag in priority
+            if tag not in selected and tag not in merged_avoids
+        )
+        return selected, merged_avoids
+
+    @staticmethod
+    def _declared_tags(catalog: dict) -> list[str]:
+        return list(
+            dict.fromkeys(
+                tag
+                for dimension in ("đối_tượng", "ngân_sách", "sở_thích")
+                for group in catalog[dimension].values()
+                for field in ("priority-tags", "avoid-tags")
+                for tag in group[field]
+            )
+        )
 
     def _read(self) -> dict:
         raw = yaml.safe_load(self.path.read_text(encoding="utf-8"))

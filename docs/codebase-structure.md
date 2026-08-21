@@ -1,6 +1,6 @@
 # Cấu trúc codebase hiện tại
 
-Cập nhật lần cuối: 2026-08-20.
+Cập nhật lần cuối: 2026-08-21.
 
 ## Các ứng dụng cấp cao nhất
 
@@ -231,6 +231,12 @@ Docker Compose mount toàn bộ `auto-attach/` read-only tại `/auto-attach` v�
 rõ `EXPLORER_TAGS_AUTO_PATH=/auto-attach/tags-auto.yml` cùng
 `EXPLORER_INSIGHT_USER_PATH=/auto-attach/insight-user.yml`; hai catalog đọc lại
 file tại runtime nên chỉnh taxonomy/insight không cần build lại image.
+Explorer giữ toàn bộ preference explicit theo thứ tự rồi bổ sung toàn bộ
+`priority-tags` của các nhóm insight đang áp dụng; không lấy mẫu ngẫu nhiên và
+không giới hạn bốn tag. Trước khi tạo `ExplorerOutput`, preference/avoid được
+lọc theo giao của các tag khai báo trong `insight-user.yml` và key hiện có trong
+`tags-auto.yml`, nên tag ngoài hai nguồn cấu hình không được chuyển tới
+Supervisor hoặc module downstream.
 Success, clarification và failure lưu ba loại snapshot riêng; repository mặc
 định vẫn là in-memory. Mỗi source tạo `SourceArtifact` nội bộ có loại evidence,
 URL, time hint và thời điểm quan sát trước khi Gemini tổng hợp output. YouTube

@@ -1,6 +1,6 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-20.
+Cập nhật lần cuối: 2026-08-21.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
@@ -203,8 +203,11 @@ và `specialNotes=[]`. Budget handoff luôn là tổng toàn chuyến cho một 
 group total do user nhập được chia đúng một lần. Khi user không nhập số tiền,
 Explorer tính `amountPerPerson` bằng shared `DestinationDailyBudgetEstimator`
 theo ADM/level/days/people trước khi tạo review và giữ `null` nếu chưa có
-profile. Preference/avoid giữ dữ liệu user trước rồi bổ sung từ
-`insight-user.yml`; mọi giá trị public vẫn phải là key của `tags-auto.yml`.
+profile. Preference/avoid giữ toàn bộ dữ liệu user hợp lệ trước rồi bổ sung toàn
+bộ `priority-tags` của các nhóm đang áp dụng từ `insight-user.yml`, theo thứ tự
+ổn định, không random và không giới hạn bốn phần tử. Chỉ tag đồng thời được khai
+báo trong `insight-user.yml` và là key của `tags-auto.yml` mới được giữ trong
+output để chuyển tới Supervisor/downstream.
 Giá vé/món riêng không phải whole-trip budget.
 
 `ExplorerReview.tripContext` chỉ đưa cho Supervisor `inputADM`, `days`,
