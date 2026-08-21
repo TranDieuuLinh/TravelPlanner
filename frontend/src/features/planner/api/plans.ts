@@ -29,10 +29,15 @@ export type {
   PlaceReviewPage,
 } from "@/features/planner/api/reviews";
 export {
+  listSubplaces,
   PLACE_SEARCH_TOP_K,
   searchPlaces,
 } from "@/features/planner/api/place-search";
-export type { PlaceSuggestion } from "@/features/planner/api/place-search";
+export type {
+  PlaceSuggestion,
+  SubplaceGroup,
+  SubplaceSummary,
+} from "@/features/planner/api/place-search";
 
 const mapFullCurrentTripChat = (chat: CurrentTripChat): TripChat =>
   mapCurrentTripChat(chat, plannerOutputToTravelPlan);

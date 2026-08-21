@@ -1,4 +1,5 @@
 from app.modules.information_finder.contract import (
+    AnswerMetadata,
     ComparisonBlock,
     FactListBlock,
     GeneratedAnswer,
@@ -22,6 +23,78 @@ from app.modules.information_finder.errors import (
 from app.modules.information_finder.ports import AnswerGenerator
 from app.modules.information_finder.normalization import normalize_generated_answer_text
 from app.modules.information_finder.structured_content import normalize_answer_blocks
+
+
+def build_answer_metadata(
+    *,
+    generation_mode: str,
+    fallback_used: bool,
+    cited_sources: list[RetrievedSource],
+    claim_count: int,
+) -> AnswerMetadata:
+    """Describe answer validation without exposing provider-specific data."""
+    if not cited_sources:
+        return AnswerMetadata(
+            generation_mode="none",
+            validation_status="no_cited_content",
+            confidence="unavailable",
+            fallback_used=fallback_used,
+        )
+    if generation_mode == "extractive":
+        confidence = "low"
+    elif all(source.review_status == "approved" for source in cited_sources):
+        confidence = "high"
+    else:
+        confidence = "medium"
+    return AnswerMetadata(
+        generation_mode=generation_mode,
+        validation_status="citation_validated",
+        confidence=confidence,
+        fallback_used=fallback_used,
+        claim_count=claim_count,
+        cited_source_count=len(cited_sources),
+    )
+
+
+def invalid_answer_source_ids(
+    generated: GeneratedAnswer, sources: list[RetrievedSource]
+) -> list[str]:
+    allowed = {source.source_id for source in sources}
+    ids: list[str] = []
+    for claim in generated.claims:
+        ids.extend(claim.source_ids)
+    for block in generated.blocks:
+        ids.extend(block_source_ids(block))
+    return list(dict.fromkeys(item for item in ids if item not in allowed))
+
+
+def block_source_ids(block) -> list[str]:
+    ids = list(getattr(block, "source_ids", []))
+    for field in ("items", "options"):
+        for item in getattr(block, field, []):
+            ids.extend(getattr(item, "source_ids", []))
+    return ids
+
+
+def suggestions_from_blocks(blocks) -> list[dict[str, object]]:
+    """Turn retrieved, cited recommendations into grounded chat choices."""
+    suggestions: list[dict[str, object]] = []
+    for block in blocks:
+        if getattr(block, "type", None) not in {"recommendations", "comparison"}:
+            continue
+        entries = getattr(block, "items", None) or getattr(block, "options", None) or []
+        for entry in entries[:5]:
+            name = str(getattr(entry, "name", "")).strip()
+            source_ids = list(dict.fromkeys(getattr(entry, "source_ids", [])))
+            if not name or not source_ids:
+                continue
+            suggestions.append({
+                "field": "information_follow_up",
+                "label": name,
+                "value": f"Cho tôi biết thêm về {name}",
+                "sourceIds": source_ids,
+            })
+    return suggestions
 
 
 def validate_and_render_answer(

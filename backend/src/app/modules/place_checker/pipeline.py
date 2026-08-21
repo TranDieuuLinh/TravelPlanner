@@ -19,6 +19,9 @@ from app.modules.place_checker.output_contract import (
 )
 from app.modules.place_checker.planning.builder import PlaceCheckerPlannerOutputBuilder
 from app.modules.place_checker.enums import PlaceCheckerStatus, VerificationStatus
+from app.modules.place_checker.localization.service import (
+    SourceNoteLocalizationService,
+)
 from app.modules.place_checker.ports import PlaceCheckerMetricsSink
 from app.modules.place_checker.resolution.service import EntityResolutionService
 from app.modules.place_checker.retrieval.service import TargetedRetrievalService
@@ -41,6 +44,7 @@ class PlaceCheckerPipeline:
         scoring: CandidateScoringService | None = None,
         metrics: PlaceCheckerMetricsSink | None = None,
         food_selection: FoodRestaurantSelectionService | None = None,
+        source_note_localization: SourceNoteLocalizationService | None = None,
     ) -> None:
         self.context_builder = context_builder
         self.entity_resolution = entity_resolution
@@ -52,6 +56,9 @@ class PlaceCheckerPipeline:
         self.scoring = scoring or CandidateScoringService()
         self.metrics = metrics
         self.food_selection = food_selection
+        self.source_note_localization = (
+            source_note_localization or SourceNoteLocalizationService()
+        )
         self.output = PlaceCheckerOutputAssembler()
         self.retrieval_projection = RetrievalCandidateProjector()
 
@@ -212,6 +219,19 @@ class PlaceCheckerPipeline:
             pool_warnings=pool_warnings,
             food_target=food_target,
             missing_food=missing_food,
+        )
+        localization_started = perf_counter()
+        result = await self.source_note_localization.localize(result)
+        phase["source_note_localization"] = self._elapsed(localization_started)
+        result = result.model_copy(
+            update={
+                "metadata": result.metadata.model_copy(
+                    update={
+                        "duration_ms": self._elapsed(started),
+                        "phase_duration_ms": phase,
+                    }
+                )
+            }
         )
         await self._record_metrics(result)
         return result

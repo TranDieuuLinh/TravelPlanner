@@ -50,6 +50,8 @@ def _provider_schema(value):
 
 
 class StructuredLlmAnswerGenerator:
+    generation_mode = "structured"
+
     def __init__(
         self,
         client: LlmClient,

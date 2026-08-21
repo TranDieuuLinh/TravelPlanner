@@ -61,15 +61,6 @@ ACTIVITY_OPTIONAL = ENTITY_OPTIONAL + [
     "image",
 ]
 STYLE_OPTIONAL = ENTITY_OPTIONAL + ["style_group", "time_windows", "time_duration", "story"]
-SUBPLACE_OPTIONAL = ENTITY_OPTIONAL + [
-    "latitude",
-    "longitude",
-    "address",
-    "url_google_map",
-    "image",
-    "story",
-]
-
 ITEM_TYPES = ["ActivityItem", "DrinkItem", "FoodItem", "ProductItem"]
 OFFER_ITEM_SOURCE_TYPES = [
     "ADM0",
@@ -194,8 +185,8 @@ NODE_TYPE_PROPERTIES["Style"] = {
     "optionalProperties": STYLE_OPTIONAL,
 }
 NODE_TYPE_PROPERTIES["SubPlace"] = {
-    "requiredProperties": ENTITY_REQUIRED,
-    "optionalProperties": SUBPLACE_OPTIONAL,
+    "requiredProperties": PLACE_REQUIRED,
+    "optionalProperties": PLACE_OPTIONAL,
 }
 
 

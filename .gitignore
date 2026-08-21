@@ -70,4 +70,7 @@ trung-plans/
 !backend/migrations/016_curate_hanoi_places_and_kim_dong.sql
 !backend/migrations/017_curate_hanoi_top_place_aliases.sql
 !backend/migrations/018_curate_hanoi_top60_aliases.sql
+!backend/migrations/019_curate_hanoi_subplaces.sql
+!backend/migrations/020_reparent_ba_dinh_subplaces.sql
+!backend/migrations/021_curate_nearby_travelplace_subplaces.sql
 *.local*

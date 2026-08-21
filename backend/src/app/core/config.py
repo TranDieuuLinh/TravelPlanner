@@ -132,6 +132,11 @@ class Settings(BaseSettings):
     google_maps_scraper_timeout_seconds: float = Field(default=90.0, gt=0)
     google_maps_scraper_max_alias_queries: int = Field(default=2, ge=0, le=5)
     google_maps_scraper_max_concurrency: int = Field(default=2, ge=1, le=5)
+    place_checker_note_localization_max_output_tokens: int = Field(
+        default=2048,
+        ge=256,
+        le=8192,
+    )
     route_provider: Literal["valhalla", "disabled"] = "valhalla"
     valhalla_base_url: str = "http://localhost:8002"
     valhalla_timeout_seconds: float = Field(default=180.0, gt=0)

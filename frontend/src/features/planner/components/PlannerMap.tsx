@@ -58,6 +58,7 @@ export type PlannerMapPlace = ExplorePlace & {
   dayLabel: string;
   timeWindow: string;
   imageUrl?: string | null;
+  mapKind?: "itinerary" | "subplace";
 };
 
 export type PlannerMapRoute = {
@@ -125,6 +126,7 @@ type PlannerMapProps = {
   locationFocusRequest: number;
   placeFocusRequest: number;
   routeFocusRequest: number;
+  compactPlacesMode?: boolean;
   dayColorKeys?: string[];
   locationBusy: boolean;
   locationMessage: string | null;
@@ -166,6 +168,7 @@ export function PlannerMap({
   locationFocusRequest,
   placeFocusRequest,
   routeFocusRequest,
+  compactPlacesMode = false,
   dayColorKeys = [],
   locationBusy,
   locationMessage,
@@ -576,11 +579,13 @@ export function PlannerMap({
     locatedPlaces.forEach((place) => {
       const isSelected = place.mapKey === selectedKey;
       const isAccommodation = place.category === "hotel";
+      const isSubplace = place.mapKind === "subplace";
       const markerColor = dayColors.get(place.dayColorKey) ?? MAP_ROUTE_COLOR;
       const element = document.createElement("button");
       element.className = [
         "candidateMapMarker",
         isAccommodation ? "candidateMapMarker--accommodation" : "",
+        isSubplace ? "candidateMapMarker--subplace" : "",
         isSelected ? "is-selected" : ""
       ]
         .filter(Boolean)
@@ -589,7 +594,11 @@ export function PlannerMap({
       element.title = `${place.name}. Nhấp để xem, nhấp đúp để phóng to`;
       element.setAttribute(
         "aria-label",
-        isAccommodation ? `Nơi lưu trú: ${place.name}` : `${place.mapOrder}. ${place.name}`
+        isAccommodation
+          ? `Nơi lưu trú: ${place.name}`
+          : isSubplace
+            ? `Điểm bên trong: ${place.name}`
+            : `${place.mapOrder}. ${place.name}`
       );
       const pin = document.createElement("span");
       pin.style.setProperty("--marker-color", markerColor);
@@ -600,6 +609,7 @@ export function PlannerMap({
 
       const popupContent = document.createElement("article");
       popupContent.className = "candidateMapPopup candidateMapPopup--place";
+      if (isSubplace) popupContent.classList.add("candidateMapPopup--subplace");
       const header = document.createElement("header");
       header.className = "candidateMapPopupHeader";
       const destination = document.createElement("span");
@@ -609,7 +619,9 @@ export function PlannerMap({
       name.className = "candidateMapPopupTitle";
       name.textContent = isAccommodation
         ? `Nơi lưu trú · ${place.name}`
-        : `${place.mapOrder}. ${place.name}`;
+        : isSubplace
+          ? place.name
+          : `${place.mapOrder}. ${place.name}`;
       const meta = document.createElement("div");
       meta.className = "candidateMapPopupMeta";
       if (place.rating != null) {
@@ -693,7 +705,15 @@ export function PlannerMap({
       const address = document.createElement("span");
       address.className = "candidateMapPopupAddress";
       address.textContent = place.address || "Chưa có địa chỉ";
-      details.append(address, hours);
+      details.append(address);
+      if (isSubplace) {
+        const coordinates = document.createElement("code");
+        coordinates.className = "candidateMapPopupCoordinates";
+        coordinates.textContent = `${place.latitude.toFixed(6)}, ${place.longitude.toFixed(6)}`;
+        details.append(coordinates);
+      } else {
+        details.append(hours);
+      }
 
       if (place.imageUrl) {
         const media = document.createElement("div");
@@ -1160,6 +1180,7 @@ export function PlannerMap({
       map.getCanvas().style.cursor = "";
     };
   }, [
+    compactPlacesMode,
     currentLocation,
     dayColors,
     directionsActive,
@@ -1247,6 +1268,7 @@ export function PlannerMap({
       pitch: 0
     });
   }, [
+    compactPlacesMode,
     currentLocation,
     directionsReady,
     directionsSearchOpen,
@@ -1326,7 +1348,7 @@ export function PlannerMap({
         center: coordinates[0],
         duration: 500,
         pitch: 0,
-        zoom: 14
+        zoom: compactPlacesMode ? 17 : 14
       });
       return;
     }
@@ -1338,7 +1360,7 @@ export function PlannerMap({
     map.fitBounds(bounds, {
       bearing: 0,
       duration: 500,
-      maxZoom: 15,
+      maxZoom: compactPlacesMode ? 17 : 15,
       padding: 52,
       pitch: 0
     });
@@ -1388,6 +1410,7 @@ export function PlannerMap({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [
+    compactPlacesMode,
     currentLocation,
     directionsActive,
     directionsReady,

@@ -36,6 +36,7 @@ import {
   enrichTripChatRoutes,
   getTripChat,
   listTripChats,
+  listSubplaces,
   listUrlImportJobs,
   removeTripChatItem,
   removeTripChatAccommodation,
@@ -49,6 +50,8 @@ import {
   updateTripChatItemPersonalNotes,
   updateTripChatAccommodation,
   type PlaceSuggestion,
+  type SubplaceGroup,
+  type SubplaceSummary,
   type ExplorerContext,
   type ExploreResponse,
   type TransportOption,
@@ -179,6 +182,11 @@ import { TripProjectSidebar } from "@/features/planner/components/TripProjectSid
 import { GuidedIntakeDialog } from "@/features/planner/components/GuidedIntakeDialog";
 import { TransportFareInline } from "@/features/planner/components/TransportFareInline";
 import {
+  PlannerSubplaceFocus,
+  PlannerSubplacePreview,
+  subplaceMapKey,
+} from "@/features/planner/components/PlannerSubplaces";
+import {
   ChevronDownIcon,
   HistoryMenuButton,
   MapPinIcon,
@@ -257,6 +265,12 @@ type DirectionStop = {
   latitude: number;
   longitude: number;
   mapKey: string | null;
+};
+
+type ActiveSubplaceView = {
+  parentPlaceId: string;
+  parentName: string;
+  day: number;
 };
 
 const ACCOMMODATION_MAP_KEY = "plan-accommodation";
@@ -500,6 +514,11 @@ function Planner() {
   >(null);
   const orientationTrackingRef = useRef(false);
   const [plan, setPlan] = useState<TravelPlan | null>(null);
+  const [subplaceGroups, setSubplaceGroups] = useState<
+    Record<string, SubplaceGroup>
+  >({});
+  const [activeSubplaceView, setActiveSubplaceView] =
+    useState<ActiveSubplaceView | null>(null);
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("idle");
   const [loading, setLoading] = useState(false);
   const [backgroundPlanning, setBackgroundPlanning] = useState(false);
@@ -2574,6 +2593,55 @@ function Planner() {
         : null,
     [plan]
   );
+  const subplaceParentIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (displayedPlan?.days ?? []).flatMap((day) =>
+            day.items.flatMap((item) =>
+              item.placeId &&
+              (item.ontologyType === "TravelPlace" || item.ontologyType == null)
+                ? [item.placeId]
+                : []
+            )
+          )
+        )
+      ),
+    [displayedPlan]
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (!user || subplaceParentIds.length === 0) {
+      setSubplaceGroups({});
+      setActiveSubplaceView(null);
+      return () => controller.abort();
+    }
+
+    void listSubplaces(subplaceParentIds, { signal: controller.signal })
+      .then((groups) => {
+        if (controller.signal.aborted) return;
+        const nextGroups = Object.fromEntries(
+          groups.map((group) => [group.parentPlaceId, group])
+        );
+        setSubplaceGroups(nextGroups);
+        setActiveSubplaceView((current) =>
+          current && nextGroups[current.parentPlaceId] ? current : null
+        );
+      })
+      .catch((caught) => {
+        if (controller.signal.aborted) return;
+        setSubplaceGroups({});
+        setActiveSubplaceView(null);
+        if (caught instanceof APIError && caught.status === 401) return;
+      });
+
+    return () => controller.abort();
+  }, [subplaceParentIds, user]);
+
+  const activeSubplaceGroup = activeSubplaceView
+    ? subplaceGroups[activeSubplaceView.parentPlaceId] ?? null
+    : null;
   const displayedUnscheduledPlaces = useMemo(
     () =>
       (displayedPlan?.unscheduledPlaces ?? []).filter(
@@ -2636,6 +2704,12 @@ function Planner() {
   useEffect(() => {
     setSelectedMapRouteKey(null);
   }, [activePlanDay, directionsActive]);
+
+  useEffect(() => {
+    setActiveSubplaceView((current) =>
+      current && current.day !== activePlanDay ? null : current
+    );
+  }, [activePlanDay]);
 
   useEffect(() => {
     directionsPendingLocationRef.current = false;
@@ -2715,6 +2789,35 @@ function Planner() {
   const mapPlaces = useMemo<PlannerMapPlace[]>(() => {
     const startDate =
       displayedExploreResult?.explorer.tripIntent.timing.startDate;
+    if (activeSubplaceView && activeSubplaceGroup) {
+      return activeSubplaceGroup.items.flatMap((subplace, index) =>
+        typeof subplace.latitude === "number" &&
+        typeof subplace.longitude === "number"
+          ? [
+              {
+                destination: `Bên trong ${activeSubplaceView.parentName}`,
+                name: subplace.name,
+                category: "attraction" as const,
+                placeId: subplace.placeId,
+                address: subplace.address,
+                latitude: subplace.latitude,
+                longitude: subplace.longitude,
+                imageUrl: subplace.imageUrl,
+                source: "knowledge_graph",
+                mapKey: subplaceMapKey(subplace.placeId),
+                mapOrder: index + 1,
+                mapKind: "subplace" as const,
+                dayColorKey: dateKeyForTripDay(
+                  startDate,
+                  activeSubplaceView.day
+                ),
+                dayLabel: "Điểm bên trong",
+                timeWindow: "Vị trí tham khảo",
+              },
+            ]
+          : []
+      );
+    }
     const stopPlaces = tripPlaces
       .filter((item) => activePlanDay == null || item.day === activePlanDay)
       .flatMap((item) =>
@@ -2790,6 +2893,8 @@ function Planner() {
     ];
   }, [
     activePlanDay,
+    activeSubplaceGroup,
+    activeSubplaceView,
     accommodationRoutePositionsByDay,
     displayedPlan,
     displayedExploreResult?.explorer.tripIntent.timing.startDate,
@@ -2901,7 +3006,7 @@ function Planner() {
     [dayDirectionLegs, selectedDirectionOptionKeys]
   );
   const mapRoutes = useMemo<PlannerMapRoute[]>(() => {
-    if (!displayedPlan) return [];
+    if (!displayedPlan || activeSubplaceView) return [];
     const startDate =
       displayedExploreResult?.explorer.tripIntent.timing.startDate;
     const itineraryRoutes: PlannerMapRoute[] = displayedPlan.days
@@ -2973,6 +3078,7 @@ function Planner() {
     return itineraryRoutes;
   }, [
     activePlanDay,
+    activeSubplaceView,
     directionsActive,
     directionsSearchOpen,
     directionsStatus,
@@ -3719,6 +3825,31 @@ function Planner() {
   function zoomPlaceOnMap(mapKey: string) {
     focusPlaceOnMap(mapKey);
     setPlaceFocusRequest((current) => current + 1);
+  }
+
+  function openSubplaceView(
+    day: number,
+    parentPlaceId: string,
+    parentName: string
+  ) {
+    setActivePlanDay(day);
+    setActiveSubplaceView({
+      parentPlaceId,
+      parentName,
+      day,
+    });
+    setSelectedMapPlaceKey(null);
+    setSelectedMapRouteKey(null);
+    clearDayDirections();
+  }
+
+  function closeSubplaceView() {
+    setActiveSubplaceView(null);
+    setSelectedMapPlaceKey(null);
+  }
+
+  function focusSubplaceOnMap(subplace: SubplaceSummary) {
+    zoomPlaceOnMap(subplaceMapKey(subplace.placeId));
   }
 
   function selectItinerarySearchResult(result: ItinerarySearchResult) {
@@ -5202,7 +5333,23 @@ function Planner() {
                       </section>
                     ) : null}
 
-                    <section className="tripPlanSection">
+                    <section
+                      className={`tripPlanSection ${
+                        activeSubplaceView && activeSubplaceGroup
+                          ? "tripPlanSection--subplaces"
+                          : ""
+                      }`}
+                    >
+                      {activeSubplaceView && activeSubplaceGroup ? (
+                        <PlannerSubplaceFocus
+                          group={activeSubplaceGroup}
+                          onBack={closeSubplaceView}
+                          onSelect={focusSubplaceOnMap}
+                          parentName={activeSubplaceView.parentName}
+                          selectedMapKey={selectedMapPlaceKey}
+                        />
+                      ) : (
+                        <>
                       <div
                         aria-label="Chọn chế độ xem lịch trình"
                         className="dayTabList"
@@ -5687,7 +5834,7 @@ function Planner() {
                                   `${displayedPlanDay.day}-start`
                                 )
                               ) : null}
-                              {accommodationStartRouteByDay.get(
+                              {!activeSubplaceView && accommodationStartRouteByDay.get(
                                 displayedPlanDay.day
                               ) ? (
                                 <AccommodationRouteStrip
@@ -5736,6 +5883,9 @@ function Planner() {
                                 const quickActionKey = `${
                                   displayedPlanDay.day
                                 }:${item.itemId ?? itemIndex}`;
+                                const subplaceGroup = item.placeId
+                                  ? subplaceGroups[item.placeId] ?? null
+                                  : null;
                                 const displayItemName = itineraryDisplayName(
                                   item.name
                                 );
@@ -6117,6 +6267,7 @@ function Planner() {
                                           {canReorder ? null : null}
                                         </div>
                                       ) : (
+                                        <Fragment>
                                         <article
                                           className={`itineraryStop ${
                                             isFoodStop
@@ -6468,9 +6619,23 @@ function Planner() {
                                           </div>
                                           {itemNotePanel}
                                         </article>
+                                        {subplaceGroup ? (
+                                          <PlannerSubplacePreview
+                                            group={subplaceGroup}
+                                            onOpen={() =>
+                                              openSubplaceView(
+                                                displayedPlanDay.day,
+                                                subplaceGroup.parentPlaceId,
+                                                displayItemName
+                                              )
+                                            }
+                                            parentName={displayItemName}
+                                          />
+                                        ) : null}
+                                        </Fragment>
                                       )}
                                     </div>
-                                    {transportLeg &&
+                                    {!activeSubplaceView && transportLeg &&
                                     transportLegOptions.length > 0 ? (
                                       <div
                                         className={`itineraryRoute ${
@@ -6643,7 +6808,7 @@ function Planner() {
                                           </div>
                                         ) : null}
                                       </div>
-                                    ) : transportLeg &&
+                                    ) : !activeSubplaceView && transportLeg &&
                                       transportLegIndex >= 0 ? (
                                       <div
                                         className="itineraryRouteRetry"
@@ -6751,6 +6916,8 @@ function Planner() {
                           />
                         ) : null}
                       </div>
+                        </>
+                      )}
                     </section>
                   </div>
                 ) : (
@@ -6804,11 +6971,12 @@ function Planner() {
                 <span aria-hidden="true" />
               </button>
 
-              <div
-                aria-label="Lọc địa điểm trên bản đồ theo ngày"
-                className="mobileMapDayTabs"
-                role="tablist"
-              >
+              {!activeSubplaceView ? (
+                <div
+                  aria-label="Lọc địa điểm trên bản đồ theo ngày"
+                  className="mobileMapDayTabs"
+                  role="tablist"
+                >
                 <button
                   aria-selected={activePlanDay == null}
                   className={activePlanDay == null ? "active" : ""}
@@ -6866,22 +7034,24 @@ function Planner() {
                   Chưa xếp
                   </button>
                 ) : null}
-              </div>
+                </div>
+              ) : null}
 
               <PlannerMap
-                currentLocation={mapDirectionOrigin}
+                compactPlacesMode={Boolean(activeSubplaceView)}
+                currentLocation={activeSubplaceView ? null : mapDirectionOrigin}
                 navigationMode={
-                  directionsActive
+                  !activeSubplaceView && directionsActive
                     ? selectedDayDirectionLegs[0]?.mode ?? null
                     : null
                 }
                 dayColorKeys={planDayColorKeys}
-                directionsActive={directionsActive}
-                directionsBusy={directionsStatus === "routing"}
-                directionsReady={directionsStatus === "ready"}
-                directionsDay={activePlanDay}
-                directionsEnabled={activeDayDirectionStops.length > 0}
-                directionsSearchOpen={directionsSearchOpen}
+                directionsActive={!activeSubplaceView && directionsActive}
+                directionsBusy={!activeSubplaceView && directionsStatus === "routing"}
+                directionsReady={!activeSubplaceView && directionsStatus === "ready"}
+                directionsDay={activeSubplaceView ? null : activePlanDay}
+                directionsEnabled={!activeSubplaceView && activeDayDirectionStops.length > 0}
+                directionsSearchOpen={!activeSubplaceView && directionsSearchOpen}
                 destinationOptions={directionDestinationOptions}
                 destinationQuery={destinationQuery}
                 destinationSearchBusy={false}
@@ -6909,7 +7079,7 @@ function Planner() {
                 places={mapPlaces}
                 routes={mapRoutes}
                 selectedDirectionDestination={
-                  selectedNavigationDestination
+                  !activeSubplaceView && selectedNavigationDestination
                     ? {
                         key:
                           selectedNavigationDestination.mapKey ??

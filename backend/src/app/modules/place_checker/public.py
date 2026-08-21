@@ -71,6 +71,7 @@ from app.modules.place_checker.ports import (
     PromotionOutbox,
     SpecialFoodRestaurantSource,
     StyleCandidateSource,
+    SourceNoteTranslator,
 )
 from app.modules.place_checker.retrieval.promotion import PromotionWorker
 from app.modules.place_checker.resolution.service import EntityResolutionService
@@ -160,6 +161,7 @@ __all__ = [
     "RetrievedCandidate",
     "SelectedFoodRestaurant",
     "SpecialFoodRestaurantSource",
+    "SourceNoteTranslator",
     "StyleCandidate",
     "StyleCandidateCoverage",
     "StyleCandidateSelection",

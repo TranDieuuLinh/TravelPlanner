@@ -7,13 +7,11 @@ from app.modules.explorer.public import (
     YamlTagCatalog,
     build_explorer_graph,
 )
-from app.modules.finisher.public import ItineraryFinisher
 from app.modules.information_finder.public import (
     InformationFinderService,
     build_information_finder_graph,
-    materialize_entity_spans,
 )
-from app.shared.entity_linking import EntityResolver, link_verified_entities
+from app.shared.entity_linking import EntityResolver
 from app.modules.itinerary_planner.public import (
     ItineraryPlannerInput,
     ItineraryPlannerOutput,
@@ -60,7 +58,6 @@ class RootNodes(ExplorerReviewNodes):
         place_checker_pipeline: PlaceCheckerPipeline | None = None,
         itinerary_planner_graph=None,
         handoff_projector: ExplorerHandoffProjector | None = None,
-        finisher_service: ItineraryFinisher | None = None,
     ) -> None:
         self.information_finder_service = information_finder_service
         self.entity_resolver = EntityResolver(
@@ -90,7 +87,6 @@ class RootNodes(ExplorerReviewNodes):
             itinerary_planner_graph or build_itinerary_planner_graph()
         )
         self.plan_editor = build_plan_editor_graph()
-        self.finisher = finisher_service or ItineraryFinisher()
 
     async def run_information_finder(self, state: RootState) -> dict:
         result = await self.information_finder.ainvoke(
@@ -100,33 +96,9 @@ class RootNodes(ExplorerReviewNodes):
             }
         )
         output = result["output"]
-        source_ids = {source.source_id for source in output.sources}
-        has_valid_evidence = bool(output.facts and output.sources) and all(
-            claim.source_ids and set(claim.source_ids).issubset(source_ids)
-            for claim in output.facts
-        )
-        if has_valid_evidence:
-            response, patch = await self.supervisor_service.compose_information_response(
-                message=state.get("message", ""),
-                conversation_summary=state.get("conversation_summary"),
-                output=output,
-            )
-        else:
-            response, patch = output.answer.strip(), {}
-        if patch.get("content_blocks"):
-            resolver = getattr(self.information_finder_service, "entity_resolver", None)
-            patch["content_blocks"] = await materialize_entity_spans(
-                patch["content_blocks"],
-                entity_names=output.entity_names,
-                entity_candidates=output.entity_candidates,
-                resolver=resolver,
-            )
-            output = output.model_copy(update=patch)
-        if output.suggestions:
-            response = "Để tiếp tục, Penguin cần thêm ngân sách. Bạn có thể chọn một gợi ý bên dưới hoặc nhập mức khác."
         return {
             "information_output": output,
-            "response": response,
+            "response": output.answer.strip(),
             "warnings": [*state.get("warnings", []), *output.warnings],
         }
 
@@ -359,33 +331,9 @@ class RootNodes(ExplorerReviewNodes):
         }
 
     async def finish(self, state: RootState) -> dict:
-        planner_output = state.get("planner_output")
-        response = (
-            await self.finisher.finish(planner_output)
-            if planner_output is not None
-            else state.get(
+        return {
+            "response": state.get(
                 "response",
                 "Mình có thể giúp bạn lên lịch và tìm thông tin du lịch.",
             )
-        )
-        agent = state.get("decision").route if state.get("decision") else "agent"
-        patch = {}
-        information_output = state.get("information_output")
-        already_composed = bool(
-            information_output is not None
-            and getattr(information_output, "content_blocks", [])
-        )
-        if agent != "information_finder" or not already_composed:
-            response, patch = await self.supervisor_service.compose_final_response(
-                message=state.get("message", ""),
-                conversation_summary=state.get("conversation_summary"),
-                agent=agent,
-                response=response,
-                output=information_output,
-            )
-        response = await link_verified_entities(
-            response,
-            state.get("decision").entity_names if state.get("decision") else [],
-            self.entity_resolver,
-        )
-        return {"response": response, **patch}
+        }

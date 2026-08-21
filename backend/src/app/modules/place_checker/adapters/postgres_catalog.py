@@ -27,6 +27,9 @@ from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARC
 from app.modules.place_checker.adapters.postgres_style_catalog import (
     PostgresStyleCandidateMixin,
 )
+from app.modules.place_checker.adapters.postgres_subplaces import (
+    PostgresSubplaceMixin,
+)
 from app.modules.place_checker.selection.food.contract import FoodRestaurantCandidate
 from app.modules.place_checker.planning.time_windows import meals_for_hours
 from app.modules.place_checker.resolution.contract import PlaceMetadata
@@ -46,6 +49,7 @@ class PostgresPlaceCatalog(
     PostgresCatalogBatchMixin,
     PostgresCatalogMappingMixin,
     PostgresRelationshipMappingMixin,
+    PostgresSubplaceMixin,
 ):
     """Read-only PlaceChecker adapter over the normalized Knowledge Graph."""
 

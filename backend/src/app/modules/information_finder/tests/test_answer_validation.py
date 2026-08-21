@@ -179,6 +179,12 @@ def test_unknown_source_id_falls_back_with_warning():
         output.warnings[-1]
         == "answer_extractive_fallback:answer_provider_invalid_output"
     )
+    assert output.content_blocks[0].type == "factList"
+    assert output.metadata.generation_mode == "extractive"
+    assert output.metadata.validation_status == "citation_validated"
+    assert output.metadata.confidence == "low"
+    assert output.metadata.fallback_used is True
+    assert output.metadata.cited_source_count == 1
 
 
 def test_timeout_falls_back_when_enabled_and_raises_when_disabled():
@@ -192,6 +198,8 @@ def test_timeout_falls_back_when_enabled_and_raises_when_disabled():
         ).find("hours")
     )
     assert "answer_extractive_fallback:answer_provider_timeout" in output.warnings
+    assert output.sources[0].source_id == "s1"
+    assert output.content_blocks
     with pytest.raises(AnswerProviderTimeout):
         run(
             make_service(
@@ -207,13 +215,22 @@ def test_no_source_does_not_call_llm():
     answer = Answer(generated(("Fact", ["s1"])))
     output = run(make_service(Repository(), answer).find("hours"))
     assert answer.calls == 0 and output.sources == []
+    assert output.metadata.validation_status == "no_sources"
+    assert output.metadata.confidence == "unavailable"
 
 
 def test_cache_hit_skips_tavily_and_calls_llm_once():
     answer = Answer(generated(("Fact", ["s1"])))
     search = Search()
-    run(make_service(Repository([source("s1")]), answer, search=search).find("hours"))
+    output = run(
+        make_service(Repository([source("s1")]), answer, search=search).find("hours")
+    )
     assert search.calls == 0 and answer.calls == 1
+    assert output.answer == "Fact [1]"
+    assert output.metadata.generation_mode == "structured"
+    assert output.metadata.validation_status == "citation_validated"
+    assert output.metadata.confidence == "medium"
+    assert output.metadata.fallback_used is False
 
 
 def test_cache_miss_calls_tavily_and_llm_once():

@@ -131,12 +131,7 @@ def test_ontology_has_frontend_shape() -> None:
     ]
     assert payload["nodeTypeProperties"]["Entertainment"] == payload["nodeTypeProperties"]["TravelPlace"]
     assert "time_windows" in payload["nodeTypeProperties"]["ActivityItem"]["optionalProperties"]
-    assert payload["nodeTypeProperties"]["SubPlace"]["requiredProperties"] == [
-        "id",
-        "name",
-        "type",
-    ]
-    assert "latitude" in payload["nodeTypeProperties"]["SubPlace"]["optionalProperties"]
+    assert payload["nodeTypeProperties"]["SubPlace"] == payload["nodeTypeProperties"]["TravelPlace"]
     assert payload["relationshipEndpointRules"]["Has_Subplace"] == {
         "fromTypes": ["TravelPlace"],
         "toTypes": ["SubPlace"],

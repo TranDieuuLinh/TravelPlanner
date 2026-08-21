@@ -120,13 +120,19 @@ Place Checker tạo note, Itinerary Planner truyền note và Trip Chat lưu sna
 Place Checker tách note đã liên kết với từng địa điểm thành hai vùng: chi tiết
 từ raw prompt đi vào user-owned `personalNotes`; source-owned `notes` chỉ chọn
 URL trước rồi mới fallback Google Maps/Knowledge Graph. Trip Chat chỉ mutation
-trường `personalNotes` do người dùng sở hữu.
+trường `personalNotes` do người dùng sở hữu. Sau bước chọn nguồn, capability
+`place_checker/localization/` Việt hóa Google Maps/Knowledge Graph note theo
+structured batch trước khi Planner nhận compact input. Service giữ cache LRU
+theo nội dung trong process, không ghi đè mô tả nguồn trong Knowledge Graph và
+bỏ note khỏi handoff khi không thể tạo bản tiếng Việt hợp lệ. Frontend cũng
+không hiển thị source note chưa Việt hóa như một lớp phòng thủ cuối.
 
-Module `finisher` nhận duy nhất `ItineraryPlannerOutput` đã chuẩn hóa, xếp note
-URL trước các loại note khác và tạo phản hồi ngắn bằng tiếng Việt cho
-`InvokeResponse.response`. Runtime dùng Gemini structured output khi có API key;
-lỗi provider hoặc môi trường không cấu hình key dùng câu tiếng Việt
-deterministic. Finisher không nhận raw prompt hay raw payload của provider.
+Module `finisher` vẫn cung cấp capability nhận `ItineraryPlannerOutput` đã chuẩn
+hóa cho caller riêng, nhưng root graph không còn gọi capability này. Node
+`finish` của root chỉ ánh xạ deterministic response mà module trước đã tạo;
+Itinerary Planner hiện dùng response deterministic của chính route. Vì vậy
+không có Gemini call phát sinh tại `finish`. Finisher không nhận raw prompt hay
+raw payload của provider.
 Module `plan_editor` vẫn giữ graph legacy cho `Itinerary` và sở hữu contract cùng
 validation helper của `NaturalLanguagePlanEdit`. Trip Chat gửi compact view của
 `currentPlannerOutput` vào root graph; một structured Gemini call của Supervisor
@@ -246,6 +252,9 @@ Backend hiện chỉ expose:
 - `POST /v1/agent/invoke`
 - `GET/POST/DELETE /v1/trip-chats` và các endpoint message theo chat có auth
 - `GET /v1/plans/places/search` tìm địa điểm chuẩn hóa trong Knowledge Graph cho thao tác thêm thủ công
+- `GET /v1/plans/places/subplaces?parentPlaceIds=` batch-load các `SubPlace`
+  trực tiếp của `TravelPlace` để frontend hiển thị; endpoint không tạo stop hay
+  đưa child vào planner/routing.
 - `POST /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/replace` thay
   địa điểm và repair nguyên tử đúng một ngày
 - `GET /v1/trip-chats/bootstrap` trả tối đa 30 summary gần nhất cùng full chat
@@ -445,6 +454,8 @@ Information Finder hiện có service cache-first, các port `SearchProvider`,
 `SearchQueryPlanner`, `SourceRepository`, `EmbeddingProvider`, `SourceChunker`,
 `AnswerGenerator`, adapter Tavily, LLM lập truy vấn tìm kiếm, Gemini URL Context
 chunker, Gemini embeddings và PostgreSQL/pgvector.
+`source_processing.py` giữ preparation/chunking/citation mapping để
+`service.py` tập trung vào retrieval policy và final-response flow.
 Các bảng do module sở hữu có tiền tố
 `information_finder_`; module không dùng bảng legacy. Khi thiếu database hoặc
 API key, development/test dùng fallback trung thực trong process.
@@ -462,6 +473,12 @@ Structured answer prompt (mặc định dùng provider Gemini; có thể chọn 
 block khi có đủ dữ kiện. Extractive fallback không tổng hợp bằng LLM; nó trả
 structured facts ngắn, tối đa ba đến năm item có citation và loại các segment
 quảng cáo, navigation/footer và lời dẫn SEO phổ biến trước khi render.
+`InformationFinderOutput` là final-response contract của module: giữ text đã
+render, claims, `contentBlocks` kể cả khi dùng extractive fallback, nguồn đã
+cite, warning, suggestion và metadata deterministic về generation mode,
+citation validation, confidence cùng fallback status. Root chỉ ánh xạ output
+này và route `information_finder` đi thẳng tới `END`, không qua composer hoặc
+node `finish`.
 Answer generator trả về `entityCandidates` gồm tên hiển thị và các tên tra cứu,
 bao gồm alias hoặc tên tiếng Anh khi có căn cứ. `KnowledgeGraphEntityResolver`
 thử từng tên qua public Knowledge Graph contract và backend tự gắn
@@ -484,6 +501,9 @@ Routing baseline chưa được production-evaluated. Trip Chat truyền tối �
 message trước đó với tiền tố `User:` hoặc `Assistant:`; root graph giữ nguyên
 role và không lặp message hiện tại trong context của Supervisor. Durable memory
 được truyền riêng dưới dạng structured state và rolling summary.
+Response composer adapter cũ không còn được inject vào runtime root graph;
+Supervisor chỉ phân loại hoặc đưa response của chính route `finish`, không tổng
+hợp lại output của agent ở cuối flow.
 Supervisor ưu tiên intent rõ trong message hiện tại. Với câu nối lược bỏ intent,
 Supervisor đọc các lượt có role gần nhất: tiếp tục hỏi đáp/khám phá thì đi
 `information_finder`, tiếp tục phiên đang thu thập ràng buộc để tạo plan thì đi
@@ -617,8 +637,15 @@ hoặc `Must_Visit`. Timing mặc định của `Has_Style` được đọc từ
 node Style đích; timing riêng của place được ưu tiên.
 Knowledge Graph ontology còn khai báo `SubPlace` và cạnh cấu trúc
 `TravelPlace --Has_Subplace--> SubPlace`; `SubPlace --Offer_Item--> Item` nhận
-bốn item type hiện có. PlaceChecker chưa duyệt nhánh nested này nên SubPlace
-chưa tham gia output hoặc itinerary runtime.
+bốn item type hiện có; property contract của SubPlace giống TravelPlace.
+PlaceChecker/Planner pipeline không duyệt hoặc chiếu child vào candidate,
+optimization hay routing. Read path riêng `/v1/plans/places/subplaces` chỉ
+chiếu child có địa chỉ, ảnh, tọa độ, mô tả, thời lượng, giá và rating cho
+frontend: card cha preview tối đa ba child, còn chế độ xem tất cả dùng card cùng
+ngôn ngữ thị giác với TravelPlace chính và map chỉ pin/zoom các SubPlace, không
+vẽ route. Khi mở chế độ này, frontend
+thay toàn bộ day tabs/card/chặng của lịch trình bằng subsection của parent; nút
+quay lại khôi phục lịch trình chính tại ngày đang xem.
 Nhánh food query `FoodItem`/`DrinkItem` có `Has_Style` rồi reverse `Offer_Item`
 sang Restaurant/DrinkDessert trong bán kính tọa độ 5 km quanh tối đa 8-12 anchor
 đại diện. SpecialNear là evidence. Service giữ Style/Item provenance, gộp

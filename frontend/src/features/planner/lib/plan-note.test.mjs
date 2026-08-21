@@ -16,7 +16,7 @@ test("translates known itinerary notes into Vietnamese", () => {
   );
 });
 
-test("translates known source notes and preserves unknown English notes", () => {
+test("translates known source notes and hides unknown English notes", () => {
   assert.equal(
     formatSourceNoteForDisplay(
       "explore cute cafés, shops, and a night market"
@@ -41,7 +41,16 @@ test("translates known source notes and preserves unknown English notes", () => 
   );
   assert.equal(
     formatSourceNoteForDisplay("A new untranslated generated note"),
-    "A new untranslated generated note"
+    null
+  );
+});
+
+test("does not display an untranslated Google Maps editorial summary", () => {
+  assert.equal(
+    formatSourceNoteForDisplay(
+      "Grand plaza where Ho Chi Minh declared Vietnam's independence from France & where his body now lies."
+    ),
+    null
   );
 });
 

@@ -18,13 +18,17 @@ quan hệ graph. Hint `entertainment` hoặc `wellness` chỉ truy vấn
 `Entertainment`; hint `travel place` vẫn chỉ truy vấn `TravelPlace`.
 
 Ontology admin có thêm node `SubPlace` để biểu diễn một khu/điểm con không trở
-thành itinerary stop độc lập. Cạnh `Has_Subplace` chỉ cho phép
-`TravelPlace -> SubPlace`; `Offer_Item` từ `SubPlace` chỉ trỏ tới
-`ActivityItem`, `FoodItem`, `DrinkItem` hoặc `ProductItem`. Endpoint ontology
-trả thêm `relationshipEndpointRules` để importer/admin biết ma trận endpoint.
-PlaceChecker hiện chưa duyệt nhánh nested này. Batch curated v1 đã nạp năm
+thành itinerary stop độc lập. `SubPlace` dùng cùng required/optional property
+contract với `TravelPlace`, gồm tọa độ bắt buộc và toàn bộ metadata địa điểm.
+Cạnh `Has_Subplace` chỉ cho phép `TravelPlace -> SubPlace`; `Offer_Item` từ
+`SubPlace` chỉ trỏ tới `ActivityItem`, `FoodItem`, `DrinkItem` hoặc
+`ProductItem`. Endpoint ontology trả thêm `relationshipEndpointRules` để
+importer/admin biết ma trận endpoint. Endpoint read-only
+`GET /v1/plans/places/subplaces?parentPlaceIds=` đọc trực tiếp
+`Has_Subplace` sau khi itinerary đã có để frontend render; response này không
+được ghi vào `PlanItem`, không qua optimizer và không tạo route. Batch curated v1 đã nạp năm
 `SubPlace` `pending` cho Hanoi Old Quarter; mỗi node hiện có `latitude`,
-`longitude` và `address` đại diện để map/routing có thể định vị. Batch hiệu chỉnh
+`longitude` và `address` đại diện để frontend có thể đặt pin. Batch hiệu chỉnh
 `kg_curated_hanoi_old_quarter_subplace_activities_v2_20260821` thay các item
 trùng ý nghĩa bằng đúng một `ActivityItem` có provenance cho mỗi `SubPlace`;
 batch v1 được đánh dấu `superseded_by_v2`. Dữ liệu chưa tự động tham gia output
@@ -43,6 +47,18 @@ tọa độ đại diện dưới Văn Miếu, Hoàng thành Thăng Long, Hỏa 
 quần thể Hồ Chí Minh và Bảo tàng Dân tộc học; mỗi node có đúng một
 `ActivityItem`.
 
+Migration 019 chuyển 16 TravelPlace cấu thành đã review thành SubPlace, giữ
+nguyên ID/property/alias/provenance, nối đúng một parent và bảo đảm có
+`Offer_Item`. Hai synthetic duplicate được thay bằng entity provider-backed.
+Migration 020 tiếp tục chuyển Lăng Chủ tịch Hồ Chí Minh thành SubPlace và gom
+trực tiếp Lăng, Ao cá Bác Hồ, Nhà sàn Bác Hồ dưới TravelPlace Ba Đình Square;
+không tạo tầng SubPlace lồng nhau. Migration 021 chỉ chuyển ba cặp gần nhau đã
+có nguồn xác nhận quan hệ thành phần: Đại Trung Môn dưới Văn Miếu, Cổng làng
+Mông Phụ dưới Làng cổ Đường Lâm và Chợ gốm dưới Làng gốm Bát Tràng. Các cặp
+chỉ gần về tọa độ không bị chuyển. PlaceChecker/Planner không đọc
+`Has_Subplace`; chỉ endpoint trình bày của frontend đọc child sau khi plan đã
+được tạo.
+
 ## Ranh giới API
 
 | Endpoint | Input | Output |
@@ -54,6 +70,7 @@ quần thể Hồ Chí Minh và Bảo tàng Dân tộc học; mỗi node có đ�
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
 | `POST /v1/trip-chats/{chatId}/messages` | `SendTripChatMessageInput`; khi chat có `currentPlannerOutput`, Gemini nhận compact plan context để trả structured edit intent | `TripChatMessageResponse`; edit hợp lệ dùng cùng optimistic-revision mutation với UI thủ công |
 | `GET /v1/plans/places/search?query=&destination=&topK=` | `Authorization: Bearer <accessToken>`, query text and optional destination; `topK` defaults to `5` | Tối đa năm địa điểm chuẩn hóa; name/alias tham gia xếp hạng, catalog match trả thêm opening hours, duration và estimated cost khi có |
+| `GET /v1/plans/places/subplaces?parentPlaceIds=` | `Authorization: Bearer <accessToken>`; lặp `parentPlaceIds` tối đa 50 TravelPlace | Nhóm SubPlace trực tiếp theo parent, tối đa 50 child/parent, dùng riêng cho UI; không thay đổi planner output hoặc route |
 | `POST /v1/trip-chats/{chatId}/plan/unscheduled-places/confirm` | Multipart địa điểm gốc, match đã chọn, ngày đích và `expectedRevision` | `TripChat` sau khi thêm stop và xóa entry chưa xếp nguyên tử |
 | `DELETE /v1/trip-chats/{chatId}/plan/unscheduled-places` | Multipart địa điểm gốc và `expectedRevision` | `TripChat` sau khi xóa entry chưa xếp |
 | `POST /v1/trip-chats/{chatId}/plan/items` | Multipart item fields và `expectedRevision` | `TripChat` sau khi thêm địa điểm vào ngày đã chọn |
@@ -106,7 +123,7 @@ tag, pool và provider note đã phân loại candidate đó là nhà hàng.
 |---|---|---|
 | `supervisor` | `SupervisorInput`, gồm compact `currentPlan` khi Trip Chat đã có lịch | `SupervisorDecision` (`route`, `confidence`, `reason`, tùy chọn `response`, `clarificationQuestion`, `warnings`, `planEdit`, `tripContextPatch`, `sourceAction`) |
 | `explorer` | `ExplorerInput` | `ExplorerOutput` |
-| `information_finder` | `InformationFinderInput` | `InformationFinderOutput` (`answer`, `sources`, `warnings`) |
+| `information_finder` | `InformationFinderInput` | `InformationFinderOutput` (`answer`, structured `facts`/`contentBlocks`, `sources`, `warnings`, `suggestions`, `metadata`) |
 | `place_checker` | `PlaceCheckerInput` | `PlaceCheckerOutput` |
 | `itinerary_planner` | `ItineraryPlannerInput` | `ItineraryPlannerOutput` |
 | `plan_editor` | Legacy `PlanEditorInput`; contract `NaturalLanguagePlanEdit` dùng chung cho lệnh chat | Legacy `PlanEditorOutput`; helper kiểm tra reference của `NaturalLanguagePlanEdit` |
@@ -127,7 +144,7 @@ Root orchestration graph gọi các agent theo flow:
 
 ```text
 supervisor
-├── information_finder
+├── information_finder -> END (final response của Finder)
 ├── plan_editor
 └── explorer
     ├── thiếu destination -> supervisor review -> chờ user
@@ -644,6 +661,7 @@ Các provider interface bên ngoài hiện có:
 - `AnswerGenerator`
 - `PlaceResolver`
 - `PlaceDiscovery`
+- `SourceNoteTranslator`
 - `RoutingProvider`
 - `LlmClient`
 
@@ -695,15 +713,19 @@ Mỗi `currentPlannerOutput.days[].stops[]` có `itemId` ổn định, source-ow
 `notes={text,sourceType,sourceUrl}` và user-owned `personalNotes`. Place Checker
 đưa note đã liên kết từ raw prompt vào `personalNotes`. `notes` không chứa raw
 prompt: module chọn URL note trước, nếu không có mới dùng mô tả Google
-Maps/Knowledge Graph.
+Maps/Knowledge Graph. Google Maps/Knowledge Graph note đã chọn được Việt hóa
+trong Place Checker trước compact handoff; `sourceType` và `sourceUrl` không đổi.
+Nếu provider dịch lỗi hoặc output không đạt guard tiếng Việt, field note nguồn
+đó bị bỏ thay vì trả nội dung tiếng Anh. Frontend áp cùng nguyên tắc ẩn source
+note chưa Việt hóa; `personalNotes` không đi qua bước dịch này.
 Endpoint personal-notes chỉ cập nhật `personalNotes` với revision check, không
 được sửa source note.
 
-Sau khi FinalItineraryPlanner tạo output đủ ngày, module Finisher đọc các
-source note đã chọn (không đọc raw prompt/provider payload), ưu tiên note URL và
-trả câu tóm tắt tiếng Việt trong `InvokeResponse.response`. JSON plan vẫn giữ
-nguyên structured note để frontend hiển thị tại card, map popup và màn sửa note;
-phản hồi Finisher không thay thế dữ liệu note trong plan.
+Sau khi FinalItineraryPlanner tạo output đủ ngày, route giữ response
+deterministic do module tạo trong `InvokeResponse.response`. Node `finish` chỉ
+ánh xạ response có sẵn và không gọi Gemini hoặc đọc raw prompt/provider payload.
+JSON plan vẫn giữ nguyên structured note để frontend hiển thị tại card, map
+popup và màn sửa note; response text không thay thế dữ liệu note trong plan.
 Transport selection endpoint cập nhật nguyên tử `selectedTransport` trên đúng
 leg và tăng revision. UI áp policy hậu xử lý: khoảng cách dưới 1,5 km chỉ hiện
 đi bộ; các option khác chỉ hiện khi chặng không thuộc ngưỡng này và provider
@@ -747,5 +769,11 @@ answer public dùng `contentBlocks` với discriminated union cho paragraph,
 factList, verse, quote, recommendations, steps, comparison và notice. Entity
 interaction trong block dùng `inlineSpans`; chỉ span có `entityId` do backend
 resolve mới được frontend render thành Knowledge Graph preview.
+`InformationFinderOutput.metadata` công bố `generationMode`,
+`validationStatus`, `confidence`, `fallbackUsed`, `claimCount` và
+`citedSourceCount`. Các giá trị được suy ra deterministic sau citation
+validation; không chứa prompt hoặc raw provider payload. Root route trả trực
+tiếp `answer`, blocks, sources và warnings của Finder, không gọi response
+composer tại `finish`.
 
 Information Finder đã có repository nguồn riêng. Module `conversation_memory` dùng `MemoryRepository` port, PostgreSQL asyncpg adapter, migration `009_conversation_memory.sql`, optimistic concurrency control và atomic `save_memory_and_facts`. Fact extraction giữ rule deterministic; reference resolution mặc định dùng hybrid Gemini với transcript/memory có cấu trúc và `RuleBasedReferenceResolver` fallback. Target do LLM trả về chỉ hợp lệ khi trùng active fact ID, vì vậy provider không thể tự tạo địa điểm. Fact insert idempotent theo `fact_id` giúp retry cùng message không làm hỏng lượt chat. `MergePolicyEvaluator` bảo vệ confirmed facts và giữ lịch sử superseded.

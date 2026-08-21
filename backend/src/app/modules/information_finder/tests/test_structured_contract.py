@@ -47,3 +47,11 @@ def test_fact_list_and_verse_serialize_with_camel_case_and_entity_span():
 
     assert payload["contentBlocks"][0]["items"][0]["inlineSpans"][1]["entityId"] == "place-1"
     assert payload["contentBlocks"][1]["lines"] == ["Dòng một", "Dòng hai"]
+    assert payload["metadata"] == {
+        "generationMode": "none",
+        "validationStatus": "no_sources",
+        "confidence": "unavailable",
+        "fallbackUsed": False,
+        "claimCount": 0,
+        "citedSourceCount": 0,
+    }

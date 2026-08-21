@@ -6102,3 +6102,430 @@
 .plannerLayout:not(.is-new-chat) .plannerChat.plannerChat--compact:not(.is-collapsed) .plannerEntryComposer {
   margin-bottom: 10px;
 }
+
+/* Informational SubPlaces stay visually nested under their TravelPlace. */
+.itinerary .itinerarySubplacesPreview {
+  display: grid;
+  gap: 3px;
+  margin: -2px 18px 8px;
+  border: 1px solid #dce9e5;
+  border-radius: 8px;
+  padding: 5px 8px 6px;
+  background: #fbfdfc;
+}
+
+.itinerary .itinerarySubplacesHeading {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 4px;
+  padding: 3px 4px;
+  background: transparent;
+  color: #476963;
+  cursor: pointer;
+  text-align: left;
+}
+
+.itinerary .itinerarySubplacesHeading > span {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+}
+
+.itinerary .itinerarySubplacesHeading svg,
+.itinerary .itinerarySubplacePin svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.itinerary .itinerarySubplacesHeading > svg {
+  width: 12px;
+  height: 12px;
+}
+
+.itinerary .itinerarySubplacesHeading strong {
+  overflow: hidden;
+  font-size: .64rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itinerary .itinerarySubplacesHeading small {
+  color: #6f837e;
+  font-size: .56rem;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.itinerary .itinerarySubplacesCompactList {
+  display: grid;
+  gap: 1px;
+}
+
+.itinerary .itinerarySubplacesCompactList button {
+  display: grid;
+  min-height: 25px;
+  grid-template-columns: 6px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 4px;
+  padding: 3px 5px;
+  background: transparent;
+  color: #405651;
+  cursor: pointer;
+  text-align: left;
+}
+
+.itinerary .itinerarySubplacesCompactList button:hover {
+  background: #f0f7f5;
+}
+
+.itinerary .itinerarySubplacesCompactList button > span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #83aaa2;
+}
+
+.itinerary .itinerarySubplacesCompactList strong {
+  overflow: hidden;
+  font-size: .6rem;
+  font-weight: 720;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itinerary .itinerarySubplacesCompactList .is-more strong {
+  color: #587973;
+  font-weight: 850;
+}
+
+.itinerary .itinerarySubplaceFocus {
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+  border: 1px solid #d7e6e2;
+  border-radius: 10px;
+  padding: 14px;
+  background: #fbfdfc;
+  box-shadow: 0 10px 24px rgba(40, 75, 69, .07);
+}
+
+.itinerary .itinerarySubplaceFocus > header {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.itinerary .itinerarySubplaceFocus > header > button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #d8e5e1;
+  border-radius: 10px;
+  background: white;
+  color: #365f5a;
+  cursor: pointer;
+}
+
+.itinerary .itinerarySubplaceFocus > header > button svg {
+  width: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.itinerary .itinerarySubplaceFocus > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.itinerary .itinerarySubplaceFocus > header small {
+  color: #768984;
+  font-size: .53rem;
+  font-weight: 820;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.itinerary .itinerarySubplaceFocus > header strong {
+  overflow: hidden;
+  font-size: .76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itinerary .itinerarySubplaceFocus > header > span {
+  display: grid;
+  min-width: 28px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: #e8f3f0;
+  color: #365f5a;
+  font-size: .58rem;
+  font-weight: 900;
+}
+
+.itinerary .itinerarySubplaceFocus > p {
+  margin: 0 2px;
+  color: #72817d;
+  font-size: .56rem;
+  line-height: 1.45;
+}
+
+.itinerary .itinerarySubplaceFocusList {
+  display: grid;
+  gap: 12px;
+}
+
+.itinerary .itinerarySubplaceFocusList > .itinerarySubplaceCard {
+  display: grid;
+  min-height: 148px;
+  grid-template-columns: max-content 112px minmax(0, 1fr) 36px;
+  align-items: start;
+  gap: 13px;
+  border: 1px solid #dbe7e3;
+  border-radius: 12px;
+  padding: 13px;
+  background: white;
+  color: #304a44;
+  cursor: pointer;
+  text-align: left;
+}
+
+.itinerary .itinerarySubplaceFocusList > .itinerarySubplaceCard:hover,
+.itinerary .itinerarySubplaceFocusList > .itinerarySubplaceCard.is-map-place-selected {
+  border-color: #bddbd4;
+  background: white;
+}
+
+.itinerary .itinerarySubplaceCard > .itineraryPlaceOrder {
+  display: grid;
+  height: 122px;
+  grid-column: 1;
+  grid-row: 1;
+  place-items: center;
+  margin: 0;
+}
+
+.itinerary .itinerarySubplaceCard > .itineraryPlaceMedia {
+  width: 112px;
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
+}
+
+.itinerary .itinerarySubplaceCard .itineraryPlaceImage {
+  width: 112px;
+  height: 122px;
+  min-height: 122px;
+  border-radius: 10px;
+}
+
+.itinerary .itinerarySubplaceCard > .itineraryPlaceContent {
+  grid-column: 3;
+  grid-row: 1;
+  min-width: 0;
+  gap: 8px;
+  padding: 2px 0 0;
+}
+
+.itinerary .itinerarySubplaceCard .placeMapButton:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.itinerary .itinerarySubplaceCardActions {
+  display: grid;
+  grid-column: 4;
+  grid-row: 1;
+  justify-items: center;
+  gap: 10px;
+}
+
+.itinerary .itinerarySubplaceCardActions > button,
+.itinerary .itinerarySubplaceCardActions > .itineraryTypeIcon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #d9e6e2;
+  border-radius: 9px;
+  background: white;
+  color: #5d7771;
+}
+
+.itinerary .itinerarySubplaceCardActions > button {
+  cursor: pointer;
+}
+
+.itinerary .itinerarySubplaceCardActions > button:hover {
+  border-color: #aacfc6;
+  background: #f1f8f6;
+}
+
+.itinerary .itinerarySubplaceCardActions svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.itinerary .itinerarySubplaceAddress {
+  display: grid;
+  gap: 2px;
+  color: #71827d;
+  font-size: .54rem;
+  line-height: 1.4;
+}
+
+.itinerary .itinerarySubplaceAddress span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itinerary .itinerarySubplaceAddress code {
+  width: fit-content;
+  padding: 0;
+  background: transparent;
+  color: #668079;
+  font-size: .5rem;
+}
+
+.itinerary .itinerarySubplaceMetric,
+.itinerary .itinerarySubplaceRating {
+  color: #70817c;
+  font-size: .52rem;
+  font-weight: 760;
+}
+
+.itinerary .itinerarySubplaceRating {
+  color: #9b6a18;
+}
+
+.itinerary .itinerarySubplaceNoteButton {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+  min-height: 32px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #d5e4e0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: white;
+  color: #365f5a;
+  cursor: pointer;
+  font-size: .57rem;
+  font-weight: 820;
+}
+
+.itinerary .itinerarySubplaceNoteButton:hover {
+  background: #f1f8f6;
+}
+
+.itinerary .itinerarySubplaceNoteButton > svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.itinerary .itinerarySubplaceNoteButton > small {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 999px;
+  background: #365f5a;
+  color: white;
+  font-size: .46rem;
+}
+
+.itinerary .itinerarySubplaceDetails {
+  display: grid;
+  gap: 4px;
+  border-left: 2px solid #c8ddd8;
+  padding: 6px 9px;
+  color: #60736e;
+}
+
+.itinerary .itinerarySubplaceDetails strong {
+  font-size: .52rem;
+}
+
+.itinerary .itinerarySubplaceDetails p {
+  margin: 0;
+  font-size: .53rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .itinerary .itinerarySubplacesPreview {
+    margin-right: 12px;
+    margin-left: 12px;
+  }
+}
+
+@container itinerary-panel (max-width: 480px) {
+  .itinerary .itinerarySubplaceFocus {
+    padding: 10px;
+  }
+
+  .itinerary .itinerarySubplaceFocusList > .itinerarySubplaceCard {
+    min-height: 126px;
+    grid-template-columns: max-content 86px minmax(0, 1fr) 30px;
+    gap: 9px;
+    padding: 10px;
+  }
+
+  .itinerary .itinerarySubplaceCard > .itineraryPlaceOrder {
+    height: 96px;
+  }
+
+  .itinerary .itinerarySubplaceCard > .itineraryPlaceMedia,
+  .itinerary .itinerarySubplaceCard .itineraryPlaceImage {
+    width: 86px;
+  }
+
+  .itinerary .itinerarySubplaceCard .itineraryPlaceImage {
+    height: 96px;
+    min-height: 96px;
+  }
+
+  .itinerary .itinerarySubplaceCardActions > button,
+  .itinerary .itinerarySubplaceCardActions > .itineraryTypeIcon {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+  }
+}

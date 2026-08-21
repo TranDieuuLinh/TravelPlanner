@@ -100,9 +100,7 @@ def test_root_exposes_new_planner_output_without_legacy_conversion() -> None:
     assert result["response"] == "Đã tối ưu lịch trình thành công."
 
     finished = asyncio.run(nodes.finish(result))
-    assert "Mình đã xếp lịch 1 ngày tại Hanoi với 1 điểm" in finished["response"]
-    assert "nguồn URL bạn gửi" in finished["response"]
-    assert "Nên đến trước 8 giờ" in finished["response"]
+    assert finished["response"] == "Đã tối ưu lịch trình thành công."
 
 
 def test_root_rejects_success_when_requested_days_are_empty() -> None:

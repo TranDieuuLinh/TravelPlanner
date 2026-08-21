@@ -13,7 +13,6 @@ from app.shared.persistence import create_checkpointer
 def create_root_graph(
     *, checkpointer=None, information_finder_service=None, supervisor_service=None,
     explorer_service=None, place_checker_pipeline=None, itinerary_planner_graph=None,
-    finisher_service=None,
     database_url: str | None = None,
 ):
     nodes = RootNodes(
@@ -22,7 +21,6 @@ def create_root_graph(
         explorer_service,
         place_checker_pipeline,
         itinerary_planner_graph,
-        finisher_service=finisher_service,
     )
     builder = StateGraph(RootState)
 
@@ -64,7 +62,7 @@ def create_root_graph(
         {"itinerary_planner": "itinerary_planner", "finish": "finish"},
     )
     builder.add_edge("itinerary_planner", "finish")
-    builder.add_edge("information_finder", "finish")
+    builder.add_edge("information_finder", END)
     builder.add_edge("plan_editor", "finish")
     builder.add_edge("finish", END)
 

@@ -1,9 +1,15 @@
 from app.modules.explorer.public import YamlTagCatalog
 from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCatalog
+from app.modules.place_checker.adapters.gemini_source_note_translator import (
+    GeminiSourceNoteTranslator,
+)
 from app.modules.place_checker.adapters.search_places_gap_source import (
     SearchPlacesGapSource,
 )
 from app.modules.place_checker.enums import RetrievalSourceKind
+from app.modules.place_checker.localization.service import (
+    SourceNoteLocalizationService,
+)
 from app.modules.place_checker.evaluation.service import PlaceEvaluationService
 from app.modules.place_checker.pipeline import PlaceCheckerPipeline
 from app.modules.place_checker.resolution.enrichment import EvidenceEnrichmentService
@@ -17,12 +23,15 @@ from app.modules.place_checker.selection.food.service import (
 from app.modules.place_checker.service import TripContextBuilder
 from app.shared.tools.search_places import SearchPlacesTool
 from app.shared.tools.search_places.ports import ExternalPlaceSearch
+from app.shared.llm import LlmClient
 
 
 def build_postgres_place_checker_pipeline(
     database_url: str,
     *,
     external_place_search: ExternalPlaceSearch | None = None,
+    llm_client: LlmClient | None = None,
+    note_localization_max_output_tokens: int = 2048,
 ) -> PlaceCheckerPipeline:
     """Compose the rich PlaceChecker pipeline over the production KG schema."""
     tag_catalog = YamlTagCatalog()
@@ -63,6 +72,14 @@ def build_postgres_place_checker_pipeline(
             ensure_core_pools=True,
         ),
         food_selection=FoodRestaurantSelectionService(catalog),
+        source_note_localization=SourceNoteLocalizationService(
+            GeminiSourceNoteTranslator(
+                llm_client,
+                max_output_tokens=note_localization_max_output_tokens,
+            )
+            if llm_client is not None
+            else None
+        ),
     )
 
 

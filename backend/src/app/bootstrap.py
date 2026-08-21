@@ -3,10 +3,6 @@ from functools import lru_cache
 
 from app.core.config import Settings, get_settings
 from app.modules.explorer.public import build_explorer_graph, create_explorer_service
-from app.modules.finisher.public import (
-    GeminiFinisherResponseGenerator,
-    ItineraryFinisher,
-)
 from app.modules.information_finder.adapters.development import (
     ExtractiveAnswerGenerator,
     HashingEmbeddingProvider,
@@ -47,7 +43,7 @@ from app.modules.knowledge_graph.public import (
     build_knowledge_graph_service,
 )
 from app.modules.place_checker.public import build_postgres_place_checker_pipeline
-from app.modules.supervisor.adapters import GeminiIntentClassifier, GeminiResponseComposer
+from app.modules.supervisor.adapters import GeminiIntentClassifier
 from app.modules.supervisor.public import SupervisorService
 from app.orchestration.root_graph import create_root_graph
 from app.shared.llm import GeminiKeyPool, GeminiLlmClient, LlmClient
@@ -201,37 +197,11 @@ def create_supervisor_service(
         ),
         max_output_tokens=settings.supervisor_llm_max_output_tokens,
     )
-    composer = GeminiResponseComposer(
-        llm_client
-        or GeminiLlmClient(
-            settings.gemini_api_key,
-            model=settings.gemini_model,
-            timeout_seconds=settings.gemini_timeout_seconds,
-            key_cooldown_seconds=settings.gemini_key_cooldown_seconds,
-        ),
-        max_output_tokens=settings.supervisor_llm_max_output_tokens,
-    )
     return SupervisorService(
         classifier,
-        composer,
         fallback_enabled=settings.supervisor_llm_fallback_enabled,
         confidence_threshold=settings.supervisor_llm_confidence_threshold,
     )
-
-
-def create_finisher_service(
-    settings: Settings,
-    llm_client: LlmClient | None = None,
-) -> ItineraryFinisher:
-    generator = (
-        GeminiFinisherResponseGenerator(
-            llm_client,
-            max_output_tokens=settings.finisher_llm_max_output_tokens,
-        )
-        if llm_client is not None and settings.gemini_api_key
-        else None
-    )
-    return ItineraryFinisher(generator)
 
 
 def compose_explorer_service(
@@ -358,7 +328,6 @@ def get_graph():
         checkpointer=(None if settings.conversation_graph_checkpointer_enabled else False),
         information_finder_service=get_information_finder_service(),
         supervisor_service=create_supervisor_service(settings, shared_llm_client),
-        finisher_service=create_finisher_service(settings, shared_llm_client),
         explorer_service=compose_explorer_service(
             settings,
             shared_llm_client,
@@ -368,6 +337,10 @@ def get_graph():
             build_postgres_place_checker_pipeline(
                 settings.database_url,
                 external_place_search=external_place_search,
+                llm_client=(shared_llm_client if settings.gemini_api_key else None),
+                note_localization_max_output_tokens=(
+                    settings.place_checker_note_localization_max_output_tokens
+                ),
             )
             if settings.database_url
             else None

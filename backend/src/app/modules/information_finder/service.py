@@ -1,28 +1,30 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import hashlib
 import logging
-from typing import Literal
-from urllib.parse import urlsplit
 
 from app.modules.information_finder.contract import (
-    InformationFinderOutput, AnswerClaim,
-    PreparedChunk,
-    PreparedSource,
+    AnswerMetadata,
+    AnswerClaim,
+    InformationFinderOutput,
     RetrievedSource,
-    SourceReference,
 )
 from app.modules.information_finder.errors import (
     AnswerProviderInvalidOutput,
     EmbeddingProviderError,
     SearchQueryPlanningError,
-    SourceChunkingError,
 )
 from app.modules.information_finder.entity_linking import (
     EntityResolver,
     link_verified_entities,
+    materialize_entity_spans,
 )
-from app.modules.information_finder.answering import validate_and_render_answer
+from app.modules.information_finder.answering import (
+    block_source_ids,
+    build_answer_metadata,
+    invalid_answer_source_ids,
+    suggestions_from_blocks,
+    validate_and_render_answer,
+)
 from app.modules.information_finder.freshness import FreshnessPolicy
 from app.modules.information_finder.ports import (
     AnswerGenerator,
@@ -34,12 +36,8 @@ from app.modules.information_finder.ports import (
     SourceRepository,
 )
 from app.modules.information_finder.ranking import rank_sources
-from app.modules.information_finder.utils import (
-    canonicalize_url,
-    chunk_content,
-    content_hash,
-    normalize_query,
-)
+from app.modules.information_finder.source_processing import SourceProcessingMixin
+from app.modules.information_finder.utils import normalize_query
 from app.modules.information_finder.tools.budget_ranges import BudgetRangeResult, BudgetRangeTool
 
 
@@ -57,11 +55,10 @@ class InformationFinderOptions:
     answer_fallback_enabled: bool = True
 
 
-DETERMINISTIC_CHUNKING_VERSION = "deterministic-v1"
 logger = logging.getLogger(__name__)
 
 
-class InformationFinderService:
+class InformationFinderService(SourceProcessingMixin):
     def __init__(
         self,
         *,
@@ -233,15 +230,21 @@ class InformationFinderService:
                     *warnings,
                     "No source was available after local retrieval and optional web search.",
                 ],
+                metadata=AnswerMetadata(
+                    generation_mode="none",
+                    validation_status="no_sources",
+                    confidence="unavailable",
+                ),
             )
         used_extractive_fallback = False
+        generation_mode = getattr(self.answers, "generation_mode", "structured")
         repair_attempted = False
         safe_no_answer = False
         rendered_answer = ""
         normalized_blocks = []
         try:
             generated = await self.answers.generate(normalized_query, ranked)
-            invalid_ids = self._invalid_answer_source_ids(generated, ranked)
+            invalid_ids = invalid_answer_source_ids(generated, ranked)
             if invalid_ids:
                 logger.warning(
                     "information_finder_answer_invalid type=citation invalid_source_ids=%s",
@@ -251,7 +254,7 @@ class InformationFinderService:
             if invalid_ids and callable(repair):
                 repair_attempted = True
                 generated = await repair(normalized_query, ranked, invalid_ids)
-                invalid_ids = self._invalid_answer_source_ids(generated, ranked)
+                invalid_ids = invalid_answer_source_ids(generated, ranked)
             if invalid_ids:
                 raise AnswerProviderInvalidOutput(
                     "answer cited unavailable source IDs"
@@ -272,7 +275,7 @@ class InformationFinderService:
                 try:
                     repair_attempted = True
                     generated = await repair(normalized_query, ranked, [])
-                    if not self._invalid_answer_source_ids(generated, ranked):
+                    if not invalid_answer_source_ids(generated, ranked):
                         rendered_answer, normalized_blocks, _ = validate_and_render_answer(
                             generated, ranked
                         )
@@ -291,6 +294,9 @@ class InformationFinderService:
             if not rendered_answer and self.options.answer_fallback_enabled and self.fallback_answers is not None:
                 try:
                     generated = await self.fallback_answers.generate(normalized_query, ranked)
+                    generation_mode = getattr(
+                        self.fallback_answers, "generation_mode", "extractive"
+                    )
                     rendered_answer, normalized_blocks, _ = validate_and_render_answer(
                         generated, ranked
                     )
@@ -318,6 +324,12 @@ class InformationFinderService:
                 sources=[],
                 suggestions=[],
                 warnings=warnings,
+                metadata=AnswerMetadata(
+                    generation_mode="none",
+                    validation_status="no_cited_content",
+                    confidence="unavailable",
+                    fallback_used=used_extractive_fallback,
+                ),
             )
 
         rendered_answer = await link_verified_entities(
@@ -325,6 +337,12 @@ class InformationFinderService:
             generated.entity_names,
             self.entity_resolver,
             generated.entity_candidates,
+        )
+        normalized_blocks = await materialize_entity_spans(
+            normalized_blocks,
+            entity_names=generated.entity_names,
+            entity_candidates=generated.entity_candidates,
+            resolver=self.entity_resolver,
         )
 
         source_by_id = {source.source_id: source for source in ranked}
@@ -336,244 +354,31 @@ class InformationFinderService:
             facts.append(claim)
             cited_ids.extend(item for item in claim.source_ids if item not in cited_ids)
         for block in generated.blocks:
-            for source_id in self._block_source_ids(block):
+            for source_id in block_source_ids(block):
                 if source_id in source_by_id and source_id not in cited_ids:
                     cited_ids.append(source_id)
         if not facts:
             warnings.append("No cited facts were extracted from available sources.")
+        cited_sources = [source_by_id[item] for item in cited_ids]
         return InformationFinderOutput(
             answer=rendered_answer,
             facts=facts,
-            # Fallback blocks are source excerpts, not presentation-ready
-            # answers. Keep them private so the supervisor composer can
-            # normalize the facts before the API exposes the response.
-            content_blocks=[] if used_extractive_fallback else normalized_blocks,
+            content_blocks=normalized_blocks,
             entity_names=generated.entity_names,
             entity_candidates=generated.entity_candidates,
-            sources=[self._citation(source_by_id[item]) for item in cited_ids],
+            sources=[self._citation(source) for source in cited_sources],
             suggestions=(
                 []
                 if used_extractive_fallback
-                else self._suggestions_from_blocks(generated.blocks)
+                else suggestions_from_blocks(generated.blocks)
             ),
             warnings=warnings,
-        )
-
-    @staticmethod
-    def _invalid_answer_source_ids(generated, sources: list[RetrievedSource]) -> list[str]:
-        allowed = {source.source_id for source in sources}
-        ids: list[str] = []
-        for claim in generated.claims:
-            ids.extend(claim.source_ids)
-        for block in generated.blocks:
-            ids.extend(InformationFinderService._block_source_ids(block))
-        return list(dict.fromkeys(item for item in ids if item not in allowed))
-
-    @staticmethod
-    def _block_source_ids(block) -> list[str]:
-        ids = list(getattr(block, "source_ids", []))
-        for field in ("items", "options"):
-            for item in getattr(block, field, []):
-                ids.extend(getattr(item, "source_ids", []))
-        return ids
-
-    @classmethod
-    def _suggestions_from_blocks(cls, blocks) -> list[dict[str, object]]:
-        """Turn retrieved, cited recommendations into grounded chat choices."""
-        suggestions: list[dict[str, object]] = []
-        for block in blocks:
-            if getattr(block, "type", None) not in {"recommendations", "comparison"}:
-                continue
-            entries = getattr(block, "items", None) or getattr(block, "options", None) or []
-            for entry in entries[:5]:
-                name = str(getattr(entry, "name", "")).strip()
-                source_ids = list(dict.fromkeys(getattr(entry, "source_ids", [])))
-                if not name or not source_ids:
-                    continue
-                suggestions.append({
-                    "field": "information_follow_up",
-                    "label": name,
-                    "value": f"Cho tôi biết thêm về {name}",
-                    "sourceIds": source_ids,
-                })
-        return suggestions
-
-    @staticmethod
-    def _sources_without_embeddings(
-        results,
-        *,
-        expires_at: datetime,
-        minimum_content_chars: int = 80,
-        provider_relevance_threshold: float = 0.5,
-    ) -> list[RetrievedSource]:
-        """Keep usable Tavily results when vector generation is unavailable."""
-        sources: list[RetrievedSource] = []
-        seen_urls: set[str] = set()
-        for result in results:
-            try:
-                url = canonicalize_url(result.url)
-            except ValueError:
-                continue
-            if (
-                len(result.content.strip()) < minimum_content_chars
-                or (result.provider_score or 0.0) < provider_relevance_threshold
-                or url in seen_urls
-            ):
-                continue
-            seen_urls.add(url)
-            source_key = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24]
-            sources.append(
-                RetrievedSource(
-                    source_id=f"tavily-{source_key}",
-                    snapshot_id=f"tavily-{source_key}",
-                    title=result.title,
-                    url=url,
-                    content=result.content,
-                    semantic_score=0.0,
-                    lexical_score=0.0,
-                    freshness_score=1.0,
-                    provider_score=result.provider_score,
-                    published_at=result.published_at,
-                    source_updated_at=result.source_updated_at,
-                    last_fetched_at=result.fetched_at,
-                    expires_at=expires_at,
-                )
-            )
-        return sources
-
-    async def _prepare_sources(
-        self,
-        results,
-        *,
-        query_embedding: list[float],
-        expires_at: datetime,
-    ) -> list[PreparedSource]:
-        accepted = []
-        seen_urls: set[str] = set()
-        seen_hashes: set[str] = set()
-        for result in results:
-            try:
-                canonical_url = canonicalize_url(result.url)
-            except ValueError:
-                continue
-            domain = urlsplit(canonical_url).hostname or ""
-            digest = content_hash(result.content)
-            score = result.provider_score if result.provider_score is not None else 0.0
-            if (
-                len(result.content.strip()) < self.options.minimum_content_chars
-                or score < self.options.provider_relevance_threshold
-                or any(
-                    domain == blocked or domain.endswith(f".{blocked}")
-                    for blocked in self.options.blocked_domains
-                )
-                or canonical_url in seen_urls
-                or digest in seen_hashes
-            ):
-                continue
-            seen_urls.add(canonical_url)
-            seen_hashes.add(digest)
-            accepted.append((result, canonical_url, domain, digest))
-
-        chunk_sets: list[tuple[list[tuple[str, int]], str]] = []
-        for result, *_ in accepted:
-            chunking_version = DETERMINISTIC_CHUNKING_VERSION
-            if self.chunker is not None:
-                try:
-                    semantic_chunks = await self.chunker.chunk(result)
-                    source_chunks = [
-                        (chunk, len(chunk.split())) for chunk in semantic_chunks
-                    ]
-                    chunking_version = self.chunker.version
-                except SourceChunkingError:
-                    source_chunks = chunk_content(
-                        result.content,
-                        title=result.title,
-                        target_tokens=self.options.chunk_tokens,
-                        overlap_tokens=self.options.chunk_overlap,
-                    )
-            else:
-                source_chunks = chunk_content(
-                    result.content,
-                    title=result.title,
-                    target_tokens=self.options.chunk_tokens,
-                    overlap_tokens=self.options.chunk_overlap,
-                )
-            chunk_sets.append((source_chunks, chunking_version))
-        texts = [chunk for source_chunks, _ in chunk_sets for chunk, _ in source_chunks]
-        vectors = await self.embeddings.embed_documents(texts) if texts else []
-        vector_index = 0
-        prepared_sources: list[PreparedSource] = []
-        embedded_at = datetime.now(timezone.utc)
-        for (result, canonical_url, domain, digest), (
-            source_chunks,
-            chunking_version,
-        ) in zip(accepted, chunk_sets):
-            prepared_chunks: list[PreparedChunk] = []
-            for index, (chunk, token_count) in enumerate(source_chunks):
-                prepared_chunks.append(
-                    PreparedChunk(
-                        chunk_index=index,
-                        content=chunk,
-                        token_count=token_count,
-                        content_hash=content_hash(chunk),
-                        embedding=vectors[vector_index],
-                        embedded_at=embedded_at,
-                    )
-                )
-                vector_index += 1
-            prepared_sources.append(
-                PreparedSource(
-                    result=result,
-                    canonical_url=canonical_url,
-                    domain=domain,
-                    content_hash=digest,
-                    expires_at=expires_at,
-                    chunks=prepared_chunks,
-                    chunking_version=chunking_version,
-                )
-            )
-        return prepared_sources
-
-    @staticmethod
-    def _score_saved_sources(
-        saved: list[RetrievedSource],
-        prepared: list[PreparedSource],
-        query_embedding: list[float],
-        query: str,
-    ) -> None:
-        query_terms = set(query.casefold().split())
-        for source, prepared_source in zip(saved, prepared):
-            source.semantic_score = max(
-                (
-                    sum(a * b for a, b in zip(query_embedding, chunk.embedding))
-                    for chunk in prepared_source.chunks
-                ),
-                default=0.0,
-            )
-            content_terms = set(source.content.casefold().split())
-            source.lexical_score = len(query_terms & content_terms) / max(
-                1, len(query_terms)
-            )
-            source.freshness_score = 1.0
-
-    @staticmethod
-    def _citation(source: RetrievedSource) -> SourceReference:
-        if source.source_updated_at is not None:
-            updated_at = source.source_updated_at
-            date_kind: Literal["source_updated_at", "last_fetched_at"] = (
-                "source_updated_at"
-            )
-        else:
-            updated_at = source.last_fetched_at
-            date_kind = "last_fetched_at"
-        return SourceReference(
-            source_id=source.source_id,
-            title=source.title,
-            url=source.url,
-            updated_at=updated_at,
-            date_kind=date_kind,
-            review_status=source.review_status,
-            published_at=source.published_at,
+            metadata=build_answer_metadata(
+                generation_mode=generation_mode,
+                fallback_used=used_extractive_fallback,
+                cited_sources=cited_sources,
+                claim_count=len(facts),
+            ),
         )
 
     def _search_queries(self, query: str) -> list[str]:

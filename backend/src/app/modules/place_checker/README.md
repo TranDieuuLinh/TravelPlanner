@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai PlaceChecker
 
-Cập nhật lần cuối: 2026-08-20.
+Cập nhật lần cuối: 2026-08-21.
 
 Thư mục này chứa kế hoạch triển khai stage PlaceChecker. Các module Python
 production sẽ được thêm bên cạnh `docs/` khi từng task được thực hiện.
@@ -30,8 +30,10 @@ Business logic được nhóm theo capability để tránh một thư mục ph�
 place_checker/
 ├── analysis/       # budget, capacity, coverage và gap
 ├── evaluation/     # rule đánh giá, avoid và price policy
+├── localization/   # Việt hóa source note đã chọn trước Planner handoff
 ├── resolution/     # identity, item resolution và evidence enrichment
 ├── retrieval/      # query, verification, promotion và projection
+├── subplaces/      # contract read-only cho UI, không tham gia planning
 ├── scoring/        # scoring, reputation và reranking
 ├── selection/      # activity/style/pool; food nằm trong selection/food
 ├── planning/       # compact projection sang Planner
@@ -66,6 +68,13 @@ Planner projection chọn đúng một source note cho mỗi candidate: `urlNote
 được ưu tiên; nếu không có thì dùng `description` và `url_google_map` đọc từ
 Knowledge Graph làm Google/KG fallback. Output là object
 `notes={text,sourceType,sourceUrl}`; ghi chú cá nhân không thuộc Place Checker.
+Sau khi hoàn tất policy pool, pipeline chỉ Việt hóa Google Maps/Knowledge Graph
+note thực sự thắng bước chọn nguồn. Gemini adapter dịch theo structured batch,
+service cache theo hash nội dung trong process và giữ nguyên `sourceType` cùng
+`sourceUrl`. Mô tả tiếng Việt có sẵn không phát sinh provider call; nếu dịch lỗi
+hoặc kết quả vẫn không phải tiếng Việt thì note bị bỏ khỏi handoff thay vì lộ
+tiếng Anh trên UI. Dữ liệu `description` gốc trong Knowledge Graph không bị ghi
+đè bởi bước hiển thị này.
 
 Candidate pool gửi sang Planner có quota độc lập: 12 `TravelPlace`/ngày,
 6 `Restaurant`/ngày, 2 `Entertainment`/ngày, 3 `DrinkDessert`/ngày và tối đa

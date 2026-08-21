@@ -140,6 +140,7 @@ class InMemorySourceRepository:
 class ExtractiveAnswerGenerator:
     """Truthful development fallback that only quotes supplied source snippets."""
 
+    generation_mode = "extractive"
     max_claims = 3
     max_chars_per_claim = 1000
 
@@ -194,5 +195,4 @@ class ExtractiveAnswerGenerator:
             claims=claims,
             blocks=[FactListBlock(title="Thông tin nổi bật", items=fact_items)],
         )
-
 

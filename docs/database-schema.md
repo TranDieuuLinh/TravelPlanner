@@ -250,11 +250,15 @@ này không cần bảng, cột hoặc migration mới.
 Note đã liên kết từ raw prompt được ghi vào `personalNotes`. Object `notes` chỉ
 chứa source note read-only và chọn URL trước Google Maps/Knowledge Graph; URL
 thật dùng `sourceType=url`. Cả hai field đều nằm trong JSONB hiện hữu nên không
-cần migration.
+cần migration. Với Google Maps/Knowledge Graph note đã chọn, Place Checker tạo
+bản tiếng Việt trong execution trước khi Planner ghi snapshot; `sourceType` và
+`sourceUrl` được giữ nguyên. Cache bản dịch hiện nằm trong process và không ghi
+đè property `description` gốc của Knowledge Graph, nên thay đổi này cũng không
+thêm bảng hoặc cột.
 Thay đổi ghi chú cá nhân cập nhật nguyên tử chính JSONB này với optimistic
 revision; không có bảng note riêng và không lưu raw payload từ URL hoặc Google
-Maps. Finisher chỉ đọc snapshot/output đã chuẩn hóa để tạo response tiếng Việt
-và không ghi thêm dữ liệu vào database.
+Maps. Source note không Việt hóa được sẽ bị bỏ khỏi snapshot thay vì lưu chuỗi
+tiếng Anh để frontend hiển thị.
 Lựa chọn phương tiện của user được lưu dưới
 `current_planner_output.days[].legs[].selectedTransport` trong cùng JSONB.
 Mutation khóa row, kiểm tra revision rồi tăng revision; không cần thêm table
@@ -458,10 +462,11 @@ Ngày sửa đổi cuối cùng: 2026-08-17.
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
 | `review_count` | integer | Có | Tổng số review theo dữ liệu nguồn; không thay thế các row trong `reviews`. |
 
-Ontology ứng dụng cho phép thêm `SubPlace` với required properties cơ bản
-`id`, `name`, `type`; tọa độ, địa chỉ, ảnh và story là optional vì SubPlace
-không phải itinerary stop độc lập. Đây là type trong contract ứng dụng, không
-thêm cột hoặc table mới. Batch curated v1 đã nạp năm node `pending` cho Hanoi
+Ontology ứng dụng cho phép thêm `SubPlace` với cùng property contract như
+`TravelPlace`: `id`, `name`, `type`, `latitude`, `longitude` là required và
+toàn bộ metadata địa điểm còn lại là optional. SubPlace vẫn không phải itinerary
+stop độc lập. Đây là type trong contract ứng dụng, không thêm cột hoặc table
+mới. Batch curated v1 đã nạp năm node `pending` cho Hanoi
 Old Quarter: Hàng Gai, Hàng Bạc, Hàng Mã, Lãn Ông và góc bia Tạ Hiện–Lương
 Ngọc Quyến. Mỗi node giữ `latitude`, `longitude` và `address` là điểm đại diện
 cho phố/giao điểm, có provenance và vẫn chờ verification. Batch hiệu chỉnh
@@ -584,6 +589,24 @@ tọa độ đại diện dưới Văn Miếu, Hoàng thành Thăng Long, Hỏa 
 quần thể Hồ Chí Minh và Bảo tàng Dân tộc học; mỗi node có đúng một
 `ActivityItem`.
 
+Migration `019_curate_hanoi_subplaces.sql` chuyển 16 provider-backed
+TravelPlace cấu thành thành SubPlace theo exact ID. Migration giữ properties,
+aliases, images và quan hệ không cấu trúc; thay hai synthetic duplicate bằng
+entity thật, tạo 14 item còn thiếu và reject hai provider duplicate chính xác.
+Sau migration 019 có 33 SubPlace active; 33/33 có một parent `Has_Subplace`, ít
+nhất một `Offer_Item` và tọa độ. Migration
+`020_reparent_ba_dinh_subplaces.sql` chuyển Lăng Chủ tịch Hồ Chí Minh thành
+SubPlace thứ 34, thêm `Offer_Item` cho Lăng và gom trực tiếp Lăng, Ao cá Bác Hồ,
+Nhà sàn Bác Hồ dưới Ba Đình Square. Mô hình được làm phẳng để không có
+`SubPlace -> SubPlace`.
+
+Migration `021_curate_nearby_travelplace_subplaces.sql` audit các TravelPlace
+gần nhau nhưng chỉ chuyển ba child có nguồn chính thức xác nhận containment:
+Đại Trung Môn, Cổng làng Mông Phụ và Chợ gốm Bát Tràng. Sau migration có 37
+SubPlace active, mỗi child mới có một `Has_Subplace`, một `Offer_Item`, tọa độ
+và description có provenance. Bán kính gần nhau không tự tạo quan hệ; các điểm
+độc lập và bản ghi nghi duplicate vẫn giữ nguyên để xử lý ở batch riêng.
+
 Đợt chuẩn hóa dữ liệu cũng đã merge các bản ghi duplicate `Nhà Thờ Lớn Hà Nội`
 và `WinMart`, giữ entity có nhiều review hơn, chuyển alias/quan hệ không trùng
 sang entity giữ lại và loại quan hệ trùng.
@@ -600,9 +623,14 @@ PlaceChecker nhận bốn place entity type từ catalog: `TravelPlace`, `Restau
 `DrinkDessert` và `Entertainment` (ngoài `Accommodation`). Compact boundary
 nhóm `DrinkDessert`/`Entertainment` vào pool optional `entertainment`; đây chỉ
 là thay đổi read/projection contract, không thêm bảng hoặc cột.
-PlaceChecker chưa duyệt `Has_Subplace` hoặc chiếu item của `SubPlace` về
-`TravelPlace` cha; ontology mới chưa thay đổi itinerary runtime cho đến khi read
-path này được triển khai.
+PlaceChecker/Planner pipeline không duyệt `Has_Subplace`, không dùng child để
+ranking candidate và không gửi child properties/items trong relationship
+evidence. Vì vậy SubPlace không tham gia optimization hoặc routing. Read path riêng
+`GET /v1/plans/places/subplaces?parentPlaceIds=` query trực tiếp cạnh
+`Has_Subplace` và các property `address`, `latitude`, `longitude`, `image`,
+`description`, `time_duration`, `price_min`, `rating`, `review_count` sau khi
+itinerary đã render; dữ liệu chỉ phục vụ card/pin frontend và không được lưu
+ngược vào planner output.
 Named-place SQL search chung cả năm type theo canonical name, alias, address và
 cây ADM, lấy top-1 trước khi cân nhắc Google Maps; query này không đọc
 SpecialExperience/OfferItem/HasStyle. Runtime compact

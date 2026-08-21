@@ -1,4 +1,5 @@
 from app.modules.information_finder.contract import (
+    AnswerMetadata,
     AnswerBlock,
     ComparisonBlock,
     ComparisonOption,
@@ -29,6 +30,7 @@ from app.modules.information_finder.tools.budget_ranges import (
 __all__ = [
     "InformationFinderInput",
     "InformationFinderOutput",
+    "AnswerMetadata",
     "AnswerBlock",
     "ComparisonBlock",
     "ComparisonOption",

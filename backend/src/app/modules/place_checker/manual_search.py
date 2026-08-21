@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.modules.auth.public import AuthUser, require_current_user
 from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCatalog
+from app.modules.place_checker.subplaces.contract import SubplaceGroup
 from app.shared.tools.search_places import (
     AdministrativeArea,
     PlaceSearchRequest,
@@ -26,6 +27,19 @@ def _search_dependencies(request: Request) -> tuple[SearchPlacesTool, PostgresPl
             },
         )
     return tool, catalog
+
+
+def _catalog_dependency(request: Request) -> PostgresPlaceCatalog:
+    catalog = getattr(request.app.state, "manual_place_search_catalog", None)
+    if catalog is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "PLACE_SEARCH_UNAVAILABLE",
+                "message": "Dữ liệu địa điểm chưa được cấu hình.",
+            },
+        )
+    return catalog
 
 
 @router.get("/places/search")
@@ -89,3 +103,18 @@ async def search_places_for_manual_plan(
             }
         )
     return suggestions
+
+
+@router.get("/places/subplaces", response_model=list[SubplaceGroup])
+async def list_subplaces_for_plan(
+    parent_place_ids: list[str] = Query(
+        ...,
+        min_length=1,
+        max_length=50,
+        alias="parentPlaceIds",
+    ),
+    _: AuthUser = Depends(require_current_user),
+    catalog: PostgresPlaceCatalog = Depends(_catalog_dependency),
+) -> list[SubplaceGroup]:
+    """Return nested informational places without turning them into plan stops."""
+    return await catalog.list_subplaces(parent_place_ids, per_parent_limit=50)
