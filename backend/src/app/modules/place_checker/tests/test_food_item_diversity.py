@@ -1,4 +1,6 @@
-from app.modules.place_checker.selection.food.item_diversity import select_food_item_candidates
+from app.modules.place_checker.selection.food.item_diversity import (
+    select_food_item_candidates,
+)
 from app.modules.place_checker.tests.test_food_selection import candidate
 
 
@@ -47,3 +49,29 @@ def test_has_style_does_not_change_food_item_selection() -> None:
     selected = select_food_item_candidates([styled], 1, {}, _rank)
 
     assert [item.restaurant_id for item in selected] == ["restaurant:a"]
+
+
+def test_food_item_diversity_precedes_repeating_a_higher_ranked_item() -> None:
+    candidates = [
+        candidate("place:a", "restaurant:pho-a", food="food:pho", priority=0.99),
+        candidate("place:b", "restaurant:pho-b", food="food:pho", priority=0.98),
+        candidate(
+            "place:c",
+            "restaurant:bun-cha",
+            food="food:bun-cha",
+            priority=0.50,
+        ),
+    ]
+
+    selected = select_food_item_candidates(
+        candidates,
+        days=1,
+        priors={},
+        rank=lambda item, _priors: (item.food_priority,),
+    )
+
+    assert len({item.restaurant_id for item in selected}) == len(selected)
+    assert {item.food_item_id for item in selected[:2]} == {
+        "food:pho",
+        "food:bun-cha",
+    }

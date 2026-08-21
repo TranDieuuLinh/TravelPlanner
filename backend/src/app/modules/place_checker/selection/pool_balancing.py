@@ -1,8 +1,8 @@
 from app.modules.place_checker.evaluation.contract import PlaceEvaluationBatch
-from app.modules.place_checker.planning.category import planner_category_for_candidate
 from app.modules.place_checker.evaluation.price_policy import has_planner_cost
-from app.modules.place_checker.selection.pool_policy import ACCOMMODATION_POOL_TARGET
+from app.modules.place_checker.planning.category import planner_category_for_candidate
 from app.modules.place_checker.scoring.contract import ScoredCandidate
+from app.modules.place_checker.selection.pool_policy import ACCOMMODATION_POOL_TARGET
 
 
 class CandidatePoolBalancer:
@@ -78,7 +78,7 @@ class CandidatePoolBalancer:
                 "accommodation": ACCOMMODATION_POOL_TARGET,
             }[entity_type]
             limit = max(0, target - existing[entity_type])
-            selected_for_type = cls.balance_categories(candidates, limit)
+            selected_for_type = cls.take_ranked(candidates, limit)
             selected_keys.update(
                 item.candidate.candidate_key for item in selected_for_type
             )
@@ -91,40 +91,16 @@ class CandidatePoolBalancer:
         ]
 
     @staticmethod
-    def balance_categories(
+    def take_ranked(
         ranked: list[ScoredCandidate],
         limit: int,
     ) -> list[ScoredCandidate]:
-        """Reserve discovery-group slots, then fill remaining slots by score."""
+        """Keep tag-reranked order while enforcing the entity-type quota."""
         if limit <= 0:
             return []
-        if len(ranked) <= limit:
-            return [
-                item.model_copy(update={"rank": index})
-                for index, item in enumerate(ranked, 1)
-            ]
-
-        groups: dict[str, list[ScoredCandidate]] = {}
-        for item in ranked:
-            key = item.candidate.pool_category or item.candidate.category or "unknown"
-            groups.setdefault(key, []).append(item)
-        ordered_groups = sorted(groups)
-        selected: list[ScoredCandidate] = []
-        index = 0
-        while len(selected) < limit and ordered_groups:
-            key = ordered_groups[index % len(ordered_groups)]
-            group = groups[key]
-            if group:
-                selected.append(group.pop(0))
-            else:
-                ordered_groups.remove(key)
-                if not ordered_groups:
-                    break
-                index -= 1
-            index += 1
         return [
             item.model_copy(update={"rank": position})
-            for position, item in enumerate(selected, 1)
+            for position, item in enumerate(ranked[:limit], 1)
         ]
 
     @staticmethod

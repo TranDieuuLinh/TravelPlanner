@@ -49,6 +49,20 @@ signal trong cùng rank. Không có bucket bắt buộc cho SpecialExperience v�
 có phase “special thiếu thì query toàn Hà Nội”; catalog query đã trả candidate
 toàn ADM trong một lượt.
 
+Activity scoring chỉ dùng canonical key từ `auto-attach/tags-auto.yml` cho ba
+quyết định preference, avoid và diversity. Tag/alias đọc từ Knowledge Graph
+được resolve qua catalog runtime trước khi scoring; tag kỹ thuật hoặc group khác
+không đi vào công thức. Avoid là hard filter. Phần preference của một candidate
+bằng `số canonical tag khớp / tổng canonical tag của candidate`, vì vậy một
+địa điểm có nhiều tag không được cộng toàn bộ điểm chỉ vì trùng một tag.
+
+TravelPlace được rerank tham lam theo độ mới của tag. Mỗi tag đóng góp
+`1 / (1 + số lần tag đã được chọn)` và điểm diversity của candidate là trung
+bình các đóng góp đó. Các TravelPlace direct/URL đã có trong pool cũng khởi tạo
+bộ đếm. Tổng trọng số activity là 85% core quality/fit, 10% preference và 5%
+tag diversity. Sau rerank, quota entity type chỉ cắt theo đúng thứ tự này; không
+còn vòng chia bucket theo `pool_category` làm thay đổi kết quả tag diversity.
+
 ## Time và HasStyle
 
 Mọi entity/item dùng `time_duration` và `time_windows` trực tiếp trước. Chỉ field
@@ -101,8 +115,8 @@ ADM. `Special_Near`, computed distance, `Special_Experience -> FoodItem` và
 - hard-filter avoid, closed/people/data eligibility;
 - ưu tiên short preference qua FoodItem, restaurant name và direct tags;
 - đảm bảo breakfast/lunch/dinner cho từng ngày;
-- cân bằng FoodItem và anchor coverage;
-- dedup restaurant toàn cục;
+- ưu tiên FoodItem chưa dùng trước khi lặp món, đồng thời cân bằng anchor;
+- chỉ chọn mỗi Restaurant một lần trên toàn pool;
 - cho phép một restaurant cover nhiều anchor nhưng chỉ đếm một candidate.
 
 Target food là 6 restaurant/ngày. Meal feasibility là ba slot/ngày và được trả
@@ -112,8 +126,9 @@ khái niệm.
 ## Tag và output
 
 Mọi public tag phải là key runtime từ `auto-attach/tags-auto.yml`; catalog đọc
-lại file khi filter nên thay đổi taxonomy không cần restart backend. Technical
-provenance và relationship type nằm ở field riêng, không giả thành tag.
+lại file khi resolve/filter/scoring nên thay đổi taxonomy không cần restart
+backend. Technical provenance và relationship type nằm ở field riêng, không giả
+thành tag.
 
 Planner tiếp tục nhận score, coordinates, cost, opening/time preference,
 verification, relationships, food coverage và source provenance để chọn lịch

@@ -212,12 +212,12 @@ def test_penalty_is_bounded() -> None:
     assert "geographic_outlier" in result.penalties
 
 
-def test_retrieved_alcohol_candidate_is_hard_filtered_via_alias() -> None:
+def test_retrieved_candidate_is_hard_filtered_by_canonical_avoid_tag() -> None:
     context = analysis_context()
-    context.avoids.append("alcohol")
+    context.avoids.append("rượu bia")
 
     batch = CandidateScoringService(now=NOW).rank(
-        retrieval(candidate("cocktail", tags=["item:Cocktail"])),
+        retrieval(candidate("cocktail", tags=["rượu bia"])),
         context,
         empty_places(),
     )
@@ -309,25 +309,41 @@ def test_permanently_closed_candidate_is_filtered_before_ranking() -> None:
     assert "permanently_closed" in result.excluded[0].exclusion_reasons
 
 
-def test_diversity_reranking_moves_different_category_forward() -> None:
+def test_diversity_reranking_moves_new_canonical_tag_forward() -> None:
     result = CandidateScoringService(now=NOW).rank(
         retrieval(
-            candidate("museum_a", category="museum", confidence=0.99),
-            candidate("museum_b", category="museum", confidence=0.97),
-            candidate("garden", category="garden", confidence=0.90),
+            candidate(
+                "culture_a",
+                category="travel_place",
+                confidence=0.99,
+                tags=["Văn hóa"],
+            ),
+            candidate(
+                "culture_b",
+                category="travel_place",
+                confidence=0.97,
+                tags=["Văn hóa"],
+            ),
+            candidate(
+                "nature",
+                category="travel_place",
+                confidence=0.90,
+                tags=["thiên nhiên"],
+            ),
         ),
         analysis_context(),
         empty_places(),
     )
 
-    keys = [item.candidate.candidate_key for item in result.ranked]
-    first_two_categories = {
-        result.ranked[0].candidate.category,
-        result.ranked[1].candidate.category,
+    assert {item.selection_tags[0] for item in result.ranked[:2]} == {
+        "Văn hóa",
+        "thiên nhiên",
     }
-    assert first_two_categories == {"museum", "garden"}
-    assert keys[2] in {"museum_a", "museum_b"}
-    assert "repeated_category" in result.ranked[2].rerank_reasons
+    assert result.ranked[2].candidate.candidate_key == "culture_b"
+    assert result.ranked[0].tag_diversity_score == 1
+    assert result.ranked[1].tag_diversity_score == 1
+    assert result.ranked[2].tag_diversity_score == 0.5
+    assert "repeated_canonical_tag" in result.ranked[2].rerank_reasons
 
 
 def test_same_geographic_cluster_is_kept_without_a_penalty() -> None:
@@ -345,13 +361,7 @@ def test_same_geographic_cluster_is_kept_without_a_penalty() -> None:
     )
 
     assert "same_geographic_cluster" in result.ranked[1].rerank_reasons
-    assert (
-        round(
-            result.ranked[1].final_score - result.ranked[1].rerank_score,
-            6,
-        )
-        == 0.08
-    )
+    assert result.ranked[1].final_score == result.ranked[1].rerank_score
 
 
 def test_distant_geographic_cluster_is_penalized() -> None:

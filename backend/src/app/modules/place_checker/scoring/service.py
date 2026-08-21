@@ -1,27 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 
+from app.modules.explorer.public import YamlTagCatalog
 from app.modules.place_checker.contract import TripEvaluationContext
 from app.modules.place_checker.enums import CostTier, VerificationStatus
+from app.modules.place_checker.evaluation.avoidance import has_avoid_conflict
 from app.modules.place_checker.evaluation.contract import PlaceEvaluationBatch
-from app.modules.place_checker.selection.pool_balancing import CandidatePoolBalancer
-from app.modules.place_checker.selection.pool_policy import (
-    activity_pool_target_for_days,
-    combined_pool_target_for_days,
-    drink_dessert_pool_target_for_days,
-    entertainment_pool_target_for_days,
-    food_pool_target_for_days,
-    pool_query_limit_for_days,
-)
-from app.modules.place_checker.planning.category import planner_category_for_candidate
 from app.modules.place_checker.evaluation.price_policy import planner_cost
-from app.modules.place_checker.scoring.reranking import CandidateDiversityReranker
-from app.modules.place_checker.scoring.reputation import (
-    CategoryReputationProfile,
-    build_reputation_profiles,
-    reputation_components,
-)
 from app.modules.place_checker.retrieval.contract import (
     RetrievalBatch,
     RetrievedCandidate,
@@ -31,9 +18,24 @@ from app.modules.place_checker.scoring.contract import (
     CandidateScoreComponents,
     ScoredCandidate,
 )
-from app.modules.place_checker.scoring.policy import SEVERITY_VALUE, hard_violations
 from app.modules.place_checker.scoring.existing import existing_pool_signals
-from app.modules.place_checker.taxonomy import canonical_label, canonical_labels
+from app.modules.place_checker.scoring.policy import SEVERITY_VALUE, hard_violations
+from app.modules.place_checker.scoring.reputation import (
+    CategoryReputationProfile,
+    build_reputation_profiles,
+    reputation_components,
+)
+from app.modules.place_checker.scoring.reranking import CandidateDiversityReranker
+from app.modules.place_checker.scoring.tag_policy import CandidateTagPolicy
+from app.modules.place_checker.selection.pool_balancing import CandidatePoolBalancer
+from app.modules.place_checker.selection.pool_policy import (
+    activity_pool_target_for_days,
+    combined_pool_target_for_days,
+    drink_dessert_pool_target_for_days,
+    entertainment_pool_target_for_days,
+    food_pool_target_for_days,
+    pool_query_limit_for_days,
+)
 from app.shared.contracts.place import Coordinates
 from app.shared.tools.search_places.normalization import normalize_text
 from app.shared.tools.search_places.scoring import distance_km, text_similarity
@@ -55,8 +57,18 @@ WEIGHTS = {
 
 
 class CandidateScoringService:
-    def __init__(self, *, now: datetime | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        now: datetime | None = None,
+        allowed_tags_provider: Callable[[], Iterable[str]] | None = None,
+    ) -> None:
         self.now = now or datetime.now(UTC)
+        catalog = YamlTagCatalog()
+        self.allowed_tags_provider = (
+            allowed_tags_provider
+            or (lambda: catalog.definitions().keys())
+        )
 
     def rank(
         self,
@@ -72,19 +84,30 @@ class CandidateScoringService:
         )
         if reserve_limit_per_gap is None:
             reserve_limit_per_gap = pool_query_limit_for_days(context.days)
+        allowed_tags = frozenset(self.allowed_tags_provider())
+        normalized_context = context.model_copy(
+            update={
+                "preferences": CandidateTagPolicy.filter_intent_tags(
+                    context.preferences, allowed_tags
+                ),
+                "avoids": CandidateTagPolicy.filter_intent_tags(
+                    context.avoids, allowed_tags
+                ),
+            }
+        )
         candidates = [
             candidate for gap in retrieval.gaps for candidate in gap.candidates
         ]
         reputation_profiles = build_reputation_profiles(candidates)
-        existing_categories, existing_experiences, anchors = existing_pool_signals(
-            existing_places
+        existing_tag_counts, anchors = existing_pool_signals(
+            existing_places,
+            allowed_tags,
         )
         scored = [
             self._score(
                 candidate,
-                context,
-                existing_categories,
-                existing_experiences,
+                normalized_context,
+                allowed_tags,
                 anchors,
                 reputation_profiles,
             )
@@ -93,6 +116,7 @@ class CandidateScoringService:
         ranked = CandidateDiversityReranker().rerank(
             [item for item in scored if item.eligible],
             reserve_limit_per_gap=reserve_limit_per_gap,
+            initial_tag_counts=existing_tag_counts,
         )
         if max_total_candidates is not None:
             existing_count = sum(
@@ -100,7 +124,7 @@ class CandidateScoringService:
                 for item in existing_places.places
                 if item.place.place_id and item.planner_eligible
             )
-            ranked = CandidatePoolBalancer.balance_categories(
+            ranked = CandidatePoolBalancer.take_ranked(
                 ranked,
                 max(0, pool_target - existing_count),
             )
@@ -128,19 +152,12 @@ class CandidateScoringService:
         self,
         candidate: RetrievedCandidate,
         context: TripEvaluationContext,
-        existing_categories: set[str],
-        existing_experiences: set[str],
+        allowed_tags: frozenset[str],
         anchors: list[Coordinates],
         reputation_profiles: dict[str, CategoryReputationProfile],
     ) -> ScoredCandidate:
         labels = self._labels(candidate)
-        category = planner_category_for_candidate(
-            candidate.category,
-            name=candidate.canonical_name,
-            tags=candidate.tags,
-            pool_category=candidate.pool_category,
-        )
-        experience = normalize_text(candidate.experience_type)
+        selection_tags = CandidateTagPolicy.candidate_tags(candidate, allowed_tags)
         distance = self._nearest_distance(candidate.coordinates, anchors)
         rating_quality, review_quality = reputation_components(
             candidate,
@@ -148,19 +165,20 @@ class CandidateScoringService:
         )
         components = CandidateScoreComponents(
             intent_match=self._intent_match(candidate, labels),
-            preference_match=self._preference_match(context.preferences, labels),
+            preference_match=CandidateTagPolicy.preference_ratio(
+                context.preferences,
+                selection_tags,
+            ),
             gap_value=SEVERITY_VALUE[candidate.gap_severity],
             budget_fit=self._budget_fit(candidate, context),
             geo_fit=self._geo_fit(distance),
             people_fit=self._people_fit(candidate, context),
             time_fit=self._time_fit(candidate, context),
             quality=self._quality(candidate),
-            uniqueness=(
-                1.0
-                if category not in existing_categories
-                and experience not in existing_experiences
-                else 0.35
-            ),
+            # Dynamic tag diversity is applied by the greedy reranker. Keeping
+            # this at zero prevents category/experience diversity from being
+            # counted in parallel with the tags-auto policy.
+            uniqueness=0.0,
             data_confidence=max(item.confidence for item in candidate.evidence),
             rating_quality=rating_quality,
             review_quality=review_quality,
@@ -170,18 +188,15 @@ class CandidateScoringService:
         penalties = self._penalties(
             candidate,
             context,
-            labels,
-            category,
-            experience,
-            existing_categories,
-            existing_experiences,
+            selection_tags,
             distance,
         )
         penalty_total = min(0.65, sum(penalties.values()))
-        exclusion_reasons = hard_violations(candidate, context, labels)
+        exclusion_reasons = hard_violations(candidate, context, set(selection_tags))
         final_score = max(0.0, min(1.0, base - penalty_total))
         return ScoredCandidate(
             candidate=candidate,
+            selection_tags=list(selection_tags),
             components=components,
             base_score=round(base, 6),
             penalties=penalties,
@@ -197,15 +212,11 @@ class CandidateScoringService:
         self,
         candidate: RetrievedCandidate,
         context: TripEvaluationContext,
-        labels: set[str],
-        category: str,
-        experience: str,
-        existing_categories: set[str],
-        existing_experiences: set[str],
+        selection_tags: tuple[str, ...],
         distance: float | None,
     ) -> dict[str, float]:
         penalties: dict[str, float] = {}
-        if self._matches_any(context.avoids, labels):
+        if has_avoid_conflict(context.avoids, selection_tags):
             penalties["avoid_conflict"] = 0.25
         tier = candidate.metadata.cost_tier if candidate.metadata else CostTier.unknown
         if context.budget.level == "low" and tier in {CostTier.high, CostTier.premium}:
@@ -214,8 +225,6 @@ class CandidateScoringService:
             penalties["geographic_outlier"] = 0.25
         elif distance is not None and distance > 8:
             penalties["geographic_outlier"] = 0.10
-        if category in existing_categories or experience in existing_experiences:
-            penalties["duplicate_experience"] = 0.10
         if candidate.verification_status not in {
             VerificationStatus.verified_kg,
             VerificationStatus.verified_external,
@@ -243,15 +252,6 @@ class CandidateScoringService:
             (text_similarity(expected, label) for label in labels),
             default=0.5,
         )
-
-    @classmethod
-    def _preference_match(cls, preferences: list[str], labels: set[str]) -> float:
-        if not preferences:
-            return 0.5
-        matches = sum(
-            cls._matches_any([preference], labels) for preference in preferences
-        )
-        return min(1.0, matches / len(preferences))
 
     @staticmethod
     def _budget_fit(
@@ -374,8 +374,3 @@ class CandidateScoringService:
             ]
             if value
         }
-
-    @staticmethod
-    def _matches_any(values: list[str], labels: set[str]) -> bool:
-        normalized = canonical_labels(labels)
-        return any(canonical_label(value) in normalized for value in values)

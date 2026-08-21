@@ -567,6 +567,11 @@ gợi ý phải đạt Bayesian rating điều chỉnh từ 4,2/5 và có window
 từ 18:00; DrinkDessert dùng window ban ngày 07:00–18:00. Hai pool được cap riêng
 rồi gộp vào `entertainment[]`. Direct-user/URL bypass optional cap và giữ
 provenance. Planner vẫn sở hữu source-mix, day assignment và tối ưu cuối.
+PlaceChecker canonicalize tag từ database qua `auto-attach/tags-auto.yml` ở mỗi
+request. Activity score gồm 85% core fit/quality, 10% preference và 5% tag
+diversity; preference là tỷ lệ tag candidate khớp, avoid là hard filter, còn
+mỗi tag diversity đóng góp `1 / (1 + số lần đã chọn)`. Pool quota giữ nguyên
+thứ tự greedy rerank thay vì chia lại theo group/category ngoài taxonomy.
 Breakfast phải kết thúc trước mọi activity trong ngày.
 Semantic guard chuyển music box, karaoke, golf, billiard/bi-a, bowling, studio,
 game center, massage/trị liệu, spa và retail store/souvenir bị gắn TravelPlace
@@ -577,7 +582,8 @@ DrinkDessert/cafe/coffee/tea/bakery/dessert luôn được chuẩn hóa vào poo
 Entertainment ở compact boundary, kể cả khi raw prompt/URL upstream gắn nhãn
 Restaurant hoặc TravelPlace; duplicate food/place candidate cũng được chuyển pool
 trước khi Planner nhận dữ liệu.
-FoodItem diversity không dùng HasStyle. Food anchors là final TravelPlace và
+FoodItem diversity không dùng HasStyle: selector ưu tiên món chưa dùng, chỉ giữ
+mỗi Restaurant một lần và vẫn cân bằng anchor. Food anchors là final TravelPlace và
 Entertainment có tọa độ; một query trả cả nearby 5 km và city-wide candidate.
 Food hard feasibility vẫn là unique matching cho từng slot
 `day × breakfast/lunch/dinner`, tối đa 60 candidate. PlaceChecker còn thử một

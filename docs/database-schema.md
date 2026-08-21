@@ -618,11 +618,13 @@ Provider note hiện có cũng được đọc làm semantic context để nhậ
 thương mại như art supply store, photo booth, garden center và plant service;
 không thêm cột và không ghi ngược category.
 
-PlaceChecker metadata read path truyền toàn bộ giá trị từ property `tags` cùng
-tag suy ra từ `Special_Experience`, `Offer_Item`, `Has_Style` và `Special_Near`.
-Planner normalize cả tag tiếng Việt (`Tâm linh`, `Văn hóa`, `kiến trúc`,
-`di tích`, ...) để preference và diversity objective dùng đúng dữ liệu cloud;
-thay đổi này không thêm bảng hoặc ghi ngược Knowledge Graph.
+PlaceChecker metadata read path resolve property `tags` qua
+`auto-attach/tags-auto.yml` tại runtime và chỉ chuyển canonical key hợp lệ.
+Relationship evidence từ `Special_Experience`, `Offer_Item`, `Has_Style` và
+`Special_Near` nằm ở field provenance riêng, không trở thành taxonomy group.
+Scoring dùng các canonical tag này cho preference ratio, hard avoid và độ mới
+`1 / (1 + số lần tag đã chọn)`; thay đổi là read-time policy, không thêm bảng
+hoặc ghi ngược Knowledge Graph.
 
 PlaceChecker food read path bắt đầu từ `FoodItem`/`DrinkItem` có
 `Has_Style`, rồi reverse `Offer_Item` sang `Restaurant`/`DrinkDessert` trong cây

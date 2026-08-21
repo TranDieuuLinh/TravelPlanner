@@ -21,12 +21,14 @@ class CandidateScoreComponents(ContractModel):
 
 class ScoredCandidate(ContractModel):
     candidate: RetrievedCandidate
+    selection_tags: list[str] = Field(default_factory=list)
     components: CandidateScoreComponents
     base_score: float = Field(ge=0, le=1)
     penalties: dict[str, float] = Field(default_factory=dict)
     penalty_total: float = Field(ge=0, le=0.65)
     final_score: float = Field(ge=0, le=1)
     rerank_score: float = Field(ge=0, le=1)
+    tag_diversity_score: float = Field(default=0, ge=0, le=1)
     distance_from_anchor_km: float | None = Field(default=None, ge=0)
     rank: int | None = Field(default=None, ge=1)
     eligible: bool

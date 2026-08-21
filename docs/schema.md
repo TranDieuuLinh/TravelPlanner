@@ -382,9 +382,13 @@ Mỗi place còn có `sourceKind` (`special_experience`, `offer_item`, `both` ho
 nguồn activity khi target là `ActivityItem`; timing ActivityItem được truyền
 qua relationship evidence, còn `Has_Style` chỉ kế thừa timing cụ thể còn thiếu
 và không được giữ thành public tag. Travel reserve dùng một query canonical;
-SpecialExperience, direct tag, OfferItem và quality cùng tham gia rank;
-popular kết hợp Bayesian quality với log review count, bucket thiếu được ranking
-diversity bù và không làm PlaceChecker phân ngày thay Planner. Popular bucket
+SpecialExperience, OfferItem và quality cùng tham gia core rank. Preference,
+avoid và diversity chỉ dùng canonical key được resolve runtime từ
+`auto-attach/tags-auto.yml`. Preference bằng số tag khớp chia tổng tag canonical
+của candidate; avoid là hard filter. TravelPlace diversity lấy trung bình
+`1 / (1 + số lần tag đã chọn)` rồi cộng với trọng số 5%, bên cạnh 10%
+preference và 85% core. Quota giữ thứ tự rerank này và không làm PlaceChecker
+phân ngày thay Planner. Popular bucket
 chỉ tính candidate có ít nhất 500 review và popularity score từ 0,70. Semantic
 category guard chuyển music box, karaoke, golf, billiard/bi-a, bowling, studio,
 game center, massage/trị liệu, spa và retail store/souvenir bị gắn `TravelPlace`

@@ -1,14 +1,21 @@
+from collections import Counter
+
+from app.modules.place_checker.planning.category import planner_category_for_candidate
 from app.modules.place_checker.scoring.contract import ScoredCandidate
+from app.modules.place_checker.scoring.tag_policy import CandidateTagPolicy
 from app.shared.tools.search_places.normalization import normalize_text
 from app.shared.tools.search_places.scoring import distance_km
 
 
 class CandidateDiversityReranker:
+    TAG_DIVERSITY_WEIGHT = 0.05
+
     def rerank(
         self,
         scored: list[ScoredCandidate],
         *,
         reserve_limit_per_gap: int,
+        initial_tag_counts: Counter[str] | None = None,
     ) -> list[ScoredCandidate]:
         candidates = self._limit_per_gap(
             self._deduplicate(scored),
@@ -16,13 +23,19 @@ class CandidateDiversityReranker:
         )
         remaining = list(candidates)
         selected: list[ScoredCandidate] = []
+        selected_tag_counts = Counter(initial_tag_counts or {})
         while remaining:
-            rescored = [self._apply_diversity(item, selected) for item in remaining]
-            chosen = sorted(
+            rescored = [
+                self._apply_diversity(item, selected, selected_tag_counts)
+                for item in remaining
+            ]
+            chosen = min(
                 rescored,
                 key=lambda item: (-item.rerank_score, item.candidate.candidate_key),
-            )[0]
+            )
             selected.append(chosen)
+            if self._uses_tag_diversity(chosen):
+                selected_tag_counts.update(chosen.selection_tags)
             remaining = [
                 item
                 for item in remaining
@@ -37,18 +50,16 @@ class CandidateDiversityReranker:
     def _apply_diversity(
         item: ScoredCandidate,
         selected: list[ScoredCandidate],
+        selected_tag_counts: Counter[str],
     ) -> ScoredCandidate:
-        category_repeat = any(
-            normalize_text(CandidateDiversityReranker._category_key(chosen))
-            == normalize_text(CandidateDiversityReranker._category_key(item))
-            for chosen in selected
-            if item.candidate.category and chosen.candidate.category
-        )
-        experience_repeat = any(
-            normalize_text(chosen.candidate.experience_type)
-            == normalize_text(item.candidate.experience_type)
-            for chosen in selected
-            if item.candidate.experience_type and chosen.candidate.experience_type
+        uses_tag_diversity = CandidateDiversityReranker._uses_tag_diversity(item)
+        diversity_ratio = (
+            CandidateTagPolicy.diversity_ratio(
+                item.selection_tags,
+                selected_tag_counts,
+            )
+            if uses_tag_diversity
+            else 0.0
         )
         known_distances = [
             distance_km(chosen.candidate.coordinates, item.candidate.coordinates)
@@ -65,16 +76,28 @@ class CandidateDiversityReranker:
             ) <= 2
             for chosen in selected
         )
-        diversity_penalty = (
-            0.08 * category_repeat
-            + 0.06 * experience_repeat
-            + 0.08 * distant_from_selected
+        distance_penalty = 0.08 * distant_from_selected
+        diversity_bonus = CandidateDiversityReranker.TAG_DIVERSITY_WEIGHT * (
+            diversity_ratio
         )
+        adjusted_components = item.components.model_copy(
+            update={"uniqueness": diversity_ratio}
+        )
+        adjusted_base = min(1.0, item.base_score + diversity_bonus)
+        adjusted_final = max(0.0, adjusted_base - item.penalty_total)
         reasons = [
             reason
             for condition, reason in [
-                (category_repeat, "repeated_category"),
-                (experience_repeat, "repeated_experience"),
+                (
+                    uses_tag_diversity
+                    and any(selected_tag_counts[tag] == 0 for tag in item.selection_tags),
+                    "new_canonical_tag",
+                ),
+                (
+                    uses_tag_diversity
+                    and any(selected_tag_counts[tag] > 0 for tag in item.selection_tags),
+                    "repeated_canonical_tag",
+                ),
                 (same_cluster, "same_geographic_cluster"),
                 (distant_from_selected, "distant_geographic_cluster"),
             ]
@@ -82,20 +105,25 @@ class CandidateDiversityReranker:
         ]
         return item.model_copy(
             update={
+                "components": adjusted_components,
+                "base_score": round(adjusted_base, 6),
+                "final_score": round(adjusted_final, 6),
                 "rerank_score": round(
-                    max(0.0, item.final_score - diversity_penalty), 6
+                    max(0.0, adjusted_final - distance_penalty), 6
                 ),
+                "tag_diversity_score": round(diversity_ratio, 6),
                 "rerank_reasons": reasons,
             }
         )
 
     @staticmethod
-    def _category_key(item: ScoredCandidate) -> str:
-        return (
-            item.candidate.pool_category
-            or item.candidate.category
-            or "unknown"
-        )
+    def _uses_tag_diversity(item: ScoredCandidate) -> bool:
+        return bool(item.selection_tags) and planner_category_for_candidate(
+            item.candidate.category,
+            name=item.candidate.canonical_name,
+            tags=item.candidate.tags,
+            pool_category=item.candidate.pool_category,
+        ) == "travel_place"
 
     @staticmethod
     def _deduplicate(scored: list[ScoredCandidate]) -> list[ScoredCandidate]:
