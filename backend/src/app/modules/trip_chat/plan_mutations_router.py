@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
 from app.api.dependencies import get_graph
 from app.modules.auth.public import AuthUser, require_current_user
-from app.modules.trip_chat.contract import TripChat
+from app.modules.itinerary_planner.public import DayRepairError
+from app.modules.trip_chat.contract import ReplacePlanItemInput, TripChat
 from app.modules.trip_chat.service import TripChatService
 
 
@@ -14,10 +15,11 @@ def _service(request: Request, graph=Depends(get_graph)) -> TripChatService:
         repository=request.app.state.trip_chat_repository,
         graph=graph,
         memory_service=getattr(request.app.state, "conversation_memory_service", None),
+        day_repairer=getattr(request.app.state, "day_repair_service", None),
     )
 
 
-def _raise_unscheduled_mutation_error(status: str) -> None:
+def _raise_plan_item_mutation_error(status: str) -> None:
     if status == "chat_not_found":
         raise HTTPException(404, {"code": "TRIP_CHAT_NOT_FOUND", "message": "Không tìm thấy trip chat."})
     if status == "revision_conflict":
@@ -26,6 +28,8 @@ def _raise_unscheduled_mutation_error(status: str) -> None:
         raise HTTPException(404, {"code": "TRIP_CHAT_PLAN_DAY_NOT_FOUND", "message": "Không tìm thấy ngày trong lịch trình."})
     if status == "unscheduled_not_found":
         raise HTTPException(404, {"code": "TRIP_CHAT_UNSCHEDULED_NOT_FOUND", "message": "Không tìm thấy địa điểm chưa xếp."})
+    if status == "item_not_found":
+        raise HTTPException(404, {"code": "TRIP_CHAT_PLAN_ITEM_NOT_FOUND", "message": "Không tìm thấy địa điểm trong lịch trình."})
 
 
 def _selected_item(
@@ -135,7 +139,7 @@ async def confirm_unscheduled_place(
         ),
         position=position,
     )
-    _raise_unscheduled_mutation_error(status)
+    _raise_plan_item_mutation_error(status)
     if chat is None:
         raise HTTPException(404, {"code": "TRIP_CHAT_NOT_FOUND", "message": "Không tìm thấy trip chat."})
     return chat
@@ -159,7 +163,112 @@ async def delete_unscheduled_place(
         place_id=place_id,
         candidate_id=candidate_id,
     )
-    _raise_unscheduled_mutation_error(status)
+    _raise_plan_item_mutation_error(status)
+    if chat is None:
+        raise HTTPException(404, {"code": "TRIP_CHAT_NOT_FOUND", "message": "Không tìm thấy trip chat."})
+    return chat
+
+
+@router.patch(
+    "/{chat_id}/plan/days/{day}/items/{item_id}", response_model=TripChat,
+)
+async def update_item(
+    chat_id: str,
+    day: int,
+    item_id: str,
+    expected_revision: int = Form(alias="expectedRevision", ge=0),
+    place_id: str | None = Form(default=None, alias="placeId", max_length=500),
+    name: str | None = Form(default=None, min_length=1, max_length=500),
+    address: str | None = Form(default=None, max_length=1000),
+    place_type: str | None = Form(default=None, alias="placeType", max_length=100),
+    duration_minutes: int | None = Form(default=None, alias="durationMinutes", ge=0),
+    latitude: float | None = Form(default=None, ge=-90, le=90),
+    longitude: float | None = Form(default=None, ge=-180, le=180),
+    personal_notes: str | None = Form(default=None, alias="personalNotes", max_length=4000),
+    user: AuthUser = Depends(require_current_user),
+    service: TripChatService = Depends(_service),
+):
+    changes = {
+        key: value
+        for key, value in {
+            "placeId": place_id,
+            "name": name.strip() if name else None,
+            "address": address.strip() if address else None,
+            "placeType": place_type,
+            "durationMinutes": duration_minutes,
+            "latitude": latitude,
+            "longitude": longitude,
+            "personalNotes": personal_notes.strip() if personal_notes else None,
+        }.items()
+        if value is not None
+    }
+    status, chat = await service.update_plan_item(
+        user.id, chat_id, expected_revision=expected_revision,
+        day=day, item_id=item_id, changes=changes,
+    )
+    _raise_plan_item_mutation_error(status)
+    if chat is None:
+        raise HTTPException(404, {"code": "TRIP_CHAT_NOT_FOUND", "message": "Không tìm thấy trip chat."})
+    return chat
+
+
+@router.post(
+    "/{chat_id}/plan/days/{day}/items/{item_id}/replace",
+    response_model=TripChat,
+)
+async def replace_item(
+    chat_id: str,
+    day: int,
+    item_id: str,
+    payload: ReplacePlanItemInput,
+    user: AuthUser = Depends(require_current_user),
+    service: TripChatService = Depends(_service),
+):
+    try:
+        status, chat = await service.replace_plan_item(
+            user.id,
+            chat_id,
+            expected_revision=payload.expected_revision,
+            day=day,
+            item_id=item_id,
+            replacement=payload.model_dump(by_alias=True, exclude={"expected_revision"}),
+        )
+    except DayRepairError as exc:
+        status_code = 503 if exc.code == "ROUTING_UNAVAILABLE" else 422
+        raise HTTPException(
+            status_code,
+            {"code": exc.code, "message": str(exc)},
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            503,
+            {
+                "code": "DAY_REPAIR_UNAVAILABLE",
+                "message": "Tính lại lịch trong ngày chưa được cấu hình.",
+            },
+        ) from exc
+    _raise_plan_item_mutation_error(status)
+    if chat is None:
+        raise HTTPException(404, {"code": "TRIP_CHAT_NOT_FOUND", "message": "Không tìm thấy trip chat."})
+    return chat
+
+
+@router.delete(
+    "/{chat_id}/plan/days/{day}/items/{item_id}", response_model=TripChat,
+)
+async def delete_item(
+    chat_id: str,
+    day: int,
+    item_id: str,
+    expected_revision: int = Form(alias="expectedRevision", ge=0),
+    user: AuthUser = Depends(require_current_user),
+    service: TripChatService = Depends(_service),
+):
+    status, chat = await service.delete_plan_item(
+        user.id, chat_id, expected_revision=expected_revision,
+        day=day, item_id=item_id,
+    )
+    _raise_plan_item_mutation_error(status)
     if chat is None:
         raise HTTPException(404, {"code": "TRIP_CHAT_NOT_FOUND", "message": "Không tìm thấy trip chat."})
     return chat

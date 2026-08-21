@@ -250,6 +250,7 @@ class PlannerOutputPlace(ContractModel):
     address: str | None = None
     priority: Literal["user_input", "url", "special_experience", "special_near"]
     notes: SourceNote | None = None
+    personal_notes: str | None = Field(default=None, max_length=4000)
     tags: list[str] = Field(default_factory=list)
     styles: list[str] = Field(default_factory=list)
     audience: PlannerAudience = Field(default_factory=PlannerAudience)
@@ -296,6 +297,7 @@ class PlannerExcludedCandidate(ContractModel):
     reason_code: str
     message: str
     notes: SourceNote | None = None
+    personal_notes: str | None = Field(default=None, max_length=4000)
     source_refs: list[str] = Field(default_factory=list, max_length=20)
 
 

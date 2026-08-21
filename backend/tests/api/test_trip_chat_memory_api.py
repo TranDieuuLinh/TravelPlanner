@@ -86,6 +86,96 @@ import unittest
 
 
 class TestTripChatMemoryAPI(unittest.TestCase):
+    def test_deletes_manual_plan_item_through_http_endpoint(self):
+        app, client, _memory_service = build_test_app()
+        created = client.post("/v1/trip-chats", json={"title": "Delete item"}).json()
+        seeded = asyncio.run(
+            app.state.trip_chat_repository.append_exchange(
+                1,
+                created["id"],
+                "Tạo lịch",
+                {"content": "Đã tạo"},
+                None,
+                {
+                    "destination": "Hà Nội",
+                    "days": [{
+                        "day": 1,
+                        "stops": [
+                            {"itemId": "planner:1:a", "placeId": "a", "name": "A"},
+                            {"itemId": "planner:1:b", "placeId": "b", "name": "B"},
+                            {"itemId": "planner:1:c", "placeId": "c", "name": "C"},
+                        ],
+                        "legs": [
+                            {"fromPlaceId": "a", "toPlaceId": "b"},
+                            {"fromPlaceId": "b", "toPlaceId": "c"},
+                        ],
+                    }],
+                },
+            )
+        )
+        self.assertIsNotNone(seeded)
+
+        response = client.request(
+            "DELETE",
+            f"/v1/trip-chats/{created['id']}/plan/days/1/items/planner%3A1%3Ab",
+            data={"expectedRevision": seeded.revision},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        day = response.json()["currentPlannerOutput"]["days"][0]
+        self.assertEqual(
+            [stop["itemId"] for stop in day["stops"]],
+            ["planner:1:a", "planner:1:c"],
+        )
+        self.assertEqual(day["legs"], [])
+
+    def test_updates_manual_plan_item_through_http_endpoint(self):
+        app, client, _memory_service = build_test_app()
+        created = client.post("/v1/trip-chats", json={"title": "Update item"}).json()
+        seeded = asyncio.run(
+            app.state.trip_chat_repository.append_exchange(
+                1,
+                created["id"],
+                "Tạo lịch",
+                {"content": "Đã tạo"},
+                None,
+                {
+                    "destination": "Hà Nội",
+                    "days": [{
+                        "day": 1,
+                        "stops": [{
+                            "itemId": "planner:1:a",
+                            "placeId": "a",
+                            "name": "A",
+                            "coordinates": {"latitude": 21.01, "longitude": 105.81},
+                        }],
+                        "legs": [],
+                    }],
+                },
+            )
+        )
+        self.assertIsNotNone(seeded)
+
+        response = client.patch(
+            f"/v1/trip-chats/{created['id']}/plan/days/1/items/planner%3A1%3Aa",
+            data={
+                "expectedRevision": seeded.revision,
+                "placeId": "a-new",
+                "name": "A mới",
+                "latitude": 21.11,
+                "longitude": 105.91,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        stop = response.json()["currentPlannerOutput"]["days"][0]["stops"][0]
+        self.assertEqual(stop["placeId"], "a-new")
+        self.assertEqual(stop["name"], "A mới")
+        self.assertEqual(
+            stop["coordinates"],
+            {"latitude": 21.11, "longitude": 105.91},
+        )
+
     def test_updates_personal_note_without_changing_source_note(self):
         app, client, _memory_service = build_test_app()
         created = client.post("/v1/trip-chats", json={"title": "Notes"}).json()

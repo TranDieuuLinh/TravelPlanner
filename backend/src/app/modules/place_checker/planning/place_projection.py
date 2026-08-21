@@ -15,7 +15,10 @@ from app.modules.place_checker.planning.candidate_metadata import (
     time_source,
 )
 from app.modules.place_checker.planning.category import planner_category
-from app.modules.place_checker.planning.notes import select_planner_source_note
+from app.modules.place_checker.planning.notes import (
+    select_personal_note,
+    select_planner_source_note,
+)
 from app.modules.place_checker.planning.semantics import (
     audience_values,
     candidate_semantics,
@@ -47,6 +50,7 @@ class PlannerPlaceProjector:
             address=checked.address,
             priority=cls._priority(checked),
             notes=select_planner_source_note(checked),
+            personal_notes=select_personal_note(checked),
             tags=tags,
             styles=styles,
             audience=PlannerAudience(

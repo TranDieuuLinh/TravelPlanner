@@ -17,6 +17,7 @@ class RootGraphInput(BaseModel):
     images: list[ExplorerImageInput] = Field(default_factory=list, max_length=20)
     force_refresh: bool = False
     existing_itinerary: Itinerary | None = None
+    existing_planner_output: dict[str, Any] | None = None
     edit_operation: EditOperation | None = None
 
     conversation_memory: WorkingMemoryState | None = None
@@ -34,3 +35,6 @@ class RootGraphOutput(BaseModel):
     clarification_question: str | None = None
     warnings: list[str] = Field(default_factory=list)
     sources: list[SourceReference] = Field(default_factory=list)
+from typing import Any
+
+from pydantic import BaseModel, Field

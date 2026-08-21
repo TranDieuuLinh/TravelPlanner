@@ -99,6 +99,7 @@ class UnscheduledPriority(PlannerContractModel):
     reason_code: str
     message: str
     notes: SourceNote | None = None
+    personal_notes: str | None = Field(default=None, max_length=4000)
     source_refs: list[str] = Field(default_factory=list, max_length=20)
 
 

@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
@@ -14,9 +15,11 @@ from app.modules.trip_chat.contract import (
     TripChatSummary,
 )
 from app.modules.trip_chat.plan_snapshot import (
+    delete_plan_item,
     delete_accommodation,
     select_transport_option,
     update_accommodation,
+    update_plan_item,
     update_stop_personal_notes,
     add_plan_item,
     confirm_unscheduled_place,
@@ -352,6 +355,85 @@ class PostgresTripChatRepository:
                 )
         return "updated"
 
+    async def update_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str, changes: dict[str, Any],
+    ) -> PlanItemMutationStatus:
+        return await self._mutate_plan_item(
+            user_id, chat_id, expected_revision=expected_revision,
+            mutation=lambda output: update_plan_item(
+                output, day=day, item_id=item_id, changes=changes,
+            ),
+        )
+
+    async def replace_plan_output(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        output: dict[str, Any],
+    ) -> PlanItemMutationStatus:
+        pool = await self._get_pool()
+        async with pool.acquire() as connection:
+            result = await connection.execute(
+                """UPDATE agent_trip_chats SET revision=revision+1,
+                   current_planner_output=$1::jsonb, updated_at=$2
+                   WHERE id=$3 AND user_id=$4 AND revision=$5""",
+                json.dumps(output),
+                datetime.now(timezone.utc),
+                chat_id,
+                user_id,
+                expected_revision,
+            )
+            if result == "UPDATE 1":
+                return "updated"
+            exists = await connection.fetchval(
+                "SELECT 1 FROM agent_trip_chats WHERE id=$1 AND user_id=$2",
+                chat_id,
+                user_id,
+            )
+        return "revision_conflict" if exists else "chat_not_found"
+
+    async def delete_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str,
+    ) -> PlanItemMutationStatus:
+        return await self._mutate_plan_item(
+            user_id, chat_id, expected_revision=expected_revision,
+            mutation=lambda output: delete_plan_item(
+                output, day=day, item_id=item_id,
+            ),
+        )
+
+    async def _mutate_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        mutation: Callable[[dict[str, Any]], PlanItemMutationStatus],
+    ) -> PlanItemMutationStatus:
+        pool = await self._get_pool()
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                row = await connection.fetchrow(
+                    """SELECT revision, current_planner_output
+                       FROM agent_trip_chats WHERE id=$1 AND user_id=$2 FOR UPDATE""",
+                    chat_id, user_id,
+                )
+                if row is None:
+                    return "chat_not_found"
+                if row["revision"] != expected_revision:
+                    return "revision_conflict"
+                output = deepcopy(_json(row["current_planner_output"]))
+                status = mutation(output)
+                if status != "updated":
+                    return status
+                await connection.execute(
+                    """UPDATE agent_trip_chats SET revision=revision+1,
+                       current_planner_output=$1::jsonb, updated_at=$2
+                       WHERE id=$3 AND user_id=$4""",
+                    json.dumps(output), datetime.now(timezone.utc), chat_id, user_id,
+                )
+        return "updated"
+
     async def confirm_unscheduled_place(
         self, user_id: int, chat_id: str, *, expected_revision: int,
         name: str, place_id: str | None, candidate_id: str | None,
@@ -493,6 +575,10 @@ class PostgresTripChatRepository:
                 else []
             ) or [],
             sources=_json(row["sources"]) or [],
-            suggestions=_json(row["suggestions"]) or [],
+            suggestions=(
+                _json(row["suggestions"])
+                if "suggestions" in row.keys()
+                else []
+            ) or [],
             created_at=row["created_at"],
         )

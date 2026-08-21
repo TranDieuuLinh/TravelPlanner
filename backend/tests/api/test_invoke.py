@@ -134,7 +134,48 @@ def test_invoke_returns_planner_output_in_camel_case():
                         "destination": "Hà Nội",
                         "timezone": "Asia/Ho_Chi_Minh",
                         "people": 2,
-                        "days": [],
+                        "days": [
+                            {
+                                "day": 1,
+                                "date": "2026-08-22",
+                                "stops": [
+                                    {
+                                        "itemId": "planner:1:ho-guom",
+                                        "placeId": "ho-guom",
+                                        "name": "Hồ Gươm",
+                                        "kind": "place",
+                                        "priority": "url",
+                                        "startMinute": 480,
+                                        "endMinute": 540,
+                                        "durationMinutes": 60,
+                                        "coordinates": {
+                                            "latitude": 21.0285,
+                                            "longitude": 105.8542,
+                                        },
+                                        "notes": {
+                                            "text": "Nên đến trước 8 giờ.",
+                                            "sourceType": "url",
+                                            "sourceUrl": "https://example.test/video",
+                                        },
+                                        "personalNotes": "Nhớ mang ô.",
+                                        "costPerPerson": 0,
+                                    }
+                                ],
+                                "legs": [],
+                                "activityMinutes": 60,
+                                "travelMinutes": 0,
+                                "costPerPerson": 0,
+                                "costBreakdown": {
+                                    "accommodation": 0,
+                                    "food": 0,
+                                    "localTransport": 0,
+                                    "activities": 0,
+                                    "misc": 0,
+                                    "total": 0,
+                                    "currency": "VND",
+                                },
+                            }
+                        ],
                         "totalCostPerPerson": 0,
                         "currency": "VND",
                         "solver": {
@@ -165,6 +206,15 @@ def test_invoke_returns_planner_output_in_camel_case():
     payload = response.json()
     assert payload["itinerary"] is None
     assert payload["plannerOutput"]["destination"] == "Hà Nội"
+    note = payload["plannerOutput"]["days"][0]["stops"][0]["notes"]
+    assert note == {
+        "text": "Nên đến trước 8 giờ.",
+        "sourceType": "url",
+        "sourceUrl": "https://example.test/video",
+    }
+    assert payload["plannerOutput"]["days"][0]["stops"][0]["personalNotes"] == (
+        "Nhớ mang ô."
+    )
     assert "planner_output" not in payload
 
 

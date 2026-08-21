@@ -19,6 +19,7 @@ class GeminiIntentClassifier:
             ],
             "hasItinerary": payload.has_itinerary,
             "hasEditOperation": payload.has_edit_operation,
+            "currentPlan": payload.current_plan,
             "destination": payload.destination,
             "durationDays": payload.duration_days,
             "mentionedPlaces": payload.mentioned_places[-50:],
@@ -48,4 +49,17 @@ class GeminiIntentClassifier:
             },
             "required": ["field", "label", "value"],
         }
-        return schema
+        return _provider_schema(schema)
+
+
+def _provider_schema(value: Any) -> Any:
+    """Remove Pydantic defaults unsupported by Gemini response schemas."""
+    if isinstance(value, dict):
+        return {
+            key: _provider_schema(item)
+            for key, item in value.items()
+            if key != "default"
+        }
+    if isinstance(value, list):
+        return [_provider_schema(item) for item in value]
+    return value

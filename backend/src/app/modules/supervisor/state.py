@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from app.modules.supervisor.contract import SupervisorDecision
 
@@ -9,6 +9,7 @@ class SupervisorState(TypedDict, total=False):
     has_source_input: bool
     has_itinerary: bool
     has_edit_operation: bool
+    current_plan: dict[str, Any] | None
     destination: str | None
     duration_days: int | None
     mentioned_places: list[str]

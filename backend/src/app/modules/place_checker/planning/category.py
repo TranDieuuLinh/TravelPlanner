@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+import unicodedata
+
 from app.shared.tools.search_places.normalization import normalize_text
 
 
@@ -24,6 +27,7 @@ _ENTERTAINMENT = frozenset(
     {"entertainment", "game center", "cinema", "karaoke", "music venue"}
 )
 _ENTERTAINMENT_NAME_MARKERS = (
+    "art center",
     "bi a",
     "billiard",
     "billiards",
@@ -92,7 +96,6 @@ _RESTAURANT_NAME_MARKERS = (
     "com",
     "lau",
     "mi van than",
-    "pho",
     "quan mi",
     "sui cao",
 )
@@ -143,10 +146,7 @@ def planner_category_for_candidate(
         or has_drink_tag
     ):
         return "drink_dessert"
-    if category != "accommodation" and any(
-        f" {marker} " in padded_name
-        for marker in _RESTAURANT_NAME_MARKERS
-    ):
+    if category == "travel_place" and _has_restaurant_name_marker(name):
         return "restaurant"
     if category != "travel_place":
         return category
@@ -160,3 +160,15 @@ def planner_category_for_candidate(
     if "entertainment" in {normalize_text(tag) for tag in tags}:
         return "entertainment"
     return category
+
+
+def _has_restaurant_name_marker(name: str | None) -> bool:
+    normalized = normalize_text(name)
+    padded = f" {normalized} "
+    if any(f" {marker} " in padded for marker in _RESTAURANT_NAME_MARKERS):
+        return True
+    # Diacritic stripping maps both Vietnamese “phở” and “phố” to ``pho``.
+    # Inspect the original Unicode token so streets such as Phố Vọng are not
+    # mistaken for a noodle venue, while “Phở” and ASCII “Pho” still match.
+    unicode_name = unicodedata.normalize("NFKC", name or "").casefold()
+    return bool(re.search(r"(?<!\w)(?:phở|pho)(?!\w)", unicode_name))

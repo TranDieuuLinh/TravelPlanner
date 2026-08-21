@@ -38,6 +38,7 @@ backend/
 │       ├── information_finder/
 │       ├── place_checker/
 │       ├── itinerary_planner/
+│       ├── finisher/
 │       ├── plan_editor/
 │       ├── auth/
 │       ├── conversation_memory/
@@ -58,6 +59,11 @@ matrix trong một graph, nên fallback không chạy lại preprocessing/routin
 Valhalla adapter có bounded directed-pair cache theo graph version/profile và
 chỉ gọi provider cho các pair còn thiếu khi cache overlap đủ lớn; cache này
 không thay đổi database ownership.
+Capability `itinerary_planner/day_repair/` xử lý riêng thao tác người dùng thay
+địa điểm: tất cả stop của ngày là bắt buộc, các ngày khác không tham gia solve.
+Fast path dồn lại timeline nhưng giữ nguyên thứ tự; nếu không khả thi, CP-SAT
+chỉ được đổi thứ tự và giờ của đúng tập stop đó theo opening window, meal window,
+Valhalla safe travel và transfer nơi lưu trú.
 Beam chỉ cấm lặp `TravelPlace`; food và leisure được phép lặp khi cần, nhưng
 thứ tự xếp hạng ưu tiên ít lặp hơn theo `Entertainment -> DrinkDessert ->
 Restaurant`.
@@ -69,6 +75,13 @@ từng root graph stage cùng tổng request. Các dòng này dùng cùng `reque
 Knowledge Graph và Place Checker tách pool `Entertainment` khỏi `TravelPlace`.
 `Entertainment` là node place-like cho các địa điểm giải trí/wellness; mapping
 runtime dùng hint riêng và không đưa loại này vào hint tổng quát `travel place`.
+Generic discovery còn bỏ qua entity có property
+`generic_discovery_excluded=true`, trong khi named-place lookup vẫn cho phép
+resolve entity đó khi user gọi đúng tên; night market tiếp tục là `TravelPlace`.
+Candidate generation xếp top-K bằng Bayesian adjusted rating và review
+reliability trước khi CandidateScoring chạy; downstream activity, food và
+entertainment cũng dùng shared Bayesian policy. Category inference kiểm tra
+Unicode gốc để phân biệt món `Phở` với từ `Phố` trong tên đường.
 
 ## Ranh giới module
 
@@ -103,8 +116,22 @@ Module `conversation_memory` đã hoàn thành Phase 01–06. Module sở hữu 
 
 `shared/contracts/source_note.py` là contract dùng chung cho source note vì
 Place Checker tạo note, Itinerary Planner truyền note và Trip Chat lưu snapshot.
-Rule URL ưu tiên Google/KG thuộc Place Checker; Trip Chat chỉ mutation trường
-`personalNotes` do người dùng sở hữu.
+Place Checker tách note đã liên kết với từng địa điểm thành hai vùng: chi tiết
+từ raw prompt đi vào user-owned `personalNotes`; source-owned `notes` chỉ chọn
+URL trước rồi mới fallback Google Maps/Knowledge Graph. Trip Chat chỉ mutation
+trường `personalNotes` do người dùng sở hữu.
+
+Module `finisher` nhận duy nhất `ItineraryPlannerOutput` đã chuẩn hóa, xếp note
+URL trước các loại note khác và tạo phản hồi ngắn bằng tiếng Việt cho
+`InvokeResponse.response`. Runtime dùng Gemini structured output khi có API key;
+lỗi provider hoặc môi trường không cấu hình key dùng câu tiếng Việt
+deterministic. Finisher không nhận raw prompt hay raw payload của provider.
+Module `plan_editor` vẫn giữ graph legacy cho `Itinerary`, đồng thời expose
+Natural Language Plan Editor dùng Gemini structured output trên compact view của
+`currentPlannerOutput`. Trip Chat gọi capability này trước root graph, kiểm tra
+day/item ID do Gemini trả về rồi dispatch sang chính các service thêm, sửa, xóa
+và sắp xếp đang phục vụ UI thủ công. Module không có keyword classifier hoặc
+deterministic edit fallback; message không phải edit tiếp tục qua root graph.
 Trip Chat cũng sở hữu mutation accommodation trong planner snapshot: frontend
 có thể sửa địa điểm lưu trú, lưu ghi chú cá nhân hoặc xóa nơi lưu trú; adapter
 in-memory và PostgreSQL cùng kiểm tra revision trước khi cập nhật JSONB.
@@ -188,6 +215,14 @@ Frontend chỉ hiển thị đi bộ cho chặng ngắn hơn 1,5 km. Với chặ
 phương án hợp lệ, thao tác chọn option gọi Trip Chat mutation; backend lưu
 `selectedTransport` vào đúng leg trong `currentPlannerOutput` với optimistic
 revision để lựa chọn còn nguyên sau khi tải lại.
+Các thao tác thêm, xóa và kéo thả ở frontend diff chuỗi địa điểm theo từng cặp
+liền kề, giữ route leg không đổi và chỉ gọi `POST /v1/plans/day-directions` cho
+leg mới. Riêng khi sửa sang một identity/tọa độ khác, frontend gọi day-repair
+backend; backend ghi nguyên tử stop, timeline và toàn bộ leg của ngày sau khi
+repair thành công. Cả hai flow đều không gọi Supervisor hoặc agent lập lịch.
+Lệnh chỉnh lịch qua chat cũng tái sử dụng cùng các mutation này và optimistic
+revision; Gemini chỉ chuyển ngôn ngữ tự nhiên thành action có cấu trúc, không tự
+ghi PostgreSQL hoặc tự thay JSON snapshot.
 Địa điểm URL/direct input được Place Checker tự chọn một canonical candidate tốt
 nhất trước khi tạo Planner input; `addressHint` được ưu tiên nếu có. Frontend
 không còn resolve identity bằng Top-K hoặc chèn match trực tiếp qua Trip Chat
@@ -206,6 +241,8 @@ Backend hiện chỉ expose:
 - `POST /v1/agent/invoke`
 - `GET/POST/DELETE /v1/trip-chats` và các endpoint message theo chat có auth
 - `GET /v1/plans/places/search` tìm địa điểm chuẩn hóa trong Knowledge Graph cho thao tác thêm thủ công
+- `POST /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/replace` thay
+  địa điểm và repair nguyên tử đúng một ngày
 - `GET /v1/trip-chats/bootstrap` trả tối đa 30 summary gần nhất cùng full chat
   đang mở để frontend không phải tải danh sách rồi mới tải chi tiết tuần tự
 
@@ -562,6 +599,10 @@ trung lập. PlaceChecker PostgreSQL adapter diễn giải `Special_Near`,
 evidence có provenance sang scoring/output. Adapter không còn đọc `Near` legacy
 hoặc `Must_Visit`. Timing mặc định của `Has_Style` được đọc từ properties của
 node Style đích; timing riêng của place được ưu tiên.
+Knowledge Graph ontology còn khai báo `SubPlace` và cạnh cấu trúc
+`TravelPlace --Has_Subplace--> SubPlace`; `SubPlace --Offer_Item--> Item` nhận
+bốn item type hiện có. PlaceChecker chưa duyệt nhánh nested này nên SubPlace
+chưa tham gia output hoặc itinerary runtime.
 Nhánh food query `FoodItem`/`DrinkItem` có `Has_Style` rồi reverse `Offer_Item`
 sang Restaurant/DrinkDessert trong bán kính tọa độ 5 km quanh tối đa 8-12 anchor
 đại diện. SpecialNear là evidence. Service giữ Style/Item provenance, gộp

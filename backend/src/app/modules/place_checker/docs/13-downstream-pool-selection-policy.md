@@ -1,6 +1,6 @@
 # Chính sách pool sau PlaceChecker
 
-Cập nhật lần cuối: 2026-08-20.
+Cập nhật lần cuối: 2026-08-21.
 
 ## Ranh giới
 
@@ -59,6 +59,27 @@ hoặc quota.
 Entertainment optional phải có window giao buổi tối từ 18:00. DrinkDessert
 optional phải có window giao ban ngày 07:00–18:00. Hai nhóm được cap riêng rồi
 mới gộp vào `entertainment[]` với `entityType`.
+
+Trước khi tạo compact pool, category thô `TravelPlace` được đối chiếu thêm với
+tên, tag, pool category và provider note. Venue có provider category `Art
+center` được chiếu thành `Entertainment`; rule này bao phủ Mango Art và các art
+center tương đương mà không thay đổi `entity_type` trong Knowledge Graph.
+
+Generic Knowledge Graph discovery bỏ qua entity có property
+`generic_discovery_excluded=true`. Cờ này dùng cho shop, showroom, trường/lớp
+hoặc dịch vụ không phù hợp làm gợi ý du lịch đại trà; named-place lookup không
+áp dụng cờ nên yêu cầu gọi đúng tên vẫn có thể resolve entity. Night market vẫn
+thuộc `TravelPlace`.
+
+Candidate generation trong PostgreSQL dùng cùng Bayesian reputation semantics
+với scoring downstream: prior mean và prior weight được tính trên scoped pool,
+sau đó kết hợp adjusted rating với review reliability trước khi giới hạn top-K.
+Rating thô chỉ còn là dữ liệu đầu vào, không còn là khóa sort ưu tiên khiến điểm
+ít review đẩy landmark phổ biến khỏi cửa sổ retrieval.
+
+Semantic category chỉ dùng tên món ăn để sửa node nguồn `TravelPlace`; node đã
+là `Entertainment` không bị đổi thành `Restaurant`. Riêng token phở được kiểm
+tra trên Unicode gốc để phân biệt `Phở`/`Pho` với `Phố` trước khi bỏ dấu.
 
 ## Food coverage
 

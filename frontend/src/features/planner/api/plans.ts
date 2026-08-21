@@ -11,6 +11,7 @@ import type {
   TransportOption,
 } from "@/features/planner/contracts/transport";
 import type { AnswerBlock } from "@/features/planner/lib/answer-blocks";
+import type { PlaceSuggestion } from "@/features/planner/api/place-search";
 
 export type {
   CurrentLocationRouteInput,
@@ -977,10 +978,49 @@ export async function updateTripChatItem(input: {
   if (input.item.longitude != null) form.append("longitude", String(input.item.longitude));
   if (input.item.personalNotes !== undefined) form.append("personalNotes", input.item.personalNotes || "");
 
-  return apiFetch<TripChat>(`/v1/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
+  const chat = await apiFetch<CurrentTripChat>(`/v1/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
     method: "PATCH",
     body: form
   });
+  return mapFullCurrentTripChat(chat);
+}
+
+export async function replaceTripChatItem(input: {
+  chatId: string;
+  expectedRevision: number;
+  day: number;
+  itemId: string;
+  place: PlaceSuggestion;
+}): Promise<TripChat> {
+  if (
+    !input.place.placeId
+    || input.place.latitude == null
+    || input.place.longitude == null
+  ) {
+    throw new Error("Địa điểm mới chưa có định danh hoặc tọa độ hợp lệ.");
+  }
+  const chat = await apiFetch<CurrentTripChat>(
+    `/v1/trip-chats/${encodeURIComponent(input.chatId)}/plan/days/${input.day}/items/${encodeURIComponent(input.itemId)}/replace`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        expectedRevision: input.expectedRevision,
+        placeId: input.place.placeId,
+        name: input.place.name,
+        address: input.place.address,
+        placeType: input.place.placeType,
+        latitude: input.place.latitude,
+        longitude: input.place.longitude,
+        durationMinutes: input.place.durationMinutes,
+        openingHours: input.place.openingHours,
+        rating: input.place.rating,
+        reviewCount: input.place.reviewCount,
+        costPerPerson: input.place.costPerPerson,
+        imageUrl: input.place.imageUrl,
+      }),
+    },
+  );
+  return mapFullCurrentTripChat(chat);
 }
 
 export async function updateTripChatItemPersonalNotes(input: {
@@ -1048,10 +1088,11 @@ export async function removeTripChatItem(input: {
   const form = new FormData();
   form.append("expectedRevision", String(input.expectedRevision));
 
-  return apiFetch<TripChat>(`/v1/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
+  const chat = await apiFetch<CurrentTripChat>(`/v1/trip-chats/${input.chatId}/plan/days/${input.day}/items/${input.itemId}`, {
     method: "DELETE",
     body: form
   });
+  return mapFullCurrentTripChat(chat);
 }
 
 export async function removeTripChatUnscheduledPlace(input: {

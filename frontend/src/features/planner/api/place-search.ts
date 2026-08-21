@@ -14,11 +14,13 @@ export type PlaceSuggestion = {
   phone?: string | null;
   website?: string | null;
   openingHours?: string[] | null;
+  durationMinutes?: number | null;
+  costPerPerson?: number | null;
   isVerified?: boolean;
   source?: "knowledge_graph" | "google_maps_scraper" | string | null;
 };
 
-export const PLACE_SEARCH_TOP_K = 1;
+export const PLACE_SEARCH_TOP_K = 5;
 
 export async function searchPlaces(
   query: string,

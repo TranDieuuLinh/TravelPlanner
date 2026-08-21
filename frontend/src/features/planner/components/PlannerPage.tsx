@@ -41,6 +41,7 @@ import {
   removeTripChatAccommodation,
   removeTripChatUnscheduledPlace,
   reorderTripChatItem,
+  replaceTripChatItem,
   searchPlaces,
   selectTripChatTransportOption,
   updateTripChatIntent,
@@ -90,6 +91,14 @@ import {
 import { formatPlannerMoney } from "@/features/planner/lib/planner-budget";
 import { planItemMapKey } from "@/features/planner/lib/plan-map-key";
 import { rebaseItineraryItemOrder } from "@/features/planner/lib/itinerary-order";
+import {
+  dayRouteTopologyKey,
+  diffDayRoutes,
+  mergeDayRouteLegs,
+  normalizeLegForEdge,
+  withDayTransportLegs,
+  type DayRouteEndpoint,
+} from "@/features/planner/lib/incremental-day-routes";
 import {
   itinerarySearchResultKey,
   searchItineraryPlaces,
@@ -1635,7 +1644,7 @@ function Planner() {
     const deletedItem = plan.days
       .find((planDay) => planDay.day === day)
       ?.items.find((item) => item.itemId === itemId);
-    setPlan({
+    const optimisticPlan: TravelPlan = {
       ...plan,
       days: plan.days.map((planDay) =>
         planDay.day !== day
@@ -1653,7 +1662,8 @@ function Planner() {
               ),
             }
       ),
-    });
+    };
+    setPlan(optimisticPlan);
     setMutatingItem(true);
     setError("");
     try {
@@ -1664,7 +1674,14 @@ function Planner() {
         itemId,
       });
       setChatRevision(updatedChat.revision);
-      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+      if (updatedChat.currentPlan) {
+        setPlan(updatedChat.currentPlan);
+        void refreshAffectedPlanDayRoutes(
+          previousPlan,
+          updatedChat.currentPlan,
+          day,
+        );
+      }
       showPlannerToast("Đã xóa địa điểm");
     } catch (err: any) {
       setPlan(previousPlan);
@@ -1707,6 +1724,7 @@ function Planner() {
       return;
     setMutatingItem(true);
     setError("");
+    const previousPlan = plan;
     try {
       if (editingItem.target === "accommodation") {
         const updatedChat = await updateTripChatAccommodation({
@@ -1721,7 +1739,18 @@ function Planner() {
           },
         });
         setChatRevision(updatedChat.revision);
-        if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+        if (updatedChat.currentPlan) {
+          setPlan(updatedChat.currentPlan);
+          if (previousPlan) {
+            for (const planDay of updatedChat.currentPlan.days) {
+              void refreshAffectedPlanDayRoutes(
+                previousPlan,
+                updatedChat.currentPlan,
+                planDay.day,
+              );
+            }
+          }
+        }
         showPlannerToast("Đã lưu nơi lưu trú");
         setEditingItem(null);
         setSelectedEditSuggestion(null);
@@ -1729,22 +1758,55 @@ function Planner() {
         return;
       }
       if (editingItem.day == null || !editingItem.itemId) return;
-      const updatedChat = await updateTripChatItem({
-        chatId: activeChatId,
-        expectedRevision: chatRevision,
-        day: editingItem.day,
-        itemId: editingItem.itemId,
-        item: {
-          placeId: selectedEditSuggestion?.placeId,
-          name: editingItem.name.trim(),
-          address: selectedEditSuggestion?.address,
-          latitude: selectedEditSuggestion?.latitude,
-          longitude: selectedEditSuggestion?.longitude,
-        },
-      });
+      const originalItem = previousPlan?.days
+        .find((candidate) => candidate.day === editingItem.day)
+        ?.items.find((candidate) => candidate.itemId === editingItem.itemId);
+      const replacesIdentity = Boolean(
+        selectedEditSuggestion
+        && originalItem
+        && (
+          selectedEditSuggestion.placeId !== originalItem.placeId
+          || selectedEditSuggestion.latitude !== originalItem.latitude
+          || selectedEditSuggestion.longitude !== originalItem.longitude
+        )
+      );
+      const updatedChat = replacesIdentity && selectedEditSuggestion
+        ? await replaceTripChatItem({
+            chatId: activeChatId,
+            expectedRevision: chatRevision,
+            day: editingItem.day,
+            itemId: editingItem.itemId,
+            place: selectedEditSuggestion,
+          })
+        : await updateTripChatItem({
+            chatId: activeChatId,
+            expectedRevision: chatRevision,
+            day: editingItem.day,
+            itemId: editingItem.itemId,
+            item: {
+              placeId: selectedEditSuggestion?.placeId,
+              name: editingItem.name.trim(),
+              address: selectedEditSuggestion?.address,
+              latitude: selectedEditSuggestion?.latitude,
+              longitude: selectedEditSuggestion?.longitude,
+            },
+          });
       setChatRevision(updatedChat.revision);
-      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
-      showPlannerToast("Đã lưu thay đổi");
+      if (updatedChat.currentPlan) {
+        setPlan(updatedChat.currentPlan);
+        if (previousPlan && !replacesIdentity) {
+          void refreshAffectedPlanDayRoutes(
+            previousPlan,
+            updatedChat.currentPlan,
+            editingItem.day,
+          );
+        }
+      }
+      showPlannerToast(
+        replacesIdentity
+          ? `Đã thay địa điểm và tính lại Ngày ${editingItem.day}`
+          : "Đã lưu thay đổi",
+      );
       setEditingItem(null);
       setSelectedEditSuggestion(null);
       setEditPlaceSuggestions([]);
@@ -1817,6 +1879,7 @@ function Planner() {
     if (addingDay == null || !activeChatId || !selectedSuggestion) return;
     setMutatingItem(true);
     setError("");
+    const previousPlan = plan;
     try {
       const updatedChat = await addTripChatItem({
         chatId: activeChatId,
@@ -1841,7 +1904,13 @@ function Planner() {
       setChatRevision(updatedChat.revision);
       if (updatedChat.currentPlan) {
         setPlan(updatedChat.currentPlan);
-        void refreshPlanDayRoutes(updatedChat.currentPlan, addingDay);
+        if (previousPlan) {
+          void refreshAffectedPlanDayRoutes(
+            previousPlan,
+            updatedChat.currentPlan,
+            addingDay,
+          );
+        }
       }
       showPlannerToast("Đã thêm địa điểm");
       setAddingDay(null);
@@ -1854,6 +1923,151 @@ function Planner() {
     } finally {
       setMutatingItem(false);
     }
+  }
+
+  async function refreshAffectedPlanDayRoutes(
+    previousPlan: TravelPlan,
+    nextPlan: TravelPlan,
+    dayNumber: number,
+  ): Promise<boolean> {
+    const routeDiff = diffDayRoutes(previousPlan, nextPlan, dayNumber);
+    const targetTopology = dayRouteTopologyKey(nextPlan, dayNumber);
+    const applyLegsIfCurrent = (transportLegs: TransportLeg[]) => {
+      setPlan((current) => {
+        if (
+          !current
+          || dayRouteTopologyKey(current, dayNumber) !== targetTopology
+        ) {
+          return current;
+        }
+        return withDayTransportLegs(current, dayNumber, transportLegs);
+      });
+    };
+
+    // Remove stale edges immediately while keeping every still-valid route,
+    // including a transport option the user selected on that route.
+    applyLegsIfCurrent(mergeDayRouteLegs(routeDiff, new Map()));
+    if (routeDiff.affectedEdges.length === 0) return true;
+
+    const hasCoordinates = (
+      point: DayRouteEndpoint,
+    ): point is DayRouteEndpoint & { latitude: number; longitude: number } =>
+      Number.isFinite(point.latitude) && Number.isFinite(point.longitude);
+    const resolvedPoints = new Map<
+      string,
+      Promise<DayRouteEndpoint>
+    >();
+    const resolvePoint = (point: DayRouteEndpoint): Promise<DayRouteEndpoint> => {
+      const cached = resolvedPoints.get(point.identityKey);
+      if (cached) return cached;
+      const pending = (async () => {
+        if (hasCoordinates(point)) return point;
+        try {
+          const matches = await searchPlaces(point.name, nextPlan.destination, 3);
+          const match = matches.find(
+            (candidate) =>
+              Number.isFinite(candidate.latitude)
+              && Number.isFinite(candidate.longitude),
+          );
+          if (match) {
+            return {
+              ...point,
+              address: match.address ?? point.address,
+              latitude: match.latitude ?? null,
+              longitude: match.longitude ?? null,
+            };
+          }
+        } catch {
+          // The edge remains absent if neither saved nor searched coordinates exist.
+        }
+        return point;
+      })();
+      resolvedPoints.set(point.identityKey, pending);
+      return pending;
+    };
+    const estimatedDistanceMeters = (
+      from: { latitude: number; longitude: number },
+      to: { latitude: number; longitude: number },
+    ) => {
+      const earthRadius = 6_371_000;
+      const radians = (value: number) => (value * Math.PI) / 180;
+      const dLat = radians(to.latitude - from.latitude);
+      const dLon = radians(to.longitude - from.longitude);
+      const value = Math.sin(dLat / 2) ** 2
+        + Math.cos(radians(from.latitude))
+        * Math.cos(radians(to.latitude))
+        * Math.sin(dLon / 2) ** 2;
+      return Math.max(
+        0,
+        Math.round(2 * earthRadius * Math.asin(Math.sqrt(value))),
+      );
+    };
+    const departureTime = new Date().toISOString();
+    const calculated = await Promise.all(
+      routeDiff.affectedEdges.map(async (edge) => {
+        const [from, to] = await Promise.all([
+          resolvePoint(edge.from),
+          resolvePoint(edge.to),
+        ]);
+        if (!hasCoordinates(from) || !hasCoordinates(to)) return null;
+        let routeLeg: TransportLeg | null = null;
+        try {
+          const legs = await calculateDayDirections({
+            origin: {
+              latitude: from.latitude,
+              longitude: from.longitude,
+              name: from.name,
+            },
+            destinations: [{
+              itemId: to.itemId,
+              name: to.name,
+              address: to.address,
+              latitude: to.latitude,
+              longitude: to.longitude,
+            }],
+            departureTime,
+          });
+          const candidate = legs[0];
+          if (
+            legs.length === 1
+            && candidate.geometryCoordinates.length >= 2
+            && candidate.geometryCoordinates.every((coordinate) =>
+              Number.isFinite(coordinate[0]) && Number.isFinite(coordinate[1])
+            )
+          ) {
+            routeLeg = normalizeLegForEdge(candidate, edge);
+          }
+        } catch {
+          // A clearly marked local estimate keeps only this edge drawable.
+        }
+        if (!routeLeg) {
+          const distanceMeters = estimatedDistanceMeters(from, to);
+          routeLeg = normalizeLegForEdge({
+            mode: "car",
+            distanceMeters,
+            estimatedDurationMinutes: Math.max(1, Math.ceil(distanceMeters / 350)),
+            geometryCoordinates: [
+              [from.latitude, from.longitude],
+              [to.latitude, to.longitude],
+            ],
+            source: "geodesic_estimate",
+            verified: false,
+            fromItemId: from.itemId,
+            toItemId: to.itemId,
+            fromPlace: from.name,
+            toPlace: to.name,
+          }, edge);
+        }
+        return [edge.key, routeLeg] as const;
+      }),
+    );
+    const recalculatedLegs = new Map(
+      calculated.filter(
+        (entry): entry is readonly [string, TransportLeg] => entry !== null,
+      ),
+    );
+    applyLegsIfCurrent(mergeDayRouteLegs(routeDiff, recalculatedLegs));
+    return recalculatedLegs.size === routeDiff.affectedEdges.length;
   }
 
   async function refreshPlanDayRoutes(
@@ -2108,31 +2322,40 @@ function Planner() {
     setReorderingDay(day);
     setError("");
     let rollbackPlan = plan;
+    let routeSourcePlan = plan;
     let expectedRevision = chatRevision;
     let requestedItemIds = newOrderedItemIds;
 
     const reorderPlan = (
       sourcePlan: TravelPlan,
       itemIds: string[]
-    ): TravelPlan => ({
-      ...sourcePlan,
-      days: sourcePlan.days.map((planDay) => {
-        if (planDay.day !== day) return planDay;
-        const itemsMap = new Map(
-          planDay.items.map((item) => [item.itemId, item])
-        );
-        const reorderedItems = itemIds
-          .map((itemId) => itemsMap.get(itemId))
-          .filter((item): item is (typeof planDay.items)[number] =>
-            Boolean(item)
+    ): TravelPlan => {
+      const reorderedPlan = {
+        ...sourcePlan,
+        days: sourcePlan.days.map((planDay) => {
+          if (planDay.day !== day) return planDay;
+          const itemsMap = new Map(
+            planDay.items.map((item) => [item.itemId, item])
           );
-        planDay.items.forEach((item) => {
-          if (item.itemId && !itemIds.includes(item.itemId))
-            reorderedItems.push(item);
-        });
-        return { ...planDay, items: reorderedItems, transportLegs: [] };
-      }),
-    });
+          const reorderedItems = itemIds
+            .map((itemId) => itemsMap.get(itemId))
+            .filter((item): item is (typeof planDay.items)[number] =>
+              Boolean(item)
+            );
+          planDay.items.forEach((item) => {
+            if (item.itemId && !itemIds.includes(item.itemId))
+              reorderedItems.push(item);
+          });
+          return { ...planDay, items: reorderedItems };
+        }),
+      };
+      const routeDiff = diffDayRoutes(sourcePlan, reorderedPlan, day);
+      return withDayTransportLegs(
+        reorderedPlan,
+        day,
+        mergeDayRouteLegs(routeDiff, new Map()),
+      );
+    };
 
     setPlan(reorderPlan(plan, requestedItemIds));
 
@@ -2147,7 +2370,11 @@ function Planner() {
           });
           applyTripChat(updatedChat);
           if (updatedChat.currentPlan) {
-            void refreshPlanDayRoutes(updatedChat.currentPlan, day);
+            void refreshAffectedPlanDayRoutes(
+              routeSourcePlan,
+              updatedChat.currentPlan,
+              day,
+            );
           }
           showPlannerToast(`Đã cập nhật thứ tự Ngày ${day}`);
           return;
@@ -2166,6 +2393,7 @@ function Planner() {
           if (!latestChat.currentPlan) return;
 
           rollbackPlan = latestChat.currentPlan;
+          routeSourcePlan = latestChat.currentPlan;
           expectedRevision = latestChat.revision;
           const latestDay = latestChat.currentPlan.days.find(
             (planDay) => planDay.day === day

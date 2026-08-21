@@ -124,6 +124,27 @@ def test_personal_note_update_changes_only_planner_snapshot_personal_notes() -> 
     assert stop["notes"]["text"] == "Source note"
 
 
+def test_delete_plan_item_persists_mutated_planner_snapshot() -> None:
+    connection = FakeMutationConnection()
+    repository = PostgresTripChatRepository("postgresql://unused")
+
+    async def get_pool():
+        return FakePool(connection)
+
+    repository._get_pool = get_pool  # type: ignore[method-assign]
+    status = asyncio.run(repository.delete_plan_item(
+        9,
+        "chat-1",
+        expected_revision=4,
+        day=1,
+        item_id="planner:1:lake",
+    ))
+
+    saved = json.loads(connection.updated_args[0])
+    assert status == "updated"
+    assert saved["days"][0]["stops"] == []
+
+
 def test_legacy_message_without_content_blocks_reads_as_empty_list() -> None:
     message = PostgresTripChatRepository._message({
         "id": "message-1",

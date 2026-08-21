@@ -13,6 +13,7 @@ from app.modules.trip_chat.contract import (
     TripChatMessage,
 )
 from app.modules.trip_chat.plan_snapshot import (
+    delete_plan_item,
     delete_accommodation,
     select_transport_option,
     add_plan_item,
@@ -20,6 +21,7 @@ from app.modules.trip_chat.plan_snapshot import (
     reorder_plan_items,
     remove_unscheduled_place,
     update_accommodation,
+    update_plan_item,
     update_stop_personal_notes,
 )
 
@@ -224,6 +226,69 @@ class InMemoryTripChatRepository:
             "revision": chat.revision + 1,
             "current_planner_output": output,
             "has_itinerary": True,
+            "updated_at": datetime.now(timezone.utc),
+        })
+        return "updated"
+
+    async def update_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str, changes: dict,
+    ) -> PlanItemMutationStatus:
+        chat = await self.get_chat(user_id, chat_id)
+        if chat is None:
+            return "chat_not_found"
+        if chat.revision != expected_revision:
+            return "revision_conflict"
+        output = deepcopy(chat.current_planner_output)
+        status = update_plan_item(
+            output, day=day, item_id=item_id, changes=changes,
+        )
+        if status != "updated":
+            return status
+        self._chats[(user_id, chat_id)] = chat.model_copy(update={
+            "revision": chat.revision + 1,
+            "current_planner_output": output,
+            "updated_at": datetime.now(timezone.utc),
+        })
+        return "updated"
+
+    async def replace_plan_output(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        output: dict,
+    ) -> PlanItemMutationStatus:
+        chat = await self.get_chat(user_id, chat_id)
+        if chat is None:
+            return "chat_not_found"
+        if chat.revision != expected_revision:
+            return "revision_conflict"
+        self._chats[(user_id, chat_id)] = chat.model_copy(update={
+            "revision": chat.revision + 1,
+            "current_planner_output": deepcopy(output),
+            "has_itinerary": True,
+            "updated_at": datetime.now(timezone.utc),
+        })
+        return "updated"
+
+    async def delete_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str,
+    ) -> PlanItemMutationStatus:
+        chat = await self.get_chat(user_id, chat_id)
+        if chat is None:
+            return "chat_not_found"
+        if chat.revision != expected_revision:
+            return "revision_conflict"
+        output = deepcopy(chat.current_planner_output)
+        status = delete_plan_item(output, day=day, item_id=item_id)
+        if status != "updated":
+            return status
+        self._chats[(user_id, chat_id)] = chat.model_copy(update={
+            "revision": chat.revision + 1,
+            "current_planner_output": output,
             "updated_at": datetime.now(timezone.utc),
         })
         return "updated"

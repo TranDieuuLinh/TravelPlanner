@@ -17,6 +17,18 @@ properties với `TravelPlace` gồm tọa độ, địa chỉ, giờ mở cửa
 quan hệ graph. Hint `entertainment` hoặc `wellness` chỉ truy vấn
 `Entertainment`; hint `travel place` vẫn chỉ truy vấn `TravelPlace`.
 
+Ontology admin có thêm node `SubPlace` để biểu diễn một khu/điểm con không trở
+thành itinerary stop độc lập. Cạnh `Has_Subplace` chỉ cho phép
+`TravelPlace -> SubPlace`; `Offer_Item` từ `SubPlace` chỉ trỏ tới
+`ActivityItem`, `FoodItem`, `DrinkItem` hoặc `ProductItem`. Endpoint ontology
+trả thêm `relationshipEndpointRules` để importer/admin biết ma trận endpoint.
+PlaceChecker hiện chưa duyệt nhánh nested này. Batch curated v1 đã nạp năm
+`SubPlace` `pending` cho Hanoi Old Quarter. Batch hiệu chỉnh
+`kg_curated_hanoi_old_quarter_subplace_activities_v2_20260821` thay các item
+trùng ý nghĩa bằng đúng một `ActivityItem` có provenance cho mỗi `SubPlace`;
+batch v1 được đánh dấu `superseded_by_v2`. Dữ liệu chưa tự động tham gia output
+runtime.
+
 ## Ranh giới API
 
 | Endpoint | Input | Output |
@@ -26,10 +38,14 @@ quan hệ graph. Hint `entertainment` hoặc `wellness` chỉ truy vấn
 | `POST /v1/plans/current-location-route` | `CurrentLocationRouteRequest` | Một `TransportLeg` có geometry Valhalla/fallback |
 | `POST /v1/plans/day-directions` | `DayDirectionsRequest` | Danh sách `TransportLeg` nối origin với các điểm theo thứ tự |
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
-| `GET /v1/plans/places/search?query=&destination=&topK=` | `Authorization: Bearer <accessToken>`, query text and optional destination | Danh sách địa điểm chuẩn hóa để thêm thủ công vào lịch trình |
+| `POST /v1/trip-chats/{chatId}/messages` | `SendTripChatMessageInput`; khi chat có `currentPlannerOutput`, Gemini nhận compact plan context để trả structured edit intent | `TripChatMessageResponse`; edit hợp lệ dùng cùng optimistic-revision mutation với UI thủ công |
+| `GET /v1/plans/places/search?query=&destination=&topK=` | `Authorization: Bearer <accessToken>`, query text and optional destination; `topK` defaults to `5` | Tối đa năm địa điểm chuẩn hóa; name/alias tham gia xếp hạng, catalog match trả thêm opening hours, duration và estimated cost khi có |
 | `POST /v1/trip-chats/{chatId}/plan/unscheduled-places/confirm` | Multipart địa điểm gốc, match đã chọn, ngày đích và `expectedRevision` | `TripChat` sau khi thêm stop và xóa entry chưa xếp nguyên tử |
 | `DELETE /v1/trip-chats/{chatId}/plan/unscheduled-places` | Multipart địa điểm gốc và `expectedRevision` | `TripChat` sau khi xóa entry chưa xếp |
 | `POST /v1/trip-chats/{chatId}/plan/items` | Multipart item fields và `expectedRevision` | `TripChat` sau khi thêm địa điểm vào ngày đã chọn |
+| `PATCH /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}` | Multipart các trường địa điểm cần sửa và `expectedRevision` | `TripChat` sau khi cập nhật item; route leg chạm vào vị trí đã đổi được bỏ để frontend tính lại |
+| `POST /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/replace` | `ReplacePlanItemInput` gồm identity, tọa độ, opening hours, duration, cost và `expectedRevision` | `TripChat` sau fixed-order reflow hoặc CP-SAT repair đúng ngày; snapshot chỉ được ghi khi route/timeline khả thi |
+| `DELETE /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}` | Multipart `expectedRevision` | `TripChat` sau khi xóa item và các route leg trực tiếp liên quan |
 | `PUT /v1/trip-chats/{chatId}/plan/days/{day}/items/reorder` | Multipart `itemIds` (lặp lại) và `expectedRevision` | `TripChat` với thứ tự địa điểm đã cập nhật; các item không có trong payload vẫn được giữ lại |
 | `PATCH /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/personal-notes` | `expectedRevision`, `personalNotes` | `TripChat` với planner snapshot đã cập nhật |
 | `PATCH /v1/trip-chats/{chatId}/plan/accommodation` | `expectedRevision` và các trường nơi lưu trú cần sửa, gồm `personalNotes` | `TripChat` với accommodation và route reference đã cập nhật |
@@ -79,7 +95,7 @@ tag, pool và provider note đã phân loại candidate đó là nhà hàng.
 | `information_finder` | `InformationFinderInput` | `InformationFinderOutput` (`answer`, `sources`, `warnings`) |
 | `place_checker` | `PlaceCheckerInput` | `PlaceCheckerOutput` |
 | `itinerary_planner` | `ItineraryPlannerInput` | `ItineraryPlannerOutput` |
-| `plan_editor` | `PlanEditorInput` | `PlanEditorOutput` |
+| `plan_editor` | Legacy `PlanEditorInput`, hoặc `PlanEditContext` cho lệnh chat | Legacy `PlanEditorOutput`, hoặc `NaturalLanguagePlanEdit` có cấu trúc |
 | `conversation_memory` | `WorkingMemoryState` | `WorkingMemoryState`, `MemoryFact`, `MemoryReference`, `UserPreferenceMemory`, `RootStateMemoryMapping` |
 
 ## Các agent hiện có
@@ -139,6 +155,15 @@ hoặc làm runtime fallback. Route `plan_editor` chỉ hợp lệ khi request c
 itinerary hiện tại và structured edit operation. Route `finish` có thể mang
 response ngắn cùng ngôn ngữ cho greeting, câu hỏi về trợ lý hoặc yêu cầu ngoài
 phạm vi.
+
+Authenticated Trip Chat có thêm đường chỉnh `currentPlannerOutput` trước root
+graph. Khi snapshot mới tồn tại, PlanEditor gửi message cùng compact day/item
+context cho Gemini structured output; không dùng keyword/if-else classifier để
+đoán thao tác. Kết quả chỉ được thực thi khi action là `add`, `update`, `delete`
+hoặc `reorder` và mọi day/item reference đều khớp snapshot. Thao tác gọi lại
+đúng mutation service mà UI thủ công sử dụng; action `none` tiếp tục đi root
+graph, còn action mơ hồ trả câu hỏi làm rõ và không sửa snapshot. Provider lỗi
+cũng không chạy deterministic edit fallback.
 
 Input của root graph là `RootGraphInput`; output là `RootGraphOutput`.
 Root state nội bộ có `conversation_context` gồm tối đa sáu message trước đó,
@@ -352,6 +377,15 @@ category guard chuyển music box, karaoke, golf, billiard/bi-a, bowling, studio
 game center, massage/trị liệu, spa và retail store/souvenir bị gắn `TravelPlace`
 sai sang `Entertainment` trước khi chia pool.
 Candidate có `pool_category=shopping` cũng không được tính là landmark.
+Generic discovery bỏ qua Knowledge Graph entity có property
+`generic_discovery_excluded=true`, nhưng named-place lookup không áp dụng cờ này
+để yêu cầu gọi đúng tên vẫn resolve được. Night market vẫn thuộc `TravelPlace`.
+Generic top-K dùng Bayesian adjusted rating kết hợp review reliability theo prior
+của scoped pool; các bước activity, food, entertainment và scoring downstream
+tiếp tục dùng shared Bayesian policy. Vì vậy rating cao nhưng rất ít review không
+còn đẩy landmark phổ biến ra khỏi cửa sổ retrieval trước khi scoring chạy.
+Khi suy category từ tên, `Phở`/ASCII `Pho` được nhận diện trên Unicode gốc;
+`Phố` không còn bị bỏ dấu thành `pho` rồi làm venue ở Phố Vọng thành Restaurant.
 Compact boundary dùng thêm provider note làm semantic context để chuyển source
 category thương mại như art supply store, photo booth, garden center và plant
 service khỏi TravelPlace; đây không thay đổi ontology lưu trữ.
@@ -622,9 +656,17 @@ Các schema dùng chung chính:
 
 Mỗi `currentPlannerOutput.days[].stops[]` có `itemId` ổn định, source-owned
 `notes={text,sourceType,sourceUrl}` và user-owned `personalNotes`. Place Checker
-chọn URL note trước; nếu không có thì dùng mô tả Google Maps/Knowledge Graph.
+đưa note đã liên kết từ raw prompt vào `personalNotes`. `notes` không chứa raw
+prompt: module chọn URL note trước, nếu không có mới dùng mô tả Google
+Maps/Knowledge Graph.
 Endpoint personal-notes chỉ cập nhật `personalNotes` với revision check, không
 được sửa source note.
+
+Sau khi FinalItineraryPlanner tạo output đủ ngày, module Finisher đọc các
+source note đã chọn (không đọc raw prompt/provider payload), ưu tiên note URL và
+trả câu tóm tắt tiếng Việt trong `InvokeResponse.response`. JSON plan vẫn giữ
+nguyên structured note để frontend hiển thị tại card, map popup và màn sửa note;
+phản hồi Finisher không thay thế dữ liệu note trong plan.
 Transport selection endpoint cập nhật nguyên tử `selectedTransport` trên đúng
 leg và tăng revision. UI áp policy hậu xử lý: khoảng cách dưới 1,5 km chỉ hiện
 đi bộ; các option khác chỉ hiện khi chặng không thuộc ngưỡng này và provider

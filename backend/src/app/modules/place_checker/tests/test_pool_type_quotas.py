@@ -137,3 +137,61 @@ def test_obvious_venue_names_are_reclassified_after_identity_resolution() -> Non
         )
         == "travel_place"
     )
+
+
+def test_art_center_provider_context_is_reclassified_as_entertainment() -> None:
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
+            name="Mango Art - Vẽ Cả thế giới",
+            tags=[],
+            context=(
+                "Mango Art - Vẽ Cả thế giới thuộc danh mục Art center; "
+                "mô tả tối thiểu được tạo từ dữ liệu nguồn."
+            ),
+        )
+        == "entertainment"
+    )
+
+
+def test_pho_food_marker_does_not_confuse_pho_street_with_noodles() -> None:
+    assert (
+        planner_category_for_candidate(
+            "entertainment",
+            name="Music Box Phố Vọng",
+            tags=[],
+        )
+        == "entertainment"
+    )
+    assert (
+        planner_category_for_candidate(
+            "entertainment",
+            name="HDRADIO Phố Vọng - Audio & Home Cinema & Karaoke",
+            tags=[],
+        )
+        == "entertainment"
+    )
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
+            name="Phố cổ Hà Nội",
+            tags=[],
+        )
+        == "travel_place"
+    )
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
+            name="Phở Bát Đàn",
+            tags=[],
+        )
+        == "restaurant"
+    )
+    assert (
+        planner_category_for_candidate(
+            "travel_place",
+            name="Pho Thin",
+            tags=[],
+        )
+        == "restaurant"
+    )

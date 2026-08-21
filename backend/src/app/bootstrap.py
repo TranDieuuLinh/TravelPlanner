@@ -3,6 +3,10 @@ from functools import lru_cache
 
 from app.core.config import Settings, get_settings
 from app.modules.explorer.public import build_explorer_graph, create_explorer_service
+from app.modules.finisher.public import (
+    GeminiFinisherResponseGenerator,
+    ItineraryFinisher,
+)
 from app.modules.information_finder.adapters.development import (
     ExtractiveAnswerGenerator,
     HashingEmbeddingProvider,
@@ -215,6 +219,21 @@ def create_supervisor_service(
     )
 
 
+def create_finisher_service(
+    settings: Settings,
+    llm_client: LlmClient | None = None,
+) -> ItineraryFinisher:
+    generator = (
+        GeminiFinisherResponseGenerator(
+            llm_client,
+            max_output_tokens=settings.finisher_llm_max_output_tokens,
+        )
+        if llm_client is not None and settings.gemini_api_key
+        else None
+    )
+    return ItineraryFinisher(generator)
+
+
 def compose_explorer_service(
     settings: Settings,
     llm_client: LlmClient | None = None,
@@ -339,6 +358,7 @@ def get_graph():
         checkpointer=(None if settings.conversation_graph_checkpointer_enabled else False),
         information_finder_service=get_information_finder_service(),
         supervisor_service=create_supervisor_service(settings, shared_llm_client),
+        finisher_service=create_finisher_service(settings, shared_llm_client),
         explorer_service=compose_explorer_service(
             settings,
             shared_llm_client,

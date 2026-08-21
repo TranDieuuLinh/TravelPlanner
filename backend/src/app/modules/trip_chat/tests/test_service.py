@@ -42,6 +42,28 @@ class FakeRepository:
         self.appended = args
         return self.chat
 
+    async def replace_plan_output(
+        self, user_id, chat_id, *, expected_revision, output
+    ):
+        if self.chat.revision != expected_revision:
+            return "revision_conflict"
+        self.chat = self.chat.model_copy(
+            update={
+                "revision": self.chat.revision + 1,
+                "current_planner_output": output,
+            }
+        )
+        return "updated"
+
+
+class FakeDayRepairer:
+    def __init__(self) -> None:
+        self.received = None
+
+    async def repair(self, output, *, day, item_id, replacement):
+        self.received = (output, day, item_id, replacement)
+        return {"destination": "Hà Nội", "days": [{"day": day, "stops": []}]}
+
 
 class FakeGraph:
     def __init__(self, result) -> None:
@@ -70,6 +92,31 @@ class AliasedPlannerOutput(BaseModel):
 
 
 class TestTripChatService(unittest.TestCase):
+    def test_replace_item_repairs_before_atomic_snapshot_write(self) -> None:
+        repository = FakeRepository()
+        repairer = FakeDayRepairer()
+        service = TripChatService(
+            repository,
+            FakeGraph({}),
+            day_repairer=repairer,
+        )
+
+        status, updated = asyncio.run(
+            service.replace_plan_item(
+                7,
+                "chat-1",
+                expected_revision=1,
+                day=2,
+                item_id="item-1",
+                replacement={"placeId": "new-place"},
+            )
+        )
+
+        self.assertEqual(status, "updated")
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.revision, 2)
+        self.assertEqual(repairer.received[1:], (2, "item-1", {"placeId": "new-place"}))
+
     def test_bootstrap_returns_recent_summaries_and_selected_chat(self) -> None:
         repository = FakeRepository()
         result = asyncio.run(

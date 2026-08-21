@@ -1,9 +1,10 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.explorer.public import TripContextPatch
 from app.modules.information_finder.public import AnswerBlock
+from app.modules.plan_editor.public import NaturalLanguagePlanEdit
 
 
 SupervisorRoute = Literal[
@@ -23,6 +24,7 @@ class SupervisorInput(BaseModel):
     has_source_input: bool = False
     has_itinerary: bool = False
     has_edit_operation: bool = False
+    current_plan: dict[str, Any] | None = None
 
     destination: str | None = Field(default=None, max_length=200)
     duration_days: int | None = Field(default=None, ge=1, le=60)
@@ -41,6 +43,7 @@ class ClassifierResult(BaseModel):
     response: str | None = Field(default=None, max_length=1000)
     entity_names: list[str] = Field(default_factory=list, max_length=30)
     suggestions: list[dict[str, object]] = Field(default_factory=list, max_length=4)
+    plan_edit: NaturalLanguagePlanEdit | None = None
 
 
 class SupervisorDecision(ClassifierResult):

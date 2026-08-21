@@ -51,8 +51,12 @@ class ExplorerReviewNodes:
             "message": state["message"],
             "conversation_context": conversation_context,
             "has_source_input": bool(state.get("urls") or state.get("images")),
-            "has_itinerary": state.get("existing_itinerary") is not None,
+            "has_itinerary": (
+                state.get("existing_itinerary") is not None
+                or state.get("existing_planner_output") is not None
+            ),
             "has_edit_operation": state.get("edit_operation") is not None,
+            "current_plan": state.get("existing_planner_output"),
             "destination": memory_field(memory, "destination"),
             "duration_days": memory_field(memory, "duration_days"),
             "mentioned_places": memory_field(memory, "mentioned_places", []) or [],

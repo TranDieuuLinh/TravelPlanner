@@ -29,7 +29,30 @@ class CandidateExclusion:
     reason_code: str
     message: str
     notes: SourceNote | None = None
+    personal_notes: str | None = None
     source_refs: tuple[str, ...] = ()
+
+    @classmethod
+    def from_candidate(
+        cls,
+        candidate: Candidate,
+        reason_code: str,
+        message: str,
+    ) -> "CandidateExclusion":
+        return cls(
+            place_id=candidate.place_id,
+            name=candidate.name,
+            priority=candidate.priority,
+            reason_code=reason_code,
+            message=message,
+            notes=candidate.notes,
+            personal_notes=candidate.personal_notes,
+            source_refs=(
+                (candidate.notes.source_url,)
+                if candidate.notes and candidate.notes.source_url
+                else ()
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,6 +10,7 @@ from app.modules.conversation_memory.public import (
     MemoryFact,
     MemoryVersionConflict,
 )
+from app.modules.plan_editor.public import NaturalLanguagePlanEditor
 from app.modules.trip_chat.contract import (
     AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
@@ -18,7 +19,9 @@ from app.modules.trip_chat.contract import (
     TripChat,
     TripChatBootstrap,
 )
-from app.modules.trip_chat.ports import TripChatRepository
+from app.modules.trip_chat.ports import DayPlanRepairer, TripChatRepository
+from app.modules.trip_chat.plan_edit_context import planner_output_for_edit_context
+from app.modules.trip_chat.plan_edit_execution import execute_plan_edit
 from app.modules.trip_chat.db_retry import (
     is_transient_database_error,
     retry_transient_database,
@@ -41,10 +44,14 @@ class TripChatService:
         repository: TripChatRepository,
         graph,
         memory_service: ConversationMemoryService | None = None,
+        day_repairer: DayPlanRepairer | None = None,
+        plan_editor: NaturalLanguagePlanEditor | None = None,
     ) -> None:
         self.repository = repository
         self.graph = graph
         self.memory_service = memory_service
+        self.day_repairer = day_repairer
+        self.plan_editor = plan_editor
 
     async def create(self, user_id: int, title: str | None) -> TripChat:
         return await self.repository.create_chat(user_id, title)
@@ -162,6 +169,80 @@ class TripChatService:
         )
         return status, chat
 
+    async def update_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str, changes: dict[str, Any],
+    ) -> tuple[PlanItemMutationStatus, TripChat | None]:
+        status = await self.repository.update_plan_item(
+            user_id, chat_id, expected_revision=expected_revision,
+            day=day, item_id=item_id, changes=changes,
+        )
+        chat = (
+            await retry_transient_database(
+                lambda: self.repository.get_chat(user_id, chat_id)
+            )
+            if status == "updated"
+            else None
+        )
+        return status, chat
+
+    async def replace_plan_item(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        day: int,
+        item_id: str,
+        replacement: dict[str, Any],
+    ) -> tuple[PlanItemMutationStatus, TripChat | None]:
+        chat = await retry_transient_database(
+            lambda: self.repository.get_chat(user_id, chat_id)
+        )
+        if chat is None:
+            return "chat_not_found", None
+        if chat.revision != expected_revision:
+            return "revision_conflict", None
+        if self.day_repairer is None:
+            raise RuntimeError("Day repair service is not configured.")
+        repaired = await self.day_repairer.repair(
+            chat.current_planner_output,
+            day=day,
+            item_id=item_id,
+            replacement=replacement,
+        )
+        status = await self.repository.replace_plan_output(
+            user_id,
+            chat_id,
+            expected_revision=expected_revision,
+            output=repaired,
+        )
+        updated = (
+            await retry_transient_database(
+                lambda: self.repository.get_chat(user_id, chat_id)
+            )
+            if status == "updated"
+            else None
+        )
+        return status, updated
+
+    async def delete_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str,
+    ) -> tuple[PlanItemMutationStatus, TripChat | None]:
+        status = await self.repository.delete_plan_item(
+            user_id, chat_id, expected_revision=expected_revision,
+            day=day, item_id=item_id,
+        )
+        chat = (
+            await retry_transient_database(
+                lambda: self.repository.get_chat(user_id, chat_id)
+            )
+            if status == "updated"
+            else None
+        )
+        return status, chat
+
     async def confirm_unscheduled_place(
         self, user_id: int, chat_id: str, *, expected_revision: int,
         name: str, place_id: str | None, candidate_id: str | None,
@@ -241,6 +322,44 @@ class TripChatService:
         )
         if not chat:
             return None
+
+        if self.plan_editor is not None and chat.current_planner_output:
+            try:
+                edit = await self.plan_editor.interpret(
+                    content,
+                    planner_output_for_edit_context(chat.current_planner_output),
+                    recent_messages=[
+                        f"{'User' if message.role == 'user' else 'Assistant'}: {message.content}"
+                        for message in chat.messages[-6:]
+                    ],
+                )
+            except Exception as exc:
+                logger.warning(
+                    "plan_editor_interpretation_failed chat_id=%s error=%s",
+                    chat_id,
+                    type(exc).__name__,
+                )
+            else:
+                execution = await execute_plan_edit(
+                    self,
+                    edit,
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    expected_revision=chat.revision,
+                )
+                if execution is not None:
+                    if execution.status == "chat_not_found":
+                        return None
+                    return await retry_transient_database(
+                        lambda: self.repository.append_exchange(
+                            user_id,
+                            chat_id,
+                            content,
+                            execution.assistant,
+                            None,
+                            None,
+                        )
+                    )
 
         recent_messages: list[str] = [
             f"{'User' if message.role == 'user' else 'Assistant'}: {message.content}"

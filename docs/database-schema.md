@@ -1,6 +1,6 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-20.
+Cập nhật lần cuối: 2026-08-21.
 
 ## Phạm vi và trạng thái
 
@@ -47,7 +47,18 @@ dùng top-K cùng toán tử `pg_trgm` `%` trên `normalized_name`,
 `normalized_alias` và tên target relationship. Các GIN trigram index từ
 migration 006 phục vụ prefilter; `SearchPlacesTool` vẫn sở hữu score và
 acceptance policy cuối. Adapter không ghi Knowledge Graph và external live
-provider chưa được nối.
+provider chưa được nối. Migration 015 curates một tập ID Hà Nội đã review:
+venue nghệ thuật/trải nghiệm được đổi sang `Entertainment`, còn shop, showroom,
+trường/lớp và dịch vụ không phù hợp được gắn property
+`generic_discovery_excluded=true`. PlaceChecker chỉ áp cờ này cho generic
+discovery; named-place lookup vẫn resolve entity khi user gọi đúng tên, và night
+market vẫn là `TravelPlace`.
+Migration 016 áp batch review tiếp theo, sửa chiều type cho venue/landmark/quán
+ăn, gắn cờ loại generic cho tám dịch vụ thương mại và làm sạch identity Trung
+tâm Văn hóa Kim Đồng. Record Kim Đồng được chuyển về Hàng Bài/Hoàn Kiếm theo
+OpenStreetMap way `863234970`; alias, tọa độ và mô tả được thay bằng dữ liệu đã
+review, còn rating, ảnh, giờ mở cửa, Google metadata và `Special_Near` sinh từ
+record cửa hàng sai được xóa để chờ nguồn đúng.
 
 FinalItineraryPlanner Phase 5 không thêm table hoặc migration. Global matrix,
 CP-SAT result, selected route detail và `ItineraryPlannerOutput` chỉ tồn tại
@@ -209,9 +220,23 @@ Stop trong snapshot giữ hai vùng note độc lập: `notes` là object chỉ 
 Accommodation trong cùng JSONB snapshot cũng có thể giữ `personalNotes`. Các
 thao tác sửa/xóa accommodation dùng optimistic revision trên hàng
 `agent_trip_chats`; không cần thêm cột hoặc migration.
-URL note được chọn trước Google Maps/Knowledge Graph note. Thay đổi ghi chú cá
-nhân cập nhật nguyên tử chính JSONB này với optimistic revision; không có bảng
-note riêng và không lưu raw payload từ URL hoặc Google Maps.
+Thao tác thay một địa điểm chạy day repair trước khi ghi; sau khi route/timeline
+khả thi, backend thay toàn bộ `current_planner_output` bằng một câu UPDATE có
+điều kiện revision. Vì stop, giờ và leg vẫn nằm trong JSONB hiện hữu nên feature
+này không cần bảng, cột hoặc migration mới.
+Lệnh thêm/sửa/xóa/sắp xếp bằng ngôn ngữ tự nhiên không tạo persistence path
+mới. PlanEditor dùng Gemini chỉ để trả structured action, sau đó Trip Chat gọi
+lại mutation hiện có trên `current_planner_output` với optimistic revision.
+Structured interpretation không được lưu riêng và thay đổi này không cần bảng,
+cột hoặc migration mới.
+Note đã liên kết từ raw prompt được ghi vào `personalNotes`. Object `notes` chỉ
+chứa source note read-only và chọn URL trước Google Maps/Knowledge Graph; URL
+thật dùng `sourceType=url`. Cả hai field đều nằm trong JSONB hiện hữu nên không
+cần migration.
+Thay đổi ghi chú cá nhân cập nhật nguyên tử chính JSONB này với optimistic
+revision; không có bảng note riêng và không lưu raw payload từ URL hoặc Google
+Maps. Finisher chỉ đọc snapshot/output đã chuẩn hóa để tạo response tiếng Việt
+và không ghi thêm dữ liệu vào database.
 Lựa chọn phương tiện của user được lưu dưới
 `current_planner_output.days[].legs[].selectedTransport` trong cùng JSONB.
 Mutation khóa row, kiểm tra revision rồi tăng revision; không cần thêm table
@@ -415,6 +440,17 @@ Ngày sửa đổi cuối cùng: 2026-08-17.
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
 | `review_count` | integer | Có | Tổng số review theo dữ liệu nguồn; không thay thế các row trong `reviews`. |
 
+Ontology ứng dụng cho phép thêm `SubPlace` với required properties cơ bản
+`id`, `name`, `type`; tọa độ, địa chỉ, ảnh và story là optional vì SubPlace
+không phải itinerary stop độc lập. Đây là type trong contract ứng dụng, không
+thêm cột hoặc table mới. Batch curated v1 đã nạp năm node `pending` cho Hanoi
+Old Quarter: Hàng Gai, Hàng Bạc, Hàng Mã, Lãn Ông và góc bia Tạ Hiện–Lương
+Ngọc Quyến. Batch hiệu chỉnh
+`kg_curated_hanoi_old_quarter_subplace_activities_v2_20260821` giữ đúng một
+`ActivityItem` cho mỗi SubPlace và đánh dấu batch v1 là `superseded_by_v2`.
+Các batch giữ source trong property/relationship và staging import tương ứng;
+không tự chuyển entity sang `verified`.
+
 Migration `011_entertainment_node.sql` chỉ đổi `entity_type` từ `TravelPlace`
 sang `Entertainment` cho nhóm tên đã được rà soát (spa, massage, billiard/billard,
 bida, karaoke, gym, fitness hoặc nail). Migration không đổi `id`, không xoá
@@ -507,6 +543,14 @@ Runtime relationship semantics observed on 2026-08-13:
   thiếu field đó. Property trực tiếp luôn thắng. HasStyle không tạo public tag,
   candidate, category, preference match hoặc quota.
 
+Ontology contract bổ sung ngày 2026-08-21 khai báo `Has_Subplace` theo hướng
+`TravelPlace` → `SubPlace`; đây là cạnh cấu trúc, không đánh dấu SubPlace là
+special experience. `SubPlace` có thể dùng `Offer_Item` tới `ActivityItem`,
+`FoodItem`, `DrinkItem` hoặc `ProductItem`. Pilot Hanoi Old Quarter hiện có năm
+cạnh `Has_Subplace` và năm cạnh `Offer_Item`; mỗi SubPlace có đúng một target
+`ActivityItem`. Mutation/importer runtime chưa dùng ma trận endpoint này để tự
+động apply batch mới.
+
 Generic TravelPlace retrieval không chỉ đọc `Special_Experience`: nó còn lấy
 `TravelPlace` nằm trong cây ADM qua `Located_In`, xen kẽ hai nhóm special và
 non-special. Trong nhóm non-special, `Offer_Item -> ActivityItem`, metadata
@@ -519,6 +563,9 @@ PlaceChecker nhận bốn place entity type từ catalog: `TravelPlace`, `Restau
 `DrinkDessert` và `Entertainment` (ngoài `Accommodation`). Compact boundary
 nhóm `DrinkDessert`/`Entertainment` vào pool optional `entertainment`; đây chỉ
 là thay đổi read/projection contract, không thêm bảng hoặc cột.
+PlaceChecker chưa duyệt `Has_Subplace` hoặc chiếu item của `SubPlace` về
+`TravelPlace` cha; ontology mới chưa thay đổi itinerary runtime cho đến khi read
+path này được triển khai.
 Named-place SQL search chung cả năm type theo canonical name, alias, address và
 cây ADM, lấy top-1 trước khi cân nhắc Google Maps; query này không đọc
 SpecialExperience/OfferItem/HasStyle. Runtime compact

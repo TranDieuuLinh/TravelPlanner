@@ -213,6 +213,7 @@ class PlannerCandidate(PlannerContractModel):
     address: str | None = Field(default=None, max_length=1000)
     priority: CandidatePriority
     notes: SourceNote | None = None
+    personal_notes: str | None = Field(default=None, max_length=4000)
     tags: list[str] = Field(default_factory=list, max_length=100)
     styles: list[str] = Field(default_factory=list, max_length=100)
     audience: PlannerAudience = Field(default_factory=PlannerAudience)
@@ -269,6 +270,7 @@ class UpstreamCandidateExclusion(PlannerContractModel):
     reason_code: str = Field(min_length=1, max_length=100)
     message: str = Field(min_length=1, max_length=1000)
     notes: SourceNote | None = None
+    personal_notes: str | None = Field(default=None, max_length=4000)
     source_refs: list[str] = Field(default_factory=list, max_length=20)
 
 

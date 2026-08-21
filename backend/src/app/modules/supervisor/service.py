@@ -1,6 +1,7 @@
 import logging
 
 from app.modules.explorer.public import ExplorerReview
+from app.modules.plan_editor.public import validate_natural_language_plan_edit
 from app.modules.supervisor.contract import (
     ClassifierResult,
     SupervisorDecision,
@@ -208,8 +209,16 @@ class SupervisorService:
                 payload,
                 warning="LLM intent confidence was below the configured threshold.",
             )
+        plan_edit = result.plan_edit
+        has_natural_edit = payload.current_plan is not None and plan_edit is not None
+        if has_natural_edit:
+            plan_edit = validate_natural_language_plan_edit(
+                plan_edit,
+                payload.current_plan,
+            )
         if result.route == "plan_editor" and not (
-            payload.has_itinerary and payload.has_edit_operation
+            (payload.has_itinerary and payload.has_edit_operation)
+            or has_natural_edit
         ):
             if not self._fallback_enabled:
                 raise SupervisorClassificationError(
@@ -235,5 +244,6 @@ class SupervisorService:
             response=result.response if result.route == "finish" else None,
             entity_names=result.entity_names,
             suggestions=result.suggestions,
+            plan_edit=plan_edit if result.route == "plan_editor" else None,
         )
         return decision

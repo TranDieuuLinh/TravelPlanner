@@ -66,4 +66,7 @@ trung-plans/
 
 /old_one/
 *.sql
+!backend/migrations/015_curate_hanoi_generic_places.sql
+!backend/migrations/016_curate_hanoi_places_and_kim_dong.sql
+!backend/migrations/017_curate_hanoi_top_place_aliases.sql
 *.local*

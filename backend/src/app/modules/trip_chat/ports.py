@@ -10,6 +10,17 @@ from app.modules.trip_chat.contract import (
 )
 
 
+class DayPlanRepairer(Protocol):
+    async def repair(
+        self,
+        output: dict[str, Any] | None,
+        *,
+        day: int,
+        item_id: str,
+        replacement: dict[str, Any],
+    ) -> dict[str, Any]: ...
+
+
 class TripChatRepository(Protocol):
     async def create_chat(self, user_id: int, title: str | None) -> TripChat: ...
 
@@ -64,6 +75,25 @@ class TripChatRepository(Protocol):
     async def add_plan_item(
         self, user_id: int, chat_id: str, *, expected_revision: int,
         day: int, item: dict[str, Any], position: int | None = None,
+    ) -> PlanItemMutationStatus: ...
+
+    async def update_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str, changes: dict[str, Any],
+    ) -> PlanItemMutationStatus: ...
+
+    async def replace_plan_output(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        output: dict[str, Any],
+    ) -> PlanItemMutationStatus: ...
+
+    async def delete_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str,
     ) -> PlanItemMutationStatus: ...
 
     async def confirm_unscheduled_place(

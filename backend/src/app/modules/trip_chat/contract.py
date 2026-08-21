@@ -34,6 +34,22 @@ class UpdateAccommodationInput(TripChatModel):
     personal_notes: str | None = Field(default=None, max_length=4000)
 
 
+class ReplacePlanItemInput(TripChatModel):
+    expected_revision: int = Field(ge=0)
+    place_id: str = Field(min_length=1, max_length=500)
+    name: str = Field(min_length=1, max_length=500)
+    address: str | None = Field(default=None, max_length=1000)
+    place_type: str | None = Field(default=None, max_length=100)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440)
+    opening_hours: list[str] | None = Field(default=None, max_length=50)
+    rating: float | None = Field(default=None, ge=0, le=5)
+    review_count: int | None = Field(default=None, ge=0)
+    cost_per_person: int | None = Field(default=None, ge=0)
+    image_url: str | None = Field(default=None, max_length=2048)
+
+
 class SelectTransportOptionInput(TripChatModel):
     expected_revision: int = Field(ge=0)
     mode: str = Field(min_length=1, max_length=64)
@@ -68,6 +84,7 @@ PlanItemMutationStatus = Literal[
     "chat_not_found",
     "revision_conflict",
     "day_not_found",
+    "item_not_found",
     "unscheduled_not_found",
 ]
 

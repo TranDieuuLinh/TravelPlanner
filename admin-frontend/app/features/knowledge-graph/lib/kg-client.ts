@@ -127,6 +127,13 @@ export type KGOntology = {
   nodeTypes: string[];
   propertyKeys: string[];
   relationshipTypes: string[];
+  relationshipEndpointRules: Record<
+    string,
+    {
+      fromTypes: string[];
+      toTypes: string[];
+    }
+  >;
   nodeTypeProperties: Record<
     string,
     {

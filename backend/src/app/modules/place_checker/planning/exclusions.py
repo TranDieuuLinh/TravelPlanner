@@ -2,7 +2,10 @@ from app.modules.place_checker.checked_output_contract import CheckedPlace
 from app.modules.place_checker.enums import SourceTier, VerificationStatus
 from app.modules.place_checker.output_contract import PlannerExcludedCandidate
 from app.modules.place_checker.evaluation.price_policy import has_planner_cost
-from app.modules.place_checker.planning.notes import select_planner_source_note
+from app.modules.place_checker.planning.notes import (
+    select_personal_note,
+    select_planner_source_note,
+)
 
 
 def build_excluded_candidate(checked: CheckedPlace) -> PlannerExcludedCandidate:
@@ -57,5 +60,6 @@ def build_excluded_candidate(checked: CheckedPlace) -> PlannerExcludedCandidate:
         reason_code=code,
         message=message,
         notes=select_planner_source_note(checked),
+        personal_notes=select_personal_note(checked),
         source_refs=source_refs[:20],
     )

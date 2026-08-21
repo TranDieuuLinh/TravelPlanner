@@ -34,6 +34,7 @@ class RootState(TypedDict, total=False):
     images: list[ExplorerImageInput]
     force_refresh: bool
     existing_itinerary: Itinerary | None
+    existing_planner_output: dict | None
     edit_operation: EditOperation | None
 
     conversation_memory: WorkingMemoryState | dict | None

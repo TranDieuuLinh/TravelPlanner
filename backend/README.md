@@ -14,7 +14,7 @@ Consumers may import a module only through its `public.py` file.
 Supervisor
 ├── InformationFinder -> END
 ├── PlanEditor        -> END
-└── Explorer -> ExplorerHandoffProjector -> PlaceChecker -> ItineraryPlanner -> END
+└── Explorer -> ExplorerHandoffProjector -> PlaceChecker -> ItineraryPlanner -> Finisher -> END
 ```
 
 The root graph lives in `src/app/orchestration`. It maps data between public
@@ -118,6 +118,10 @@ This is a working architecture scaffold, not a production travel-data system.
   then returns the plan in `plannerOutput`.
   Valhalla must be configured and available for production matrix routing;
   missing route geometry after a valid matrix is surfaced as a warning.
+- Finisher reads only normalized planner output, prioritizes selected URL notes,
+  and returns a concise Vietnamese response. Gemini performs the natural-language
+  rendering when configured; a deterministic Vietnamese fallback remains
+  available without a key or when the provider fails.
 - The root graph uses the PostgreSQL checkpointer when `DATABASE_URL` is set and
   fails startup composition if a usable psycopg runtime is missing. Development
   without a database uses the explicit in-memory fallback.

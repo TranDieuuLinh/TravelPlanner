@@ -150,28 +150,39 @@ def test_final_handoff_deduplicates_places_and_keeps_all_sources(tmp_path) -> No
         places=[
             ExplorerPlace(
                 name="Văn Miếu - Quốc Tử Giám",
-                sourcePlaces=[PlaceSource(
-                    origin="input",
-                    evidenceType="raw_prompt",
-                    evidence="Thêm Văn Miếu",
-                )],
+                sourcePlaces=[
+                    PlaceSource(
+                        origin="input",
+                        evidenceType="raw_prompt",
+                        evidence="Thêm Văn Miếu",
+                    )
+                ],
             ),
             ExplorerPlace(
                 name="van mieu quoc tu giam",
-                sourcePlaces=[PlaceSource(
-                    origin="url",
-                    evidenceType="transcript",
-                    sourceUrl="https://example.com/hanoi",
-                    evidence="Nguồn URL",
-                )],
+                sourcePlaces=[
+                    PlaceSource(
+                        origin="url",
+                        evidenceType="transcript",
+                        sourceUrl="https://example.com/hanoi",
+                        evidence="Nguồn URL",
+                    )
+                ],
             ),
         ],
-        urlNotes=[SourceNote(
-            summary="van mieu quoc tu giam là địa điểm văn hóa",
-            placeName="van mieu quoc tu giam",
-            evidenceType="transcript",
-            sourceUrl="https://example.com/hanoi",
-        )],
+        urlNotes=[
+            SourceNote(
+                summary="Người dùng muốn ghé Văn Miếu vào buổi chiều",
+                placeName="Văn Miếu - Quốc Tử Giám",
+                evidenceType="raw_prompt",
+            ),
+            SourceNote(
+                summary="van mieu quoc tu giam là địa điểm văn hóa",
+                placeName="van mieu quoc tu giam",
+                evidenceType="transcript",
+                sourceUrl="https://example.com/hanoi",
+            ),
+        ],
     )
 
     handoff = projector(tmp_path).project(output, raw_prompt="Đi Hà Nội")
@@ -183,9 +194,18 @@ def test_final_handoff_deduplicates_places_and_keeps_all_sources(tmp_path) -> No
     assert payload["places"][0]["sourcePlaces"][1]["urlNotes"] == [
         {"summary": "van mieu quoc tu giam là địa điểm văn hóa"}
     ]
+    assert payload["places"][0]["sourcePlaces"][0]["urlNotes"] == [
+        {"summary": "Người dùng muốn ghé Văn Miếu vào buổi chiều"}
+    ]
+    assert [note.evidence_type for note in handoff.place_checker_input.url_notes] == [
+        "raw_prompt",
+        "url",
+    ]
 
 
-def test_final_handoff_collapses_sources_with_the_same_public_identity(tmp_path) -> None:
+def test_final_handoff_collapses_sources_with_the_same_public_identity(
+    tmp_path,
+) -> None:
     output = ExplorerOutput(
         status="ready",
         intakeId="intake-source-dedupe",
@@ -209,8 +229,10 @@ def test_final_handoff_collapses_sources_with_the_same_public_identity(tmp_path)
         ],
     )
 
-    payload = projector(tmp_path).project(
-        output, raw_prompt="Đi Hà Nội"
-    ).place_checker_input.model_dump(by_alias=True)
+    payload = (
+        projector(tmp_path)
+        .project(output, raw_prompt="Đi Hà Nội")
+        .place_checker_input.model_dump(by_alias=True)
+    )
 
     assert len(payload["places"][0]["sourcePlaces"]) == 1

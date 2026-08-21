@@ -7,7 +7,7 @@ from app.modules.explorer.public import (
     YamlTagCatalog,
     build_explorer_graph,
 )
-from app.modules.information_finder.entity_linking import link_verified_entities
+from app.modules.finisher.public import ItineraryFinisher
 from app.modules.information_finder.public import (
     InformationFinderService,
     build_information_finder_graph,
@@ -60,6 +60,7 @@ class RootNodes(ExplorerReviewNodes):
         place_checker_pipeline: PlaceCheckerPipeline | None = None,
         itinerary_planner_graph=None,
         handoff_projector: ExplorerHandoffProjector | None = None,
+        finisher_service: ItineraryFinisher | None = None,
     ) -> None:
         self.information_finder_service = information_finder_service
         self.entity_resolver = EntityResolver(
@@ -89,6 +90,7 @@ class RootNodes(ExplorerReviewNodes):
             itinerary_planner_graph or build_itinerary_planner_graph()
         )
         self.plan_editor = build_plan_editor_graph()
+        self.finisher = finisher_service or ItineraryFinisher()
 
     async def run_information_finder(self, state: RootState) -> dict:
         result = await self.information_finder.ainvoke(
@@ -319,10 +321,23 @@ class RootNodes(ExplorerReviewNodes):
                 dict.fromkeys([*state.get("warnings", []), *result.get("warnings", [])])
             ),
             "planner_output": output,
-            "response": "Itinerary was optimized successfully.",
+            "response": "Đã tối ưu lịch trình thành công.",
         }
 
     async def run_plan_editor(self, state: RootState) -> dict:
+        decision = state.get("decision")
+        natural_edit = getattr(decision, "plan_edit", None)
+        if natural_edit is not None:
+            if natural_edit.action == "clarify":
+                question = natural_edit.clarification_question or (
+                    "Bạn muốn chỉnh địa điểm nào trong lịch trình?"
+                )
+                return {
+                    "response": question,
+                    "clarification_question": question,
+                }
+            return {"response": natural_edit.response or "Đã hiểu yêu cầu chỉnh sửa."}
+
         itinerary = state.get("existing_itinerary")
         operation = state.get("edit_operation")
         if itinerary is None or operation is None:
@@ -344,9 +359,14 @@ class RootNodes(ExplorerReviewNodes):
         }
 
     async def finish(self, state: RootState) -> dict:
-        response = state.get(
-            "response",
-            "I can help with travel planning and destination information.",
+        planner_output = state.get("planner_output")
+        response = (
+            await self.finisher.finish(planner_output)
+            if planner_output is not None
+            else state.get(
+                "response",
+                "Mình có thể giúp bạn lên lịch và tìm thông tin du lịch.",
+            )
         )
         response = await link_verified_entities(
             response,

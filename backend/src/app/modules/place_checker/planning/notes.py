@@ -7,7 +7,11 @@ def select_planner_source_note(checked: CheckedPlace) -> SourceNote | None:
     """Select one immutable source note, with URL evidence taking precedence."""
 
     url_note = next(
-        (note for note in checked.provenance.url_notes if note.summary),
+        (
+            note
+            for note in checked.provenance.url_notes
+            if note.summary and note.evidence_type != "raw_prompt"
+        ),
         None,
     )
     if url_note:
@@ -25,9 +29,7 @@ def select_planner_source_note(checked: CheckedPlace) -> SourceNote | None:
         (
             source
             for source in checked.provenance.source_places
-            if source.origin.value == "url"
-            and source.evidence
-            and source.source_url
+            if source.origin.value == "url" and source.evidence and source.source_url
         ),
         None,
     )
@@ -43,27 +45,6 @@ def select_planner_source_note(checked: CheckedPlace) -> SourceNote | None:
         )
     if checked.provider_note:
         return checked.provider_note
-
-    direct_source = next(
-        (
-            source
-            for source in checked.provenance.source_places
-            if source.origin.value != "system" and source.evidence
-        ),
-        None,
-    )
-    if direct_source:
-        return SourceNote(
-            text=(
-                f"{prefix} {direct_source.evidence}"
-                if prefix
-                else direct_source.evidence
-            ),
-            source_type=(
-                "url" if direct_source.origin.value == "url" else "backend"
-            ),
-            source_url=direct_source.source_url,
-        )
 
     nearest = min(
         (
@@ -86,3 +67,19 @@ def select_planner_source_note(checked: CheckedPlace) -> SourceNote | None:
         source_type="knowledge_graph",
         source_url=nearest.source,
     )
+
+
+def select_personal_note(checked: CheckedPlace) -> str | None:
+    """Collect user-owned place notes extracted from the raw prompt."""
+
+    summaries = list(
+        dict.fromkeys(
+            note.summary.strip()
+            for note in checked.provenance.url_notes
+            if note.evidence_type == "raw_prompt" and note.summary.strip()
+        )
+    )
+    if not summaries:
+        return None
+    combined = " ".join(summaries)
+    return combined[:4000].rstrip()

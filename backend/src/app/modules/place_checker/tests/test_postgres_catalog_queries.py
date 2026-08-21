@@ -21,6 +21,16 @@ def test_generic_catalog_pool_uses_adm_candidates() -> None:
     assert "style_property.key = 'time_duration'" in PLACE_SEARCH_SQL
     assert "activity.entity_type = 'ActivityItem'" in PLACE_SEARCH_SQL
     assert "'entityType', target.entity_type" in PLACE_SEARCH_SQL
+    assert "percentile_cont(0.5)" in PLACE_SEARCH_SQL
+    assert "bayesian_quality DESC NULLS LAST" in PLACE_SEARCH_SQL
+    assert "generic_rank.bayesian_rating DESC NULLS LAST" in PLACE_SEARCH_SQL
+    assert "NULLIF(props.rating, '')::double precision DESC" not in PLACE_SEARCH_SQL
+
+
+def test_generic_catalog_exclusion_does_not_hide_named_places() -> None:
+    assert "discovery_policy.key = 'generic_discovery_excluded'" in PLACE_SEARCH_SQL
+    assert "lower(btrim(discovery_policy.value)) = 'true'" in PLACE_SEARCH_SQL
+    assert "generic_discovery_excluded" not in NAMED_PLACE_SEARCH_SQL
 
 
 def test_entertainment_type_has_a_dedicated_hint() -> None:

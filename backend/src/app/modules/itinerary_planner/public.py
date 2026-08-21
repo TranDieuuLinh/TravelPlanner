@@ -13,6 +13,7 @@ from app.modules.itinerary_planner.adapters import (
     ValhallaAdapter,
 )
 from app.modules.itinerary_planner.directions import DirectionsService, router
+from app.modules.itinerary_planner.day_repair import DayRepairError, DayRepairService
 from app.modules.itinerary_planner.graph import build_itinerary_planner_graph
 from app.modules.itinerary_planner.beam_search.graph import (
     build_beam_search_itinerary_planner_graph,
@@ -107,6 +108,25 @@ def build_valhalla_directions_service(
     )
 
 
+def build_valhalla_day_repair_service(
+    base_url: str,
+    *,
+    timeout_seconds: float = 180.0,
+    provider_version: str = "local",
+) -> DayRepairService:
+    valhalla = ValhallaAdapter(
+        base_url,
+        timeout_seconds=timeout_seconds,
+        provider_version=provider_version,
+    )
+    adapter = FallbackRoutingAdapter(valhalla, StraightLineRoutingAdapter())
+    return DayRepairService(
+        adapter,
+        adapter,
+        XanhSmTransportCostEstimator(),
+    )
+
+
 __all__ = [
     "ItineraryPlannerInput",
     "FoodCoverageFeasibility",
@@ -121,5 +141,8 @@ __all__ = [
     "build_valhalla_beam_search_itinerary_planner_graph",
     "build_valhalla_beam_first_itinerary_planner_graph",
     "build_valhalla_directions_service",
+    "build_valhalla_day_repair_service",
+    "DayRepairError",
+    "DayRepairService",
     "router",
 ]
