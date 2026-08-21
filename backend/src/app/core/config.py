@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     conversation_memory_reference_provider: Literal["rules", "gemini"] = "gemini"
     conversation_memory_reference_confidence: float = Field(default=0.72, ge=0, le=1)
     conversation_memory_reference_max_output_tokens: int = Field(default=320, ge=128, le=1024)
-    conversation_graph_checkpointer_enabled: bool = False
+    conversation_graph_checkpointer_enabled: bool = True
     auth_dev_seed_users: str = (
         "creator@example.com|Creator Demo|Password123!|creator,"
         "admin@travelplanner.local|TravelPlanner Admin|Password123!|admin"
@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     gemini_timeout_seconds: float = 30.0
     gemini_key_cooldown_seconds: float = 60.0
     supervisor_classifier_provider: Literal["gemini"] = "gemini"
-    supervisor_llm_max_output_tokens: int = 1024
+    supervisor_llm_max_output_tokens: int = 2048
     supervisor_llm_fallback_enabled: bool = True
     supervisor_llm_confidence_threshold: float = 0.65
     finisher_llm_max_output_tokens: int = Field(default=320, ge=128, le=1024)

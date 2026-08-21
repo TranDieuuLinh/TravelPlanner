@@ -100,7 +100,12 @@ def _looks_like_trip_request(value: str) -> bool:
     """
     has_trip_verb = re.search(r"\b(di|du lich|nghi duong|tham quan)\b", value)
     has_duration = re.search(r"\b\d+\s*(ngay|dem)\b", value)
-    return bool(has_trip_verb and has_duration)
+    has_planning_intent = re.search(
+        r"\b(muon di du lich|muon di|tim noi|chon noi|goi y noi|"
+        r"nhieu hoat dong|nhieu trai nghiem|phu hop voi)\b",
+        value,
+    )
+    return bool(has_trip_verb and (has_duration or has_planning_intent))
 
 
 def _looks_like_destination_prompt(value: str) -> bool:

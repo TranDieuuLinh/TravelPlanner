@@ -1,8 +1,6 @@
-from app.modules.conversation_memory.public import (
-    MemoryReference,
-    WorkingMemoryState,
-)
+from app.modules.conversation_memory.public import MemoryReference
 from app.modules.explorer.public import ExplorerImageInput
+from app.modules.explorer.public import ExplorerOutput
 from app.modules.information_finder.public import SourceReference
 from app.modules.itinerary_planner.public import ItineraryPlannerOutput
 from app.modules.plan_editor.public import EditOperation
@@ -19,8 +17,8 @@ class RootGraphInput(BaseModel):
     existing_itinerary: Itinerary | None = None
     existing_planner_output: dict[str, Any] | None = None
     edit_operation: EditOperation | None = None
+    explorer_output: ExplorerOutput | None = None
 
-    conversation_memory: WorkingMemoryState | None = None
     recent_messages: list[str] = Field(default_factory=list, max_length=20)
     conversation_summary: str | None = None
     resolved_references: list[MemoryReference] = Field(default_factory=list)

@@ -80,6 +80,33 @@ class SupervisorService:
         except Exception:
             return fallback, {}
 
+    async def compose_final_response(
+        self, *, message: str, conversation_summary: str | None,
+        agent: str, response: str, output=None,
+    ) -> tuple[str, dict]:
+        fallback = response.strip()
+        if self._composer is None or not fallback:
+            return fallback, {}
+        payload = {
+            "contextSummary": conversation_summary or "",
+            "currentUserMessage": message,
+            "agent": agent,
+            "agentResponse": fallback,
+            "facts": [fact.model_dump(mode="json", by_alias=True)
+                      for fact in getattr(output, "facts", [])],
+            "sources": [source.model_dump(mode="json", by_alias=True)
+                        for source in getattr(output, "sources", [])],
+        }
+        try:
+            composed = await self._composer.compose(payload)
+            if composed.content_blocks:
+                return fallback, {"content_blocks": composed.content_blocks}
+            if composed.response:
+                return composed.response.strip(), {}
+        except Exception:
+            return fallback, {}
+        return fallback, {}
+
     async def decide(self, payload: SupervisorInput) -> SupervisorDecision:
         if payload.clarification_required:
             places_str = (
@@ -110,8 +137,9 @@ class SupervisorService:
                     "Supervisor intent classification failed and fallback is disabled."
                 ) from None
             logger.warning(
-                "Supervisor classifier failed; using deterministic fallback (%s)",
+                "Supervisor classifier failed; using deterministic fallback (%s): %s",
                 type(exc).__name__,
+                str(exc)[:1000],
             )
             return build_fallback_decision(
                 payload,

@@ -118,17 +118,45 @@ class ExplorerPeople(ExplorerModel):
 
 
 class ExplorerInput(ExplorerModel):
+    # Optional compatibility field for direct Explorer callers; orchestration
+    # no longer forwards the current user message as rawPrompt.
     raw_prompt: str | None = Field(default=None, max_length=4000)
     urls: list[str] = Field(default_factory=list, max_length=20)
     images: list[ExplorerImageInput] = Field(default_factory=list, max_length=20)
     force_refresh: bool = False
+    conversation_context: list[str] = Field(default_factory=list, max_length=6)
+    conversation_summary: str | None = Field(default=None, max_length=2000)
+    explorer_output: dict | None = None
+    resolved_entities: list[str] = Field(default_factory=list, max_length=30)
+    destination: str | None = Field(default=None, max_length=200)
+    duration_days: int | None = Field(default=None, ge=1, le=60)
+    mentioned_places: list[str] = Field(default_factory=list, max_length=50)
+    selected_places: list[str] = Field(default_factory=list, max_length=50)
 
     @model_validator(mode="after")
     def has_input(self) -> "ExplorerInput":
         self.raw_prompt = (self.raw_prompt or "").strip() or None
         self.urls = list(dict.fromkeys(url.strip() for url in self.urls if url.strip()))
-        if not self.raw_prompt and not self.urls and not self.images:
-            raise ValueError("Provide a prompt, URL, or image.")
+        self.conversation_context = [item.strip() for item in self.conversation_context if item.strip()]
+        self.conversation_summary = (self.conversation_summary or "").strip() or None
+        self.resolved_entities = [item.strip() for item in self.resolved_entities if item.strip()]
+        if self.explorer_output is not None and not isinstance(self.explorer_output, dict):
+            raise ValueError("explorer_output must be an object.")
+        self.destination = (self.destination or "").strip() or None
+        self.mentioned_places = [item.strip() for item in self.mentioned_places if item.strip()]
+        self.selected_places = [item.strip() for item in self.selected_places if item.strip()]
+        if not (
+            self.urls
+            or self.images
+            or self.raw_prompt
+            or self.conversation_context
+            or self.conversation_summary
+            or self.destination
+            or self.duration_days
+            or self.mentioned_places
+            or self.selected_places
+        ):
+            raise ValueError("Provide context, URL, or image.")
         return self
 
     @field_validator("urls")

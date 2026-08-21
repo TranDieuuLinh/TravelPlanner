@@ -16,4 +16,5 @@ class SupervisorState(TypedDict, total=False):
     selected_places: list[str]
     clarification_required: bool
     conversation_summary: str | None
+    explorer_output: dict | None
     decision: SupervisorDecision

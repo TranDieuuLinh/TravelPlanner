@@ -1,9 +1,6 @@
 from typing import TypedDict
 
-from app.modules.conversation_memory.public import (
-    MemoryReference,
-    WorkingMemoryState,
-)
+from app.modules.conversation_memory.public import MemoryReference
 from app.modules.explorer.public import (
     ExplorerImageInput,
     ExplorerOutput,
@@ -37,7 +34,6 @@ class RootState(TypedDict, total=False):
     existing_planner_output: dict | None
     edit_operation: EditOperation | None
 
-    conversation_memory: WorkingMemoryState | dict | None
     recent_messages: list[str]
     conversation_summary: str | None
     resolved_references: list[MemoryReference] | list[dict]

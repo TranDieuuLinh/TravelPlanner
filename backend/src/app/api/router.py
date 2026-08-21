@@ -257,6 +257,7 @@ async def invoke_agent(
             if information_output and information_output.suggestions
             else result.get("suggestions", [])
         ),
+        explorer_output=result.get("explorer_output"),
     )
     await observability.record_agent_invoke(
         request_id=request_id, route=response.route, success=True,

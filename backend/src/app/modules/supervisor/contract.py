@@ -32,6 +32,9 @@ class SupervisorInput(BaseModel):
     selected_places: list[str] = Field(default_factory=list, max_length=50)
     clarification_required: bool = False
     conversation_summary: str | None = Field(default=None, max_length=2000)
+    explorer_output: dict | None = None
+    pending_review_kind: str | None = Field(default=None, max_length=40)
+    pending_review_fields: list[str] = Field(default_factory=list, max_length=20)
 
 
 class ClassifierResult(BaseModel):
@@ -59,3 +62,4 @@ class ComposedAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     content_blocks: list[AnswerBlock] = Field(default_factory=list)
+    response: str | None = Field(default=None, max_length=4000)

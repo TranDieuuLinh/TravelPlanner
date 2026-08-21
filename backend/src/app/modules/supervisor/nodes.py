@@ -19,6 +19,7 @@ def create_decide_node(service: SupervisorService):
                 selected_places=state.get("selected_places", []),
                 clarification_required=state.get("clarification_required", False),
                 conversation_summary=state.get("conversation_summary"),
+                explorer_output=state.get("explorer_output"),
             )
         )
         return {"decision": decision}

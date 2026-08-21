@@ -1,8 +1,9 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.router import router
 from app.core.config import Settings, get_settings
@@ -70,6 +71,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    @application.exception_handler(Exception)
+    async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        # Return a normal response so CORSMiddleware can attach its headers.
+        # Without this, an unhandled PATCH error is surfaced by browsers as a
+        # misleading CORS failure and hides the actual backend failure.
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": {
+                    "code": "INTERNAL_SERVER_ERROR",
+                    "message": "Backend không thể hoàn thành yêu cầu.",
+                }
+            },
+        )
 
     @application.middleware("http")
     async def add_trace_id_header(request, call_next):

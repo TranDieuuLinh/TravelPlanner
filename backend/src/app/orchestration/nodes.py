@@ -171,7 +171,7 @@ class RootNodes(ExplorerReviewNodes):
         handoff = self.explorer_handoff.project(
             state["explorer_output"],
             raw_prompt=state.get("message") or "",
-            memory=state.get("conversation_memory"),
+            memory=None,
             resolved_references=state.get("resolved_references"),
             has_source_input=bool(state.get("urls") or state.get("images")),
         )
@@ -368,11 +368,24 @@ class RootNodes(ExplorerReviewNodes):
                 "Mình có thể giúp bạn lên lịch và tìm thông tin du lịch.",
             )
         )
+        agent = state.get("decision").route if state.get("decision") else "agent"
+        patch = {}
+        information_output = state.get("information_output")
+        already_composed = bool(
+            information_output is not None
+            and getattr(information_output, "content_blocks", [])
+        )
+        if agent != "information_finder" or not already_composed:
+            response, patch = await self.supervisor_service.compose_final_response(
+                message=state.get("message", ""),
+                conversation_summary=state.get("conversation_summary"),
+                agent=agent,
+                response=response,
+                output=information_output,
+            )
         response = await link_verified_entities(
             response,
             state.get("decision").entity_names if state.get("decision") else [],
             self.entity_resolver,
         )
-        return {
-            "response": response
-        }
+        return {"response": response, **patch}

@@ -70,6 +70,20 @@ def test_update_entity_uses_public_contract() -> None:
     assert result["canonical_name"] == "Hà Nội"
 
 
+def test_update_entity_does_not_forward_body_entity_id() -> None:
+    store = FakeStore()
+    service = KnowledgeGraphService(store)  # type: ignore[arg-type]
+
+    result = asyncio.run(
+        service.update_entity(
+            "hanoi",
+            EntityUpdate(entity_id="hanoi", canonical_name="Hà Nội"),
+        )
+    )
+
+    assert result["canonical_name"] == "Hà Nội"
+
+
 def test_missing_entity_returns_domain_error() -> None:
     service = KnowledgeGraphService(FakeStore())  # type: ignore[arg-type]
 

@@ -198,3 +198,26 @@ def test_follow_up_without_new_input_inherits_memory_duration():
     )
 
     assert handoff.explorer_output.days == 20
+
+
+def test_follow_up_without_destination_reuses_memory_destination():
+    nodes = RootNodes()
+
+    class ExplorerGraph:
+        async def ainvoke(self, payload):
+            return {"output": explorer_output().model_copy(update={"input_adm": None})}
+
+    nodes.explorer = ExplorerGraph()
+    memory = memory_with_places()
+
+    update = asyncio.run(
+        nodes.run_explorer(
+            {
+                "message": "Tôi muốn đi 4 ngày",
+                "conversation_memory": memory,
+                "warnings": [],
+            }
+        )
+    )
+
+    assert update["explorer_output"].input_adm == "Hà Nội"

@@ -126,6 +126,15 @@ def test_short_trip_prompt_uses_explorer_when_llm_is_unavailable():
     assert decision.warnings == ["Supervisor LLM chưa được cấu hình."]
 
 
+def test_open_ended_activity_rich_trip_prompt_uses_explorer():
+    decision = decide(
+        SupervisorService(classifier=None),
+        "Tôi muốn đi du lịch, có nhiều hoạt động",
+    )
+
+    assert decision.route == "explorer"
+
+
 def test_short_destination_prompt_uses_information_finder_when_llm_is_unavailable():
     decision = decide(
         SupervisorService(classifier=None),

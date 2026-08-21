@@ -93,7 +93,11 @@ class KnowledgeGraphService:
 
     async def update_entity(self, entity_id: str, payload: EntityUpdate) -> dict:
         try:
-            result = await self.store.update_entity(entity_id, **payload.model_dump(exclude_unset=True, by_alias=False))
+            updates = payload.model_dump(exclude_unset=True, by_alias=False)
+            # The URL identifies the entity being updated.  Do not forward the
+            # optional body entity_id as a second value for the store argument.
+            updates.pop("entity_id", None)
+            result = await self.store.update_entity(entity_id, **updates)
         except Exception as exc:
             if any(marker in str(exc).lower() for marker in ("duplicate", "unique", "already exists")):
                 raise KnowledgeGraphError(409, "KG_ENTITY_EXISTS", "Entity ID đã tồn tại.") from exc

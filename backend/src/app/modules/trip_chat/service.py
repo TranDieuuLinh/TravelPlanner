@@ -485,7 +485,6 @@ class TripChatService:
                 "supplied_candidates": [],
                 "existing_itinerary": chat.current_itinerary,
                 "edit_operation": None,
-                "conversation_memory": working_memory,
                 "recent_messages": recent_messages,
                 "conversation_summary": conversation_summary,
                 "resolved_references": references,

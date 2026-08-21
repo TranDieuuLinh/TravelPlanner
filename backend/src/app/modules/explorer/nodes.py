@@ -13,7 +13,9 @@ class ExplorerNodes:
 
     async def extract_prompt_structured_draft(self, state: ExplorerState) -> dict:
         try:
-            return {"draft": await self.service.prompt_draft(state["payload"].raw_prompt or "")}
+            return {"draft": await self.service.prompt_draft(
+                self.service.llm_prompt(state["payload"])
+            )}
         except Exception as exc:
             return {"failure": agent_error_from_exception(
                 exc, "DRAFT_GENERATION_FAILED"
