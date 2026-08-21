@@ -45,9 +45,9 @@ def prepare_and_route(raw, matrix_provider=None):
 def test_beam_uses_adaptive_global_time_budgets() -> None:
     config = BeamSearchConfig()
 
-    assert config.resolved_time_limit_seconds(1) == 5.0
-    assert config.resolved_time_limit_seconds(3) == 8.0
-    assert config.resolved_time_limit_seconds(4) == 12.0
+    assert config.resolved_time_limit_seconds(1) == 10.0
+    assert config.resolved_time_limit_seconds(3) == 20.0
+    assert config.resolved_time_limit_seconds(4) == 30.0
     assert BeamSearchConfig(time_limit_seconds=2.5).resolved_time_limit_seconds(7) == 2.5
 
 

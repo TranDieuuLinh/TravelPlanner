@@ -1,6 +1,6 @@
 # Phase 5: Runtime, route repair, testing và rollout
 
-Cập nhật lần cuối: 2026-08-20
+Cập nhật lần cuối: 2026-08-21
 
 Trạng thái: đã triển khai route-detail enrichment cho selected arcs và
 accommodation transfers, fallback có warning khi thiếu geometry, fallback đường
@@ -38,10 +38,11 @@ cho từng ngày; lỗi anchor công bố `placeId`, ngày và nhóm route/timel
 constraint liên quan. Runtime mặc định giữ một CP-SAT search worker cho mỗi daily repair và sparse graph `K=10` theo
 `safeTravelMinutes` từ matrix. Forced relationship, meal-access, priority và
 component-bridge arcs luôn được union lại sau nearest-neighbor pruning.
-Hai solver pass của mỗi ngày không có wall-clock timeout mặc định. Deployment
+Priority pass giữ exact search không có deadline; activity-count pass và mỗi
+utility attempt mặc định có 10 giây. Deployment
 cần SLA khác có thể inject `SolverConfig`. Pass priority `user_input > URL` vẫn
 exact trong daily subproblem. Mỗi utility round chạy ba solver instance một
-thread với seed khác nhau, giữ incumbent tốt nhất và dừng sau 10 round liên
+thread với seed khác nhau, giữ incumbent tốt nhất và dừng sau hai round liên
 tiếp không cải thiện. Greedy/local-search order được đưa vào CP-SAT bằng
 solution hint; CP-SAT vẫn có quyền sửa selection, time và route để thỏa hard
 constraint.
@@ -61,7 +62,7 @@ Mỗi meal shortlist giữ tối đa ba food option và bảo đảm có ít nh�
 giảm fallback full-day do constraint đồ uống/tráng miệng.
 
 Nếu shortlist heuristic vô nghiệm, runtime thử lại ngày đó với toàn bộ candidate
-còn khả dụng trong day-domain và hard wait cap 150 phút. Nếu full-day strict
+còn khả dụng trong day-domain và hard wait cap 90 phút. Nếu full-day strict
 solve vẫn `INFEASIBLE`, runtime retry đúng một lần không hard wait cap nhưng giữ
 progressive idle penalty. Nếu pool food unique vẫn làm ngày vô nghiệm, fallback
 cuối chỉ mở lại restaurant đã dùng; activity đã dùng vẫn bị loại. Timeout/
@@ -90,7 +91,7 @@ FastAPI runtime dùng graph Beam-first có prefix `prepare_problem` và
 reflow failure chuyển sang Hybrid CP-SAT trên cùng `PreparedPlanningProblem` và
 `RoutingProblem`; fallback không gọi lại matrix. Beam dùng một global deadline
 cho toàn bộ ngày và nhánh backtracking, kiểm tra định kỳ ngay trong vòng
-candidate. Budget mặc định là 5 giây cho một ngày, 8 giây cho 2–3 ngày và 12
+candidate. Budget mặc định là 10 giây cho một ngày, 20 giây cho 2–3 ngày và 30
 giây cho chuyến dài hơn; giá trị explicit trong `BeamSearchConfig` ghi đè budget
 adaptive. Khi deadline tới, complete incumbent được giữ, còn incomplete plan
 chuyển fallback với reason rõ ràng.
@@ -236,9 +237,9 @@ quãng đường hoặc thời gian theo đường thật; output luôn có warn
 Mục tiêu ban đầu, chưa phải SLA cho tới khi benchmark:
 
 ```text
-3 ngày / 60-80 candidates:   5-12 giây
-5 ngày / 100-130 candidates: 8-20 giây
-7 ngày / 140-170 candidates: 15-30 giây
+3 ngày / 60-80 candidates:   10-30 giây
+5 ngày / 100-130 candidates: 20-45 giây
+7 ngày / 140-170 candidates: 30-60 giây
 ```
 
 Phase timing cần ghi riêng:

@@ -10,7 +10,7 @@ from app.modules.conversation_memory.public import (
     MemoryFact,
     MemoryVersionConflict,
 )
-from app.modules.plan_editor.public import NaturalLanguagePlanEditor
+from app.modules.plan_editor.public import compact_plan_for_edit
 from app.modules.trip_chat.contract import (
     AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
@@ -21,7 +21,7 @@ from app.modules.trip_chat.contract import (
 )
 from app.modules.trip_chat.ports import DayPlanRepairer, TripChatRepository
 from app.modules.trip_chat.plan_edit_context import planner_output_for_edit_context
-from app.modules.trip_chat.plan_edit_execution import execute_plan_edit
+from app.modules.trip_chat.plan_edit_execution import plan_edit_assistant
 from app.modules.trip_chat.db_retry import (
     is_transient_database_error,
     retry_transient_database,
@@ -45,13 +45,11 @@ class TripChatService:
         graph,
         memory_service: ConversationMemoryService | None = None,
         day_repairer: DayPlanRepairer | None = None,
-        plan_editor: NaturalLanguagePlanEditor | None = None,
     ) -> None:
         self.repository = repository
         self.graph = graph
         self.memory_service = memory_service
         self.day_repairer = day_repairer
-        self.plan_editor = plan_editor
 
     async def create(self, user_id: int, title: str | None) -> TripChat:
         return await self.repository.create_chat(user_id, title)
@@ -323,44 +321,6 @@ class TripChatService:
         if not chat:
             return None
 
-        if self.plan_editor is not None and chat.current_planner_output:
-            try:
-                edit = await self.plan_editor.interpret(
-                    content,
-                    planner_output_for_edit_context(chat.current_planner_output),
-                    recent_messages=[
-                        f"{'User' if message.role == 'user' else 'Assistant'}: {message.content}"
-                        for message in chat.messages[-6:]
-                    ],
-                )
-            except Exception as exc:
-                logger.warning(
-                    "plan_editor_interpretation_failed chat_id=%s error=%s",
-                    chat_id,
-                    type(exc).__name__,
-                )
-            else:
-                execution = await execute_plan_edit(
-                    self,
-                    edit,
-                    user_id=user_id,
-                    chat_id=chat_id,
-                    expected_revision=chat.revision,
-                )
-                if execution is not None:
-                    if execution.status == "chat_not_found":
-                        return None
-                    return await retry_transient_database(
-                        lambda: self.repository.append_exchange(
-                            user_id,
-                            chat_id,
-                            content,
-                            execution.assistant,
-                            None,
-                            None,
-                        )
-                    )
-
         recent_messages: list[str] = [
             f"{'User' if message.role == 'user' else 'Assistant'}: {message.content}"
             for message in chat.messages[-6:]
@@ -484,6 +444,15 @@ class TripChatService:
                 "message": content,
                 "supplied_candidates": [],
                 "existing_itinerary": chat.current_itinerary,
+                "existing_planner_output": (
+                    compact_plan_for_edit(
+                        planner_output_for_edit_context(
+                            chat.current_planner_output
+                        )
+                    )
+                    if chat.current_planner_output
+                    else None
+                ),
                 "edit_operation": None,
                 "recent_messages": recent_messages,
                 "conversation_summary": conversation_summary,
@@ -567,6 +536,38 @@ class TripChatService:
         warnings = list(result.get("warnings", []))
         if memory_warning:
             warnings.append(memory_warning)
+
+        plan_edit = getattr(decision, "plan_edit", None)
+        if plan_edit is not None:
+            assistant = plan_edit_assistant(plan_edit)
+            if plan_edit.action == "clarify":
+                return await retry_transient_database(
+                    lambda: self.repository.append_exchange(
+                        user_id, chat_id, content, assistant, None, None
+                    )
+                )
+            status = await retry_transient_database(
+                lambda: self.repository.append_plan_edit_exchange(
+                    user_id,
+                    chat_id,
+                    expected_revision=chat.revision,
+                    user_content=content,
+                    assistant=assistant,
+                    edit=plan_edit,
+                )
+            )
+            if status == "chat_not_found":
+                return None
+            if status == "updated":
+                return await retry_transient_database(
+                    lambda: self.repository.get_chat(user_id, chat_id)
+                )
+            failure = plan_edit_assistant(plan_edit, status=status)
+            return await retry_transient_database(
+                lambda: self.repository.append_exchange(
+                    user_id, chat_id, content, failure, None, None
+                )
+            )
 
         assistant = {
             "content": result.get("response", "Request completed."),

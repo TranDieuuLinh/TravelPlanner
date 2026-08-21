@@ -68,6 +68,35 @@ def test_plan_editor_requires_structured_state_after_llm_classification():
     assert decision.clarification_question
 
 
+def test_natural_plan_edit_is_validated_and_accepted_from_one_classifier_call():
+    classifier = FakeClassifier(
+        ClassifierResult(
+            route="plan_editor",
+            confidence=0.99,
+            reason="edit",
+            plan_edit={
+                "action": "update",
+                "confidence": 0.99,
+                "day": 1,
+                "itemId": "lake",
+                "item": {"durationMinutes": 90},
+                "response": "Đã đổi thành 90 phút.",
+            },
+        )
+    )
+    decision = decide(
+        SupervisorService(classifier),
+        "Cho Hồ Gươm 90 phút",
+        current_plan={
+            "days": [{"day": 1, "items": [{"itemId": "lake", "name": "Hồ Gươm"}]}]
+        },
+    )
+
+    assert decision.route == "plan_editor"
+    assert decision.plan_edit.item.duration_minutes == 90
+    assert classifier.calls == 1
+
+
 def test_llm_finish_response_is_preserved():
     response = "Xin chào, mình là Penguin."
     decision = decide(

@@ -81,6 +81,13 @@ Semantic category chỉ dùng tên món ăn để sửa node nguồn `TravelPlac
 là `Entertainment` không bị đổi thành `Restaurant`. Riêng token phở được kiểm
 tra trên Unicode gốc để phân biệt `Phở`/`Pho` với `Phố` trước khi bỏ dấu.
 
+Named-place lookup dùng alias curated với `normalized_alias` theo cùng policy
+ASCII của query. Alias hiển thị giữ dấu và language; alias mojibake hoặc alias
+địa danh sai phải được xóa chọn lọc, không xóa hàng loạt alias hợp lệ.
+Alias curation không kiêm identity merge hay generic-discovery exclusion. Khi
+hai entity cùng chỉ một địa điểm, kiểm tra alias có thể xác nhận đúng địa điểm
+vật lý nhưng dedupe/status vẫn phải được review và áp dụng riêng theo exact ID.
+
 ## Food coverage
 
 Food anchors là mọi TravelPlace và Entertainment đủ điều kiện, có tọa độ trong

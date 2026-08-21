@@ -29,7 +29,6 @@ def _service(request: Request, graph = Depends(get_graph)) -> TripChatService:
         repository=request.app.state.trip_chat_repository,
         graph=graph,
         memory_service=memory_service,
-        plan_editor=getattr(request.app.state, "natural_language_plan_editor", None),
     )
 
 

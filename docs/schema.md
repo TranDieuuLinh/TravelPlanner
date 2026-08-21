@@ -23,11 +23,25 @@ thành itinerary stop độc lập. Cạnh `Has_Subplace` chỉ cho phép
 `ActivityItem`, `FoodItem`, `DrinkItem` hoặc `ProductItem`. Endpoint ontology
 trả thêm `relationshipEndpointRules` để importer/admin biết ma trận endpoint.
 PlaceChecker hiện chưa duyệt nhánh nested này. Batch curated v1 đã nạp năm
-`SubPlace` `pending` cho Hanoi Old Quarter. Batch hiệu chỉnh
+`SubPlace` `pending` cho Hanoi Old Quarter; mỗi node hiện có `latitude`,
+`longitude` và `address` đại diện để map/routing có thể định vị. Batch hiệu chỉnh
 `kg_curated_hanoi_old_quarter_subplace_activities_v2_20260821` thay các item
 trùng ý nghĩa bằng đúng một `ActivityItem` có provenance cho mỗi `SubPlace`;
 batch v1 được đánh dấu `superseded_by_v2`. Dữ liệu chưa tự động tham gia output
 runtime.
+
+Batch `kg_curated_hoan_kiem_turtle_tower_subplace_v1_20260821` đã chuyển
+`Turtle Tower` từ `TravelPlace` thành `SubPlace` của `Hoàn Kiếm Lake`, giữ tọa
+độ hiện có và gắn một `ActivityItem` duy nhất.
+
+`Offer_Item.recommendations` có thể giữ `action` và `displayTemplate` để LLM
+sinh nhãn theo ngữ cảnh từ tên SubPlace và item chuẩn hóa; ví dụ `lụa` +
+`buy` → “Mua lụa tại Phố Hàng Gai”.
+
+Batch `kg_curated_top_hanoi_subplaces_v1_20260821` bổ sung 13 SubPlace có
+tọa độ đại diện dưới Văn Miếu, Hoàng thành Thăng Long, Hỏa Lò, Trấn Quốc,
+quần thể Hồ Chí Minh và Bảo tàng Dân tộc học; mỗi node có đúng một
+`ActivityItem`.
 
 ## Ranh giới API
 
@@ -90,12 +104,12 @@ tag, pool và provider note đã phân loại candidate đó là nhà hàng.
 
 | Module | Input | Output |
 |---|---|---|
-| `supervisor` | `SupervisorInput` | `SupervisorDecision` (`route`, `confidence`, `reason`, tùy chọn `response`, `clarificationQuestion`, `warnings`) |
+| `supervisor` | `SupervisorInput`, gồm compact `currentPlan` khi Trip Chat đã có lịch | `SupervisorDecision` (`route`, `confidence`, `reason`, tùy chọn `response`, `clarificationQuestion`, `warnings`, `planEdit`) |
 | `explorer` | `ExplorerInput` | `ExplorerOutput` |
 | `information_finder` | `InformationFinderInput` | `InformationFinderOutput` (`answer`, `sources`, `warnings`) |
 | `place_checker` | `PlaceCheckerInput` | `PlaceCheckerOutput` |
 | `itinerary_planner` | `ItineraryPlannerInput` | `ItineraryPlannerOutput` |
-| `plan_editor` | Legacy `PlanEditorInput`, hoặc `PlanEditContext` cho lệnh chat | Legacy `PlanEditorOutput`, hoặc `NaturalLanguagePlanEdit` có cấu trúc |
+| `plan_editor` | Legacy `PlanEditorInput`; contract `NaturalLanguagePlanEdit` dùng chung cho lệnh chat | Legacy `PlanEditorOutput`; helper kiểm tra reference của `NaturalLanguagePlanEdit` |
 | `conversation_memory` | `WorkingMemoryState` | `WorkingMemoryState`, `MemoryFact`, `MemoryReference`, `UserPreferenceMemory`, `RootStateMemoryMapping` |
 
 ## Các agent hiện có
@@ -149,21 +163,20 @@ kết thúc và `agent_request_timing` khi toàn request kết thúc. Log chỉ 
 provider payload. Có thể ghép các dòng theo `request_id` để tìm stage chậm ngay
 trên terminal chạy Uvicorn.
 
-Khi provider là `gemini`, Supervisor dùng structured LLM classification trước
-cho mọi message; deterministic rules chỉ được dùng khi chọn provider `rules`
-hoặc làm runtime fallback. Route `plan_editor` chỉ hợp lệ khi request có cả
-itinerary hiện tại và structured edit operation. Route `finish` có thể mang
-response ngắn cùng ngôn ngữ cho greeting, câu hỏi về trợ lý hoặc yêu cầu ngoài
-phạm vi.
+Khi provider là `gemini`, Supervisor dùng đúng một structured LLM call cho mỗi
+message. Nếu Trip Chat đã có lịch, input call này mang compact `currentPlan`;
+output vừa chọn route vừa có thể trả `planEdit` (`add`, `update`, `delete`,
+`reorder` hoặc `clarify`). Backend không dùng keyword/if-else để đoán lệnh sửa.
+Reference ngày/item do model trả về phải khớp snapshot; provider lỗi không chạy
+deterministic edit fallback. Structured `EditOperation` của API legacy vẫn được
+hỗ trợ với `planEdit=null`.
 
-Authenticated Trip Chat có thêm đường chỉnh `currentPlannerOutput` trước root
-graph. Khi snapshot mới tồn tại, PlanEditor gửi message cùng compact day/item
-context cho Gemini structured output; không dùng keyword/if-else classifier để
-đoán thao tác. Kết quả chỉ được thực thi khi action là `add`, `update`, `delete`
-hoặc `reorder` và mọi day/item reference đều khớp snapshot. Thao tác gọi lại
-đúng mutation service mà UI thủ công sử dụng; action `none` tiếp tục đi root
-graph, còn action mơ hồ trả câu hỏi làm rõ và không sửa snapshot. Provider lỗi
-cũng không chạy deterministic edit fallback.
+Khi `planEdit` là mutation hợp lệ, Trip Chat gọi lại đúng primitive mà UI sửa
+thủ công sử dụng. PostgreSQL khóa hàng theo optimistic revision, cập nhật
+`currentPlannerOutput` và chèn cặp user/assistant trong cùng transaction; cả
+lượt chỉ tăng revision một lần. `clarify` chỉ lưu câu hỏi làm rõ, không sửa
+snapshot. Message không phải edit tiếp tục theo route Supervisor đã chọn mà
+không phát sinh Gemini preflight thứ hai.
 
 Input của root graph là `RootGraphInput`; output là `RootGraphOutput`.
 Root state nội bộ có `conversation_context` gồm tối đa sáu message trước đó,
@@ -386,6 +399,14 @@ tiếp tục dùng shared Bayesian policy. Vì vậy rating cao nhưng rất ít
 còn đẩy landmark phổ biến ra khỏi cửa sổ retrieval trước khi scoring chạy.
 Khi suy category từ tên, `Phở`/ASCII `Pho` được nhận diện trên Unicode gốc;
 `Phố` không còn bị bỏ dấu thành `pho` rồi làm venue ở Phố Vọng thành Restaurant.
+Named-place search dùng canonical name và alias đã chuẩn hóa không dấu. Batch
+curation Hà Nội giữ alias hiển thị có dấu/ngôn ngữ, xóa chọn lọc alias mojibake
+hoặc sai và thêm các tên gọi phổ biến như `36 phố phường`, `Hồ Gươm`, `Lăng
+Bác`; entity pending trùng chính xác bị `rejected` thay vì xóa khỏi Knowledge
+Graph.
+Migration alias top 60 tiếp tục giữ boundary này: chỉ cập nhật alias theo đúng
+identity hiện hữu, không tự đổi type/status hoặc dùng tên thay thế để che record
+có địa chỉ, tọa độ hay provider identity sai.
 Compact boundary dùng thêm provider note làm semantic context để chuyển source
 category thương mại như art supply store, photo booth, garden center và plant
 service khỏi TravelPlace; đây không thay đổi ontology lưu trữ.
@@ -432,9 +453,9 @@ ghép đúng thứ tự từ các provider batch tối đa 2.500 source-target p
 giữ mười neighbor gần nhất theo safe travel time cho mỗi candidate rồi union
 forced relationship, meal-access, priority và bridge arcs. CP-SAT mặc định dùng
 một search worker trong từng pass do benchmark hiện tại chưa chứng minh
-multi-worker giảm latency. Default không đặt solver timeout; runtime cần SLA
-phải inject giới hạn riêng qua `SolverConfig`. Planner tạo geographic day-domain,
-greedy shortlist và 2-opt/swap, rồi chạy OR-Tools CP-SAT hai pass cho từng
+multi-worker giảm latency. Priority pass giữ exact search; activity-count pass
+và mỗi utility attempt mặc định có 10 giây. Planner tạo geographic day-domain,
+greedy shortlist và 2-opt/swap, rồi chạy OR-Tools CP-SAT ba pass cho từng
 ngày. Greedy và CP-SAT dùng chung Bayesian review quality dựa trên rating,
 review count và prior của pool. Hybrid cố định top accommodation trước khi solve
 từng ngày; endpoint arc phải nối được anchor, về trước 03:00 và giữ tối thiểu 7
@@ -456,9 +477,9 @@ ban ngày/ngày; phần vượt target bị trừ utility thay vì hard-fail đ�
 bắt buộc và
 preflight vẫn khả thi. Mỗi ngày bắt buộc có activity xen giữa breakfast/lunch và lunch/dinner bằng
 hard constraint cấm food-to-food arc. Planner bắt buộc ít nhất hai Place và
-thưởng đến ba Place/ngày; Entertainment optional, tối đa một/ngày,
-được dịch meal trong policy window để chèn activity; nếu shortlist chưa đạt ba
-activity thì mở reserve khả thi và solve refill. Waiting giữa hai stop liên tiếp bị giới hạn tối đa 150 phút ngoài
+thưởng mọi Place khả thi không giới hạn bởi daily activity target;
+Entertainment optional, tối đa một/ngày, được dịch meal trong policy window để
+chèn activity. Waiting giữa hai stop liên tiếp bị giới hạn tối đa 90 phút ngoài
 `safeTravel` đã gồm routing buffer; khi pool/opening
 window không dựng được chuỗi liên tục, solver trả `INFEASIBLE` thay vì xuất
 ngày chỉ có ba bữa ăn.
@@ -469,8 +490,8 @@ target mềm hai popular TravelPlace/ngày, phạt 6.000 cho mỗi suất thiế
 Planner còn cộng 4.000 utility cho mỗi TravelPlace thuộc Special Experience và
 đặt target mềm hai điểm loại này/ngày, phạt 10.000 cho mỗi suất thiếu khả thi.
 Candidate TravelPlace generic dưới 500 review và quán rating dưới 4,0/review
-quá ít chịu cost chất lượng; stop vượt nhịp ngày hợp lý chịu cost 800 để tránh
-lịch dày máy móc.
+quá ít chịu cost chất lượng. Số stop và active minutes không chịu fatigue
+penalty; phần lịch sau 23:00 vẫn chịu late penalty.
 Trong hybrid solve, budget `estimated_daily_cost` có biên mềm 5%, được trừ tổng
 lưu trú của accommodation anchor rồi chia phần còn lại theo số ngày. Overage
 cost là 500 utility cho mỗi 10.000 VND; shortlist giữ tối đa sáu quán mỗi meal
@@ -491,8 +512,8 @@ theo normalized KNN density với tối đa 10 neighbor cùng Bayesian quality;
 candidate cô lập không được chiếm một day center nếu neighborhood quanh nó quá
 thưa. Ngày khả thi ngoài preferred pool
 vẫn được giữ cho full-day fallback. User/URL không bị giới hạn và food liên kết
-đi theo TravelPlace. Pass utility có relative gap 5%, trong khi hai pass
-priority vẫn exact.
+đi theo TravelPlace. Pass utility có relative gap 2%; pass priority khóa
+user/URL và pass activity-count khóa số Place lớn nhất fit được trước utility.
 Projected reserve được tính trên tổng Place + Entertainment. Preflight chỉ
 hard-fail activity khi toàn bộ feasible pool của ngày có dưới hai Place; thiếu
 Place trong preferred pool không chặn full-day fallback.
@@ -530,7 +551,7 @@ Module ưu tiên factory Beam Search trong runtime Valhalla và dùng graph hybr
 CP-SAT làm fallback khi Beam thất bại hoặc trả lịch không đầy đủ. Beam áp hard
 rule không nối restaurant-to-restaurant,
 kiểm tra distance Q3, rating tối thiểu 3.0, review count từ Q2/P50,
-opening window và khoảng chờ tối đa 60 phút.
+opening window và khoảng chờ tối đa 45 phút.
 Khi dùng Beam, output có thêm `evaluation` gồm min/max/median adjusted Bayesian
 rating, reviewCount, distanceMeters; counter tags/styles/items; và các count
 restaurant, drinkDessert, entertainment, travelPlace cùng totalPrice.

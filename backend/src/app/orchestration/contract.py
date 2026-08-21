@@ -1,4 +1,11 @@
-from app.modules.conversation_memory.public import MemoryReference
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from app.modules.conversation_memory.public import (
+    MemoryReference,
+    WorkingMemoryState,
+)
 from app.modules.explorer.public import ExplorerImageInput
 from app.modules.explorer.public import ExplorerOutput
 from app.modules.information_finder.public import SourceReference
@@ -33,6 +40,3 @@ class RootGraphOutput(BaseModel):
     clarification_question: str | None = None
     warnings: list[str] = Field(default_factory=list)
     sources: list[SourceReference] = Field(default_factory=list)
-from typing import Any
-
-from pydantic import BaseModel, Field

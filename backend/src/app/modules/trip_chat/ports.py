@@ -1,5 +1,7 @@
 from typing import Any, Protocol
 
+from app.modules.plan_editor.public import NaturalLanguagePlanEdit
+
 from app.modules.trip_chat.contract import (
     AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
@@ -39,6 +41,17 @@ class TripChatRepository(Protocol):
         itinerary: dict[str, Any] | None,
         planner_output: dict[str, Any] | None,
     ) -> TripChat | None: ...
+
+    async def append_plan_edit_exchange(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        user_content: str,
+        assistant: dict[str, Any],
+        edit: NaturalLanguagePlanEdit,
+    ) -> PlanItemMutationStatus: ...
 
     async def update_personal_notes(
         self,

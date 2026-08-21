@@ -68,9 +68,8 @@ class NaturalLanguagePlanEdit(NaturalLanguageEditModel):
     def fields_match_action(self) -> "NaturalLanguagePlanEdit":
         if self.action == "clarify" and not self.clarification_question:
             raise ValueError("clarification_question is required for clarify")
-        if self.action in {"add", "update", "delete", "reorder"}:
-            if self.day is None or not self.response:
-                raise ValueError("day and response are required for plan mutations")
+        if self.action in {"add", "update", "delete", "reorder"} and self.day is None:
+            raise ValueError("day is required for plan mutations")
         if self.action == "add" and (self.item is None or not self.item.name):
             raise ValueError("add requires item.name")
         if self.action in {"update", "delete"} and not self.item_id:

@@ -40,6 +40,7 @@ def test_structured_llm_output_is_validated_and_minimal_context_is_sent():
         "conversationContext": [],
         "hasItinerary": True,
         "hasEditOperation": False,
+        "currentPlan": None,
         "destination": None,
         "durationDays": None,
         "mentionedPlaces": [],
@@ -56,6 +57,27 @@ def test_structured_llm_output_is_validated_and_minimal_context_is_sent():
     suggestion_schema = response_schema["properties"]["suggestions"]["items"]
     assert suggestion_schema["additionalProperties"] is False
     assert suggestion_schema["required"] == ["field", "label", "value"]
+    assert "default" not in json.dumps(response_schema)
+
+
+def test_classifier_returns_structured_plan_edit_in_the_same_call():
+    client = FakeLlmClient(
+        '{"route":"plan_editor","confidence":0.98,"reason":"edit",'
+        '"planEdit":{"action":"update","confidence":0.98,"day":1,'
+        '"itemId":"lake","item":{"durationMinutes":90},'
+        '"response":"Đã đổi thành 90 phút."}}'
+    )
+    plan = {"days": [{"day": 1, "items": [{"itemId": "lake", "name": "Hồ Gươm"}]}]}
+    result = asyncio.run(
+        GeminiIntentClassifier(client).classify(
+            SupervisorInput(message="Cho Hồ Gươm 90 phút", current_plan=plan)
+        )
+    )
+
+    assert result.plan_edit.item_id == "lake"
+    assert result.plan_edit.item.duration_minutes == 90
+    assert json.loads(client.calls[0][0])["currentPlan"] == plan
+    assert len(client.calls) == 1
 
 
 def test_classifier_receives_all_six_role_tagged_context_messages():

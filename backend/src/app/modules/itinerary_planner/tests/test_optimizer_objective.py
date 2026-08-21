@@ -9,25 +9,47 @@ from app.modules.itinerary_planner.tests.optimizer_fixtures import (
 )
 
 
-def test_default_solver_is_deterministic_without_wall_clock_deadlines() -> None:
+def test_default_solver_uses_bounded_improvement_search() -> None:
     config = SolverConfig()
 
     assert config.num_search_workers == 1
     assert config.priority_timeout_seconds is None
-    assert config.utility_timeout_seconds is None
-    assert config.utility_relative_gap_limit == 0.05
+    assert config.activity_timeout_seconds == 10
+    assert config.utility_timeout_seconds == 10
+    assert config.utility_relative_gap_limit == 0.02
     assert config.utility_parallel_workers == 3
-    assert config.max_utility_no_improvement_rounds == 1
+    assert config.max_utility_no_improvement_rounds == 2
+
+
+def test_every_feasible_activity_is_rewarded_without_stop_count_fatigue() -> None:
+    places = [
+        candidate(
+            f"compact_activity_{index}",
+            duration_minutes=30,
+            opening_hours={"1": [{"startMinute": 525, "endMinute": 1065}]},
+        )
+        for index in range(4)
+    ]
+
+    result, _, _ = solve_payload(
+        payload(places=places, foods=meal_candidates()),
+    )
+
+    selected = set(result.selected_ids)
+    assert {item["placeId"] for item in places} <= selected
+    assert result.objective_components["activityCoverageValue"] == 4 * 350
+    assert result.objective_components["fatigueCost"] == 0
 
 
 def test_utility_gap_does_not_claim_exact_optimality() -> None:
     result, _, _ = solve_payload(base_payload())
 
     assert result.passes[0].optimality_proven
-    assert not result.passes[1].optimality_proven
+    assert result.passes[1].name == "activity_count"
+    assert not result.passes[-1].optimality_proven
     assert not result.optimality_proven
-    assert result.passes[1].attempt_count == 1
-    assert result.passes[1].no_improvement_rounds == 0
+    assert result.passes[-1].attempt_count == 1
+    assert result.passes[-1].no_improvement_rounds == 0
 
 
 def test_utility_restart_keeps_the_highest_scoring_incumbent() -> None:

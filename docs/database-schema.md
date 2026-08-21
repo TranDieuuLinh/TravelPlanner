@@ -59,6 +59,18 @@ tâm Văn hóa Kim Đồng. Record Kim Đồng được chuyển về Hàng Bài
 OpenStreetMap way `863234970`; alias, tọa độ và mô tả được thay bằng dữ liệu đã
 review, còn rating, ảnh, giờ mở cửa, Google metadata và `Special_Near` sinh từ
 record cửa hàng sai được xóa để chờ nguồn đúng.
+Migration 017 bổ sung 62 alias Việt/Anh/tên gọi phổ biến cho 20 địa điểm đứng
+đầu pool Hà Nội, đồng thời chỉ xóa 20 alias mojibake hoặc sai đã xác định. Ví dụ
+`36 phố phường` resolve về `Hanoi Old Quarter`; alias sai `Hồ Con Rùa` bị gỡ
+khỏi Hồ Hoàn Kiếm. Một record Hoàng thành pending trùng địa chỉ, tọa độ và
+rating với entity chính được giữ lại nhưng chuyển `status=rejected` để lookup
+không trả duplicate.
+Migration 018 mở rộng audit tới top 60 TravelPlace hiện tại: upsert 79 alias
+Việt/Anh đã review và xóa chọn lọc 40 alias mojibake của đúng các entity liên
+quan. Migration này chỉ sửa `knowledge_aliases`; không đổi entity type, status
+hoặc cờ generic discovery. Named lookup kiểm tra được 35/35 tên gọi về đúng địa
+điểm vật lý; 34/35 về đúng canonical ID do `Đền Bạch Mã` còn một pending entity
+trùng địa chỉ và tọa độ cần xử lý bằng quy trình dedupe riêng.
 
 FinalItineraryPlanner Phase 5 không thêm table hoặc migration. Global matrix,
 CP-SAT result, selected route detail và `ItineraryPlannerOutput` chỉ tồn tại
@@ -225,10 +237,12 @@ khả thi, backend thay toàn bộ `current_planner_output` bằng một câu UP
 điều kiện revision. Vì stop, giờ và leg vẫn nằm trong JSONB hiện hữu nên feature
 này không cần bảng, cột hoặc migration mới.
 Lệnh thêm/sửa/xóa/sắp xếp bằng ngôn ngữ tự nhiên không tạo persistence path
-mới. PlanEditor dùng Gemini chỉ để trả structured action, sau đó Trip Chat gọi
-lại mutation hiện có trên `current_planner_output` với optimistic revision.
-Structured interpretation không được lưu riêng và thay đổi này không cần bảng,
-cột hoặc migration mới.
+mới. Supervisor trả structured `planEdit` trong cùng Gemini call dùng để route,
+sau đó Trip Chat gọi lại mutation hiện có trên `current_planner_output`. Adapter
+PostgreSQL khóa hàng theo optimistic revision rồi cập nhật JSONB và chèn cặp
+message user/assistant trong cùng transaction, vì vậy một lượt sửa chỉ tăng
+revision một lần. Structured interpretation không được lưu riêng và thay đổi
+này không cần bảng, cột hoặc migration mới.
 Note đã liên kết từ raw prompt được ghi vào `personalNotes`. Object `notes` chỉ
 chứa source note read-only và chọn URL trước Google Maps/Knowledge Graph; URL
 thật dùng `sourceType=url`. Cả hai field đều nằm trong JSONB hiện hữu nên không
@@ -445,7 +459,8 @@ Ontology ứng dụng cho phép thêm `SubPlace` với required properties cơ b
 không phải itinerary stop độc lập. Đây là type trong contract ứng dụng, không
 thêm cột hoặc table mới. Batch curated v1 đã nạp năm node `pending` cho Hanoi
 Old Quarter: Hàng Gai, Hàng Bạc, Hàng Mã, Lãn Ông và góc bia Tạ Hiện–Lương
-Ngọc Quyến. Batch hiệu chỉnh
+Ngọc Quyến. Mỗi node giữ `latitude`, `longitude` và `address` là điểm đại diện
+cho phố/giao điểm, có provenance và vẫn chờ verification. Batch hiệu chỉnh
 `kg_curated_hanoi_old_quarter_subplace_activities_v2_20260821` giữ đúng một
 `ActivityItem` cho mỗi SubPlace và đánh dấu batch v1 là `superseded_by_v2`.
 Các batch giữ source trong property/relationship và staging import tương ứng;
@@ -550,6 +565,24 @@ special experience. `SubPlace` có thể dùng `Offer_Item` tới `ActivityItem`
 cạnh `Has_Subplace` và năm cạnh `Offer_Item`; mỗi SubPlace có đúng một target
 `ActivityItem`. Mutation/importer runtime chưa dùng ma trận endpoint này để tự
 động apply batch mới.
+
+Batch `kg_curated_hoan_kiem_turtle_tower_subplace_v1_20260821` đã chuyển
+`Turtle Tower` từ `TravelPlace` thành `SubPlace` của `Hoàn Kiếm Lake`, giữ
+`latitude`/`longitude` hiện có và gắn một `ActivityItem` duy nhất.
+
+Các item của pilot được chuẩn hóa thành node tái sử dụng (`lụa`, `bạc`, `bia
+hơi`, `sightseeing`...). Quan hệ `Offer_Item.recommendations` giữ thêm
+`action`/`displayTemplate` để lớp LLM sinh câu hiển thị theo place và item,
+thay vì tạo một node dài cho từng câu.
+
+Batch `kg_curated_top_hanoi_subplaces_v1_20260821` bổ sung 13 SubPlace có
+tọa độ đại diện dưới Văn Miếu, Hoàng thành Thăng Long, Hỏa Lò, Trấn Quốc,
+quần thể Hồ Chí Minh và Bảo tàng Dân tộc học; mỗi node có đúng một
+`ActivityItem`.
+
+Đợt chuẩn hóa dữ liệu cũng đã merge các bản ghi duplicate `Nhà Thờ Lớn Hà Nội`
+và `WinMart`, giữ entity có nhiều review hơn, chuyển alias/quan hệ không trùng
+sang entity giữ lại và loại quan hệ trùng.
 
 Generic TravelPlace retrieval không chỉ đọc `Special_Experience`: nó còn lấy
 `TravelPlace` nằm trong cây ADM qua `Located_In`, xen kẽ hai nhóm special và

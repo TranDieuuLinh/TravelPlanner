@@ -117,6 +117,28 @@ def optimize_itinerary(
     model.Add(url_count == best_url_count)
     _add_hints(model, problem, variables, priority_solver)
 
+    activity_vars = [
+        variables.selected[candidate.place_id]
+        for candidate in problem.valid_places
+    ]
+    activity_count = sum(activity_vars)
+    model.Maximize(activity_count)
+    activity_solver, activity_pass = _solve(
+        model,
+        "activity_count",
+        selected_config.activity_timeout_seconds,
+        selected_config,
+        activity_count,
+        relative_gap_limit=0,
+        stop_after_first_solution=False,
+    )
+    passes.append(activity_pass)
+    best_activity_count = sum(
+        activity_solver.Value(variable) for variable in activity_vars
+    )
+    model.Add(activity_count == best_activity_count)
+    _add_hints(model, problem, variables, activity_solver)
+
     model.Maximize(objective.utility)
     final_solver, utility_pass = _solve_utility_with_incumbent(
         model,

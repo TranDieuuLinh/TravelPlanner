@@ -5,7 +5,7 @@ greedy shortlist, 2-opt/swap và OR-Tools CP-SAT repair theo từng ngày.
 CP-SAT repair giữ schedule variables, optional
 intervals, opening windows, `AddNoOverlap`, `AddCircuit`, travel precedence,
 ba bữa/ngày, budget/người gồm Xanh SM night surcharge, nghỉ liên ngày tối thiểu 7 giờ,
-hai pass lexicographic, integer utility và result/component extraction.
+ba pass lexicographic, integer utility và result/component extraction.
 
 ## Mục tiêu
 
@@ -22,8 +22,7 @@ prepared candidates
 -> chọn food theo corridor activity trước/sau meal
 -> 2-opt + swap cải thiện thứ tự activity
 -> chọn accommodation anchor: rẻ nhất khi có budget, top-1 khi không có target
--> CP-SAT repair hai pass trên từng ngày với endpoint gắn vào anchor
--> nếu ngày chưa đạt ba activity, mở reserve khả thi và solve refill
+-> CP-SAT repair ba pass trên từng ngày với endpoint gắn vào anchor
 -> ghép ngày, kiểm tra lại budget/rest/transfers của anchor
 ```
 
@@ -199,14 +198,14 @@ bằng tag kỹ thuật `drink_dessert`. Solver giới hạn tổng loại này 
 điểm/ngày. Constraint meal cho `venueType=drink_dessert` vẫn phục vụ payload cũ.
 
 Route cấm food-to-food arc, nên mỗi ngày phải có activity giữa breakfast/lunch
-và lunch/dinner. Strict solve đặt hard maximum `waiting <= 150` phút ngoài
-safe-travel buffer. Mốc 15 phút là ideal threshold trong objective, không còn là
-hard gate làm lịch hợp lệ 20-60 phút chờ bị `INFEASIBLE`. Nếu cả shortlist và
+và lunch/dinner. Strict solve đặt hard maximum `waiting <= 90` phút ngoài
+safe-travel buffer. Mốc 5 phút là ideal threshold trong objective; cap ngắn hơn
+buộc optimizer dùng activity khả thi để lấp khoảng trống. Nếu cả shortlist và
 full-day strict solve đều vô nghiệm, hybrid retry full-day một lần không hard
 wait cap; progressive penalty bên dưới vẫn tối thiểu hóa khoảng trống.
 
 Mỗi ngày solver bắt buộc đúng ba bữa, ít nhất hai candidate từ `places`, thưởng
-coverage đến ba `places`, và cho phép tối đa một candidate từ pool optional
+coverage cho mọi `places` khả thi không dùng daily target, và cho phép tối đa một candidate từ pool optional
 `entertainment`. Entertainment không được tính thay cho minimum Place.
 
 ### Accommodation
@@ -282,17 +281,19 @@ ngày sau trước khi kiểm tra minimum 7 giờ.
 
 Dựng model/hard constraints cho từng ngày, solve hai lượt. Vì priority được khóa
 trong từng daily repair, metadata không tuyên bố optimality global cho cả chuyến;
-`objectivePolicyVersion=hybrid-activity-corridor-v15-evening-special-first` và
+`objectivePolicyVersion=hybrid-activity-corridor-v16-dense-activities` và
 `optimalityProven=false`.
 Mỗi lượt mặc định giữ một CP-SAT search worker. Benchmark local cho thấy hai và
 bốn workers đều làm fixture graph nhỏ vượt 90 giây, trong khi single-worker
 hoàn tất nhanh; không tăng mặc định nếu chưa có benchmark production theo cỡ
 pool. Các hard constraint và thứ tự ưu tiên lexicographic không đổi.
-Hai pass mặc định không đặt `max_time_in_seconds`. Mỗi utility round chạy ba
+Priority pass giữ exact search không có wall-clock deadline; activity-count
+pass có 10 giây và mỗi utility attempt có 10 giây. Activity-count pass khóa
+incumbent có nhiều Place fit nhất sau khi đã khóa user/URL. Mỗi utility round chạy ba
 solver instance song song, mỗi instance giữ một CP-SAT worker và dùng
 `random_seed` khác nhau. Utility giữ incumbent có điểm cao nhất; khi một round
-tốt hơn, bộ đếm stagnation được reset. Mặc định trả incumbent sau một round
-liên tiếp không cải thiện để tránh lặp solver không cần thiết; nếu một attempt
+tốt hơn, bộ đếm stagnation được reset. Mặc định trả incumbent sau hai round
+liên tiếp không cải thiện; nếu một attempt
 chứng minh exact optimum thì dừng ngay. `SolverConfig` vẫn nhận timeout và số
 round riêng cho từng môi trường.
 Entertainment có hard cap tối đa hai/ngày, tối đa một trước 12:00 và một từ
@@ -305,7 +306,8 @@ Mỗi Special Experience được cộng 4.000 utility. Objective đặt target 
 Special TravelPlace/ngày và phạt 10.000 cho mỗi suất thiếu khả thi; hybrid
 shortlist cũng reserve loại này theo ngày để route ngắn không loại hết trải
 nghiệm đặc sắc. Generic TravelPlace dưới 500 review và food chất lượng thấp chịu
-cost riêng; stop vượt nhịp mục tiêu chịu 800 utility để giảm lịch quá dày.
+cost riêng. Không có daily activity target hoặc stop-count/active-minute
+fatigue penalty; mọi TravelPlace hợp lệ đều nhận coverage utility nếu fit lịch.
 Popular TravelPlace có target mềm hai/ngày và shortfall cost 6.000 mỗi suất để
 lịch khách lần đầu có nhiều landmark dễ nhận biết hơn.
 
@@ -323,8 +325,9 @@ Food shortlist xếp theo `food price + corridor transport cost` khi có budget,
 rồi mới xét travel time và quality; quán gần nhưng quá đắt không chiếm hết sáu
 phương án meal.
 
-Pass priority yêu cầu exact optimum để khóa số `user_input` và URL. Pass utility
-dùng `relative_gap_limit=0.05`, nên có thể dừng khi utility nằm trong 5% bound;
+Pass priority yêu cầu exact optimum để khóa số `user_input` và URL. Pass
+activity-count tối đa hóa số Place khả thi không dùng daily target. Pass utility
+dùng `relative_gap_limit=0.02`, nên có thể dừng khi utility nằm trong 2% bound;
 metadata giữ `optimalityProven=false` khi dùng tolerance này, kể cả OR-Tools
 trả status `OPTIMAL` theo tolerance.
 
@@ -439,12 +442,12 @@ waiting = start[j,d] - end[i,d] - safeTravel[i,j]
 mealDeviation = abs(mealStart[d,m] - targetStart[m])
 ```
 
-Waiting chỉ active khi arc được chọn. Strict pass chặn tối đa 150 phút;
-relaxed fallback bỏ cap này. Objective luôn phạt lũy tiến: 16-30 phút nhẹ,
-31-60 phút mạnh và trên 60 phút rất mạnh; vì vậy solver vẫn ưu tiên fill
+Waiting chỉ active khi arc được chọn. Strict pass chặn tối đa 90 phút;
+relaxed fallback bỏ cap này. Objective luôn phạt lũy tiến: 6-15 phút nhẹ,
+16-30 phút mạnh và trên 30 phút rất mạnh; vì vậy solver vẫn ưu tiên fill
 activity thay vì để lịch trống, kể cả trong fallback.
 
-Fatigue gồm stop/active-minute threshold và phần lịch sau 23:00. Day imbalance
+Fatigue chỉ giữ penalty cho phần lịch sau 23:00. Day imbalance
 dùng chênh lệch activity minutes hoặc stop count; meal duration không tham gia
 activity diversity.
 
@@ -455,24 +458,24 @@ Config phải inject, không hard-code trong model builder:
 ```text
 num_search_workers
 priority_timeout_seconds = None
-utility_timeout_seconds = None
-utility_relative_gap_limit = 0.05
+activity_timeout_seconds = 10
+utility_timeout_seconds = 10
+utility_relative_gap_limit = 0.02
 utility_parallel_workers = 3
-max_utility_no_improvement_rounds = 1
+max_utility_no_improvement_rounds = 2
 random_seed
 log_search_progress
-max_inter_stop_wait_minutes = 150  # None chỉ dùng cho relaxed fallback
+max_inter_stop_wait_minutes = 90  # None chỉ dùng cho relaxed fallback
 ```
 
 Dùng solution pass trước làm hint cho pass sau; hint không thay constraint lock.
-Khi không có wall-clock deadline, priority pass vẫn chứng minh count ưu tiên,
-còn utility pass nhận heuristic/baseline hint và dừng ở nghiệm khả thi đầu tiên
-để không phải giữ worker chỉ nhằm chứng minh utility tối ưu.
+Priority pass khóa count ưu tiên, activity-count pass khóa mật độ lịch tối đa.
+Utility pass nhận heuristic/baseline hint và tiếp tục cải thiện trong time
+budget thay vì dừng ở nghiệm khả thi đầu tiên.
 Composition runtime đọc `ITINERARY_LOG_SEARCH_PROGRESS`, mặc định `false`; chỉ
 bật khi cần chẩn đoán chi tiết để tránh tạo lượng log OR-Tools lớn. Utility pass
-dừng sau 3 vòng liên tiếp không cải thiện. Runtime vẫn không đặt wall-clock
-deadline cho CP-SAT; unit test hoặc deployment khác có thể inject giới hạn qua
-`SolverConfig`.
+dừng sau hai vòng liên tiếp không cải thiện. Unit test hoặc deployment khác có
+thể inject giới hạn riêng qua `SolverConfig`.
 
 Status gồm `OPTIMAL`, `FEASIBLE`, `INFEASIBLE`, `UNKNOWN`. Nếu priority pass chỉ
 `FEASIBLE`, output không được tuyên bố count tối đa hay `optimalityProven=true`.
@@ -498,7 +501,7 @@ number không thể audit.
 ## Acceptance criteria
 
 - Solver không vi phạm duration/opening/travel/budget/meal constraints.
-- Không có food-to-food arc; strict solve giữ waiting không vượt 150 phút và
+- Không có food-to-food arc; strict solve giữ waiting không vượt 90 phút và
   relaxed fallback vẫn ghi nhận progressive waiting cost.
 - User/URL count không giảm sau pass tương ứng; cost tính per-person.
 - Special-near không có selection bonus riêng.

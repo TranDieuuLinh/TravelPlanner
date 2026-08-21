@@ -4,6 +4,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from app.modules.plan_editor.public import NaturalLanguagePlanEdit
+
 from app.modules.trip_chat.contract import (
     AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
@@ -24,6 +26,7 @@ from app.modules.trip_chat.plan_snapshot import (
     update_plan_item,
     update_stop_personal_notes,
 )
+from app.modules.trip_chat.plan_edit_execution import apply_plan_edit_to_output
 
 
 class InMemoryTripChatRepository:
@@ -112,6 +115,35 @@ class InMemoryTripChatRepository:
         )
         self._chats[(user_id, chat_id)] = updated_chat
         return updated_chat
+
+    async def append_plan_edit_exchange(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        user_content: str,
+        assistant: dict,
+        edit: NaturalLanguagePlanEdit,
+    ) -> PlanItemMutationStatus:
+        chat = await self.get_chat(user_id, chat_id)
+        if chat is None:
+            return "chat_not_found"
+        if chat.revision != expected_revision:
+            return "revision_conflict"
+        output = deepcopy(chat.current_planner_output)
+        status = apply_plan_edit_to_output(output, edit)
+        if status != "updated":
+            return status
+        await self.append_exchange(
+            user_id,
+            chat_id,
+            user_content,
+            assistant,
+            None,
+            output,
+        )
+        return "updated"
 
     async def update_personal_notes(
         self,

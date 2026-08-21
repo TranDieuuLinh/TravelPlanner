@@ -126,12 +126,13 @@ URL trước các loại note khác và tạo phản hồi ngắn bằng tiếng
 `InvokeResponse.response`. Runtime dùng Gemini structured output khi có API key;
 lỗi provider hoặc môi trường không cấu hình key dùng câu tiếng Việt
 deterministic. Finisher không nhận raw prompt hay raw payload của provider.
-Module `plan_editor` vẫn giữ graph legacy cho `Itinerary`, đồng thời expose
-Natural Language Plan Editor dùng Gemini structured output trên compact view của
-`currentPlannerOutput`. Trip Chat gọi capability này trước root graph, kiểm tra
-day/item ID do Gemini trả về rồi dispatch sang chính các service thêm, sửa, xóa
-và sắp xếp đang phục vụ UI thủ công. Module không có keyword classifier hoặc
-deterministic edit fallback; message không phải edit tiếp tục qua root graph.
+Module `plan_editor` vẫn giữ graph legacy cho `Itinerary` và sở hữu contract cùng
+validation helper của `NaturalLanguagePlanEdit`. Trip Chat gửi compact view của
+`currentPlannerOutput` vào root graph; một structured Gemini call của Supervisor
+vừa chọn route vừa trả lệnh sửa. Root PlanEditor chỉ handoff quyết định này về
+Trip Chat, nơi kiểm tra day/item ID rồi gọi đúng primitive thêm, sửa, xóa hoặc
+sắp xếp đang phục vụ UI thủ công. Không có keyword classifier, deterministic
+edit fallback hoặc Gemini preflight riêng trước root graph.
 Trip Chat cũng sở hữu mutation accommodation trong planner snapshot: frontend
 có thể sửa địa điểm lưu trú, lưu ghi chú cá nhân hoặc xóa nơi lưu trú; adapter
 in-memory và PostgreSQL cùng kiểm tra revision trước khi cập nhật JSONB.
@@ -143,8 +144,9 @@ module hiện chạy Phase 2 `prepare_problem` rồi Phase 3 global Valhalla mat
 fallback đường chim bay khi Valhalla unavailable, và
 sparse arcs trên contract `trip + places + food + entertainment + accommodations + excludedCandidates`, sau đó chạy Phase 4 OR-Tools
 hybrid planner gồm geographic day-domain, greedy shortlist, 2-opt/swap và
-CP-SAT hai pass theo từng ngày: pass priority exact giữ thứ tự
-`user_input > URL`, sau đó pass utility tối ưu chất lượng lịch.
+CP-SAT ba pass theo từng ngày: pass priority exact giữ thứ tự
+`user_input > URL`, pass activity-count khóa lịch dày nhất tìm được, rồi pass
+utility tối ưu chất lượng lịch.
 PlaceChecker xếp tối đa ba accommodation quanh percentile ngân sách theo khoảng
 cách tới tâm compact TravelPlace pool. Hybrid dùng candidate rẻ nhất làm anchor
 khi có budget target, nếu không dùng candidate đầu tiên; endpoint ngày phải nối
@@ -222,7 +224,9 @@ backend; backend ghi nguyên tử stop, timeline và toàn bộ leg của ngày 
 repair thành công. Cả hai flow đều không gọi Supervisor hoặc agent lập lịch.
 Lệnh chỉnh lịch qua chat cũng tái sử dụng cùng các mutation này và optimistic
 revision; Gemini chỉ chuyển ngôn ngữ tự nhiên thành action có cấu trúc, không tự
-ghi PostgreSQL hoặc tự thay JSON snapshot.
+ghi PostgreSQL hoặc tự thay JSON snapshot. Với lệnh hợp lệ, mutation JSONB và
+cặp message user/assistant được commit trong cùng transaction nên revision chỉ
+tăng một lần cho cả lượt chat.
 Địa điểm URL/direct input được Place Checker tự chọn một canonical candidate tốt
 nhất trước khi tạo Planner input; `addressHint` được ưu tiên nếu có. Frontend
 không còn resolve identity bằng Top-K hoặc chèn match trực tiếp qua Trip Chat
@@ -537,21 +541,23 @@ Nightlife/night-market bắt đầu từ 18:00; Weekend Night Market chỉ nhậ
 Thứ Sáu-Chủ Nhật. Hybrid shortlist giữ history nhóm trải nghiệm của các ngày đã
 chọn, ưu tiên nhóm mới nhưng cho chọn lại nhóm cũ khi alternative cạn. Food
 contract giữ `venueType` rõ ràng. Waiting
-giữa hai stop bị hard-cap 150 phút ngoài safe-travel buffer; objective bắt đầu
-phạt phần waiting vượt 15 phút.
+giữa hai stop bị hard-cap 90 phút ngoài safe-travel buffer; objective bắt đầu
+phạt phần waiting vượt 5 phút. Mọi activity khả thi nhận coverage utility mà
+không có daily target; số stop và active minutes không bị fatigue penalty.
 Sparse-arc policy giữ meal-access theo từng ngày và hai chiều để pruning không
 làm mất đường activity vào/ra meal. Graph cơ bản giữ mười neighbor gần nhất theo
 safe travel time có hướng từ matrix; forced relationship/priority/bridge arcs
-vẫn được bảo toàn. Mỗi daily CP-SAT repair mặc định giữ một search worker cho hai pass sau khi
+vẫn được bảo toàn. Mỗi daily CP-SAT repair mặc định giữ một search worker cho ba pass sau khi
 benchmark local cho thấy multi-worker làm model hiện tại chậm hơn đáng kể.
-Hai pass không đặt solver timeout mặc định; deployment có SLA phải inject giới
-hạn qua `SolverConfig`.
+Priority pass giữ exact search; activity-count pass có 10 giây và khóa incumbent
+có nhiều Place fit nhất. Mỗi utility attempt có 10 giây, relative gap 2% và tối đa hai
+round không cải thiện trước khi dừng.
 Preprocessing giới hạn optional candidate vào tối đa hai ngày thuộc geographic
 center gần nhất; user/URL giữ toàn bộ feasible days và food relationship đi
 cùng TravelPlace. Meal coverage được repair bằng unique matching sau projection;
 nếu cả pool gốc không có ba restaurant khác nhau, meal-occurrence alias nội bộ
 cho phép lặp venue, còn finalization trả `placeId` thật, `itemId` riêng theo meal
-và warning fallback. Pass utility dùng relative gap 5%, còn pass priority vẫn
+và warning fallback. Pass utility dùng relative gap 2%, còn pass priority vẫn
 tối ưu exact trước khi khóa riêng count
 user input và URL.
 PlaceChecker optional retrieval chỉ mở pool canonical đang thiếu. Quota là

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from app.modules.plan_editor.public import NaturalLanguagePlanEdit
 from app.modules.trip_chat.contract import (
     AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
@@ -13,6 +14,9 @@ from app.modules.trip_chat.contract import (
     TripChat,
     TripChatMessage,
     TripChatSummary,
+)
+from app.modules.trip_chat.adapters.postgres_plan_edit import (
+    append_plan_edit_exchange as append_atomic_plan_edit_exchange,
 )
 from app.modules.trip_chat.plan_snapshot import (
     delete_plan_item,
@@ -181,6 +185,27 @@ class PostgresTripChatRepository:
                     user_id,
                 )
         return await self.get_chat(user_id, chat_id)
+
+    async def append_plan_edit_exchange(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        user_content: str,
+        assistant: dict[str, Any],
+        edit: NaturalLanguagePlanEdit,
+    ) -> PlanItemMutationStatus:
+        pool = await self._get_pool()
+        return await append_atomic_plan_edit_exchange(
+            pool,
+            user_id,
+            chat_id,
+            expected_revision=expected_revision,
+            user_content=user_content,
+            assistant=assistant,
+            edit=edit,
+        )
 
     async def delete_chat(self, user_id: int, chat_id: str) -> bool:
         pool = await self._get_pool()

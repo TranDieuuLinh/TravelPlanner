@@ -1,6 +1,7 @@
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 from app.modules.explorer.public import TripContextPatch
 from app.modules.information_finder.public import AnswerBlock
@@ -38,7 +39,11 @@ class SupervisorInput(BaseModel):
 
 
 class ClassifierResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
 
     route: SupervisorRoute
     confidence: float = Field(ge=0, le=1)

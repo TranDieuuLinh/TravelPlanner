@@ -1,29 +1,28 @@
 import asyncio
 
 from app.modules.plan_editor.public import NaturalLanguagePlanEdit
+from app.modules.supervisor.public import SupervisorDecision
 from app.modules.trip_chat.adapters.in_memory import InMemoryTripChatRepository
 from app.modules.trip_chat.service import TripChatService
 
 
-class FakePlanEditor:
-    def __init__(self, edit: NaturalLanguagePlanEdit) -> None:
-        self.edit = edit
-        self.calls = []
-
-    async def interpret(self, message: str, planner_output: dict, **kwargs):
-        self.calls.append((message, planner_output, kwargs))
-        return self.edit
-
-
 class RecordingGraph:
-    def __init__(self) -> None:
+    def __init__(self, edit: NaturalLanguagePlanEdit | None = None) -> None:
+        self.edit = edit
         self.calls = []
 
     async def ainvoke(self, graph_input, config):
         self.calls.append((graph_input, config))
+        route = "plan_editor" if self.edit is not None else "finish"
         return {
-            "response": "Graph handled the request.",
-            "decision": type("Decision", (), {"route": "finish"})(),
+            "response": self.edit.response if self.edit else "Graph handled the request.",
+            "decision": SupervisorDecision(
+                route=route,
+                confidence=0.99,
+                reason="test",
+                response=None if self.edit else "Graph handled the request.",
+                plan_edit=self.edit,
+            ),
         }
 
 
@@ -61,124 +60,103 @@ async def _seed_legacy_chat(repository: InMemoryTripChatRepository):
         None,
         {
             "destination": "Hà Nội",
-            "days": [
-                {
-                    "day": 1,
-                    "stops": [{"itemId": None, "placeId": "lake", "name": "Hồ Gươm"}],
-                    "legs": [],
-                }
-            ],
+            "days": [{"day": 1, "stops": [
+                {"itemId": None, "placeId": "lake", "name": "Hồ Gươm"}
+            ], "legs": []}],
         },
     )
 
 
-def test_chat_edit_uses_existing_delete_mutation_and_skips_root_graph() -> None:
+def _run_edit(edit: NaturalLanguagePlanEdit, message: str):
+    async def scenario():
+        repository = InMemoryTripChatRepository()
+        before = await _seed_chat(repository)
+        graph = RecordingGraph(edit)
+        updated = await TripChatService(repository, graph).send(
+            7, before.id, message
+        )
+        return before, updated, graph
+
+    return asyncio.run(scenario())
+
+
+def test_delete_uses_manual_mutation_with_one_graph_call_and_one_revision() -> None:
+    before, updated, graph = _run_edit(
+        NaturalLanguagePlanEdit(
+            action="delete", confidence=0.99, day=1, item_id="item-lake",
+            response="Đã xóa Hồ Gươm khỏi ngày 1.",
+        ),
+        "Xóa Hồ Gươm khỏi ngày 1",
+    )
+
+    stops = updated.current_planner_output["days"][0]["stops"]
+    assert [item["itemId"] for item in stops] == ["item-temple"]
+    assert updated.revision == before.revision + 1
+    assert updated.messages[-1].route == "plan_editor"
+    assert len(graph.calls) == 1
+
+
+def test_add_uses_manual_mutation() -> None:
+    _before, updated, _graph = _run_edit(
+        NaturalLanguagePlanEdit(
+            action="add", confidence=0.99, day=1, position=1,
+            item={"name": "Văn Miếu", "durationMinutes": 90},
+            response="Đã thêm Văn Miếu vào ngày 1.",
+        ),
+        "Thêm Văn Miếu vào ngày 1",
+    )
+    stops = updated.current_planner_output["days"][0]["stops"]
+    assert [item["name"] for item in stops] == ["Hồ Gươm", "Văn Miếu", "Đền Ngọc Sơn"]
+    assert stops[1]["durationMinutes"] == 90
+
+
+def test_update_uses_manual_mutation() -> None:
+    _before, updated, _graph = _run_edit(
+        NaturalLanguagePlanEdit(
+            action="update", confidence=0.99, day=1, item_id="item-lake",
+            item={"durationMinutes": 120, "personalNotes": "Đi sáng sớm"},
+            response="Đã sửa thời lượng và ghi chú của Hồ Gươm.",
+        ),
+        "Cho Hồ Gươm 2 tiếng và ghi chú đi sáng sớm",
+    )
+    stop = updated.current_planner_output["days"][0]["stops"][0]
+    assert stop["durationMinutes"] == 120
+    assert stop["personalNotes"] == "Đi sáng sớm"
+
+
+def test_reorder_uses_manual_mutation() -> None:
+    _before, updated, _graph = _run_edit(
+        NaturalLanguagePlanEdit(
+            action="reorder", confidence=0.99, day=1,
+            item_ids=["item-temple", "item-lake"],
+            response="Đã đổi thứ tự ngày 1.",
+        ),
+        "Đi Đền Ngọc Sơn trước Hồ Gươm",
+    )
+    stops = updated.current_planner_output["days"][0]["stops"]
+    assert [item["itemId"] for item in stops] == ["item-temple", "item-lake"]
+
+
+def test_non_edit_message_uses_root_graph_once() -> None:
     async def scenario():
         repository = InMemoryTripChatRepository()
         chat = await _seed_chat(repository)
         graph = RecordingGraph()
-        editor = FakePlanEditor(
-            NaturalLanguagePlanEdit(
-                action="delete",
-                confidence=0.99,
-                day=1,
-                item_id="item-lake",
-                response="Đã xóa Hồ Gươm khỏi ngày 1.",
-            )
-        )
-        service = TripChatService(repository, graph, plan_editor=editor)
-
-        updated = await service.send(7, chat.id, "Xóa Hồ Gươm khỏi ngày 1")
-
-        assert [item["itemId"] for item in updated.current_planner_output["days"][0]["stops"]] == ["item-temple"]
-        assert updated.messages[-1].route == "plan_editor"
-        assert updated.messages[-1].content == "Đã xóa Hồ Gươm khỏi ngày 1."
-        assert graph.calls == []
-
-    asyncio.run(scenario())
-
-
-def test_chat_edit_uses_existing_add_mutation() -> None:
-    async def scenario():
-        repository = InMemoryTripChatRepository()
-        chat = await _seed_chat(repository)
-        editor = FakePlanEditor(
-            NaturalLanguagePlanEdit(
-                action="add",
-                confidence=0.99,
-                day=1,
-                position=1,
-                item={"name": "Văn Miếu", "durationMinutes": 90},
-                response="Đã thêm Văn Miếu vào ngày 1.",
-            )
-        )
-        service = TripChatService(repository, RecordingGraph(), plan_editor=editor)
-
-        updated = await service.send(7, chat.id, "Thêm Văn Miếu vào ngày 1")
-
-        stops = updated.current_planner_output["days"][0]["stops"]
-        assert [item["name"] for item in stops] == ["Hồ Gươm", "Văn Miếu", "Đền Ngọc Sơn"]
-        assert stops[1]["durationMinutes"] == 90
-
-    asyncio.run(scenario())
-
-
-def test_chat_edit_uses_existing_update_mutation() -> None:
-    async def scenario():
-        repository = InMemoryTripChatRepository()
-        chat = await _seed_chat(repository)
-        editor = FakePlanEditor(
-            NaturalLanguagePlanEdit(
-                action="update",
-                confidence=0.99,
-                day=1,
-                item_id="item-lake",
-                item={"durationMinutes": 120, "personalNotes": "Đi sáng sớm"},
-                response="Đã sửa thời lượng và ghi chú của Hồ Gươm.",
-            )
-        )
-        service = TripChatService(repository, RecordingGraph(), plan_editor=editor)
-
-        updated = await service.send(
-            7,
-            chat.id,
-            "Cho Hồ Gươm 2 tiếng và ghi chú đi sáng sớm",
-        )
-
-        stop = updated.current_planner_output["days"][0]["stops"][0]
-        assert stop["durationMinutes"] == 120
-        assert stop["personalNotes"] == "Đi sáng sớm"
-
-    asyncio.run(scenario())
-
-
-def test_non_edit_message_continues_to_root_graph() -> None:
-    async def scenario():
-        repository = InMemoryTripChatRepository()
-        chat = await _seed_chat(repository)
-        graph = RecordingGraph()
-        editor = FakePlanEditor(NaturalLanguagePlanEdit(action="none", confidence=0.99))
-        service = TripChatService(repository, graph, plan_editor=editor)
-
-        await service.send(7, chat.id, "Hà Nội có gì vui?")
-
+        await TripChatService(repository, graph).send(7, chat.id, "Hà Nội có gì vui?")
         assert len(graph.calls) == 1
 
     asyncio.run(scenario())
 
 
-def test_chat_editor_receives_compatible_id_for_legacy_stop() -> None:
+def test_supervisor_receives_compatible_id_without_mutating_legacy_snapshot() -> None:
     async def scenario():
         repository = InMemoryTripChatRepository()
         chat = await _seed_legacy_chat(repository)
         graph = RecordingGraph()
-        editor = FakePlanEditor(NaturalLanguagePlanEdit(action="none", confidence=0.99))
-        service = TripChatService(repository, graph, plan_editor=editor)
+        await TripChatService(repository, graph).send(7, chat.id, "Xóa Hồ Gươm")
 
-        await service.send(7, chat.id, "Xóa Hồ Gươm")
-
-        projected_stop = editor.calls[0][1]["days"][0]["stops"][0]
-        assert projected_stop["itemId"] == "planner-1-1-lake"
+        projected = graph.calls[0][0]["existing_planner_output"]
+        assert projected["days"][0]["items"][0]["itemId"] == "planner-1-1-lake"
         stored = await repository.get_chat(7, chat.id)
         assert stored.current_planner_output["days"][0]["stops"][0]["itemId"] is None
 

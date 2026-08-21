@@ -125,4 +125,13 @@ SET normalized_alias = EXCLUDED.normalized_alias,
     language = EXCLUDED.language,
     source = EXCLUDED.source;
 
+-- Exact duplicate of the reviewed Imperial Citadel entity above: same address,
+-- coordinates and rating, but pending and missing review/description evidence.
+-- Keep the row for auditability while excluding it from runtime lookup.
+UPDATE knowledge_entities
+SET status = 'rejected',
+    updated_at = now()
+WHERE id = 'google_maps:a507b3cf11037f0fb00a160a'
+  AND status = 'pending';
+
 COMMIT;

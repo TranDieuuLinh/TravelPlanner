@@ -238,7 +238,11 @@ class SupervisorService:
                 warning="LLM intent confidence was below the configured threshold.",
             )
         plan_edit = result.plan_edit
-        has_natural_edit = payload.current_plan is not None and plan_edit is not None
+        has_natural_edit = (
+            payload.current_plan is not None
+            and plan_edit is not None
+            and plan_edit.action != "none"
+        )
         if has_natural_edit:
             plan_edit = validate_natural_language_plan_edit(
                 plan_edit,

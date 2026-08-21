@@ -15,10 +15,9 @@ from app.modules.itinerary_planner.public import (
     build_valhalla_directions_service,
 )
 from app.modules.observability.public import build_observability_service
-from app.modules.plan_editor.public import build_gemini_natural_language_plan_editor
 from app.modules.place_checker.public import build_postgres_place_search_tool
 from app.modules.trip_chat.public import build_trip_chat_repository
-from app.bootstrap import get_graph, get_llm_client
+from app.bootstrap import get_graph
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -99,11 +98,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.knowledge_graph_service = build_knowledge_graph_service(settings)
     application.state.observability_service = build_observability_service(settings)
     application.state.trip_chat_repository = build_trip_chat_repository(settings)
-    application.state.natural_language_plan_editor = (
-        build_gemini_natural_language_plan_editor(get_llm_client())
-        if settings.gemini_api_key
-        else None
-    )
     if settings.database_url:
         (
             application.state.manual_place_search_tool,
