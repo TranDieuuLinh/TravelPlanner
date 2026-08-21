@@ -112,7 +112,11 @@ provenance.
 
 Migration `003_explorer_draft_cache.sql` tạo `explorer_draft_cache`. Bảng lưu
 `ExplorerDraft` đã chuẩn hóa theo hash của prompt và evidence, namespace/model,
-TTL ứng dụng; không lưu media hoặc raw third-party payload.
+TTL ứng dụng; không lưu media hoặc raw third-party payload. Structured draft
+hiện có thêm tín hiệu `days`, `startDate`, `peopleExplicit` và
+`preferencesExplicit`; namespace cache được tăng lên `v4` để không tái dùng
+payload cũ thiếu các field này. Đây là thay đổi JSON payload/namespace, không
+thêm table, column hoặc migration.
 
 Timeout theo source/chunk, lịch round-robin và fallback tiêu đề Markdown chỉ là
 runtime policy. Thay đổi này không thêm bảng/cột và không thay đổi ownership của

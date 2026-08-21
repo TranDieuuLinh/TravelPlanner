@@ -18,7 +18,7 @@ from app.modules.explorer.adapters import (
     PythonYtDlpClient,
     PythonYtDlpMediaClient,
     RoutedExplorerDraftGenerator,
-    RuleBasedExplorerDraftGenerator,
+    NonSemanticExplorerFallback,
     TikTokHtmlMediaClient,
     UnconfiguredUrlSourceExtractor,
     UrlSourceRouter,
@@ -75,7 +75,7 @@ from app.shared.llm import LlmClient
 
 def create_explorer_service(
     *,
-    draft_provider: str = "rules",
+    draft_provider: str = "gemini",
     source_draft_provider: str = "gemini",
     llm_client: LlmClient | None = None,
     image_llm_client: LlmClient | None = None,
@@ -114,7 +114,7 @@ def create_explorer_service(
 ) -> ExplorerService:
     tag_catalog = YamlTagCatalog(tags_auto_path)
     insight_catalog = YamlInsightCatalog(tag_catalog, insight_user_path)
-    rules = RuleBasedExplorerDraftGenerator()
+    safe_fallback = NonSemanticExplorerFallback()
     gemini = None
     if llm_client is not None:
         gemini = GeminiExplorerDraftGenerator(
@@ -130,29 +130,21 @@ def create_explorer_service(
             source_chunk_timeout_seconds=source_chunk_timeout_seconds,
             tag_catalog=tag_catalog,
         )
-    if draft_provider == "gemini":
-        if gemini is None:
-            raise ValueError("Gemini Explorer requires an LlmClient.")
-        prompt_generator = gemini
-    elif draft_provider == "rules":
-        prompt_generator = rules
-    else:
+    if draft_provider != "gemini":
         raise ValueError(f"Unsupported Explorer draft provider: {draft_provider}")
-    if source_draft_provider == "gemini":
-        source_generator = gemini or rules
-    elif source_draft_provider == "rules":
-        source_generator = rules
-    else:
+    if source_draft_provider != "gemini":
         raise ValueError(
             f"Unsupported Explorer source draft provider: {source_draft_provider}"
         )
+    if gemini is None:
+        raise ValueError("Gemini Explorer requires an LlmClient.")
     if dedupe_provider not in {"rules", "gemini"}:
         raise ValueError(f"Unsupported Explorer dedupe provider: {dedupe_provider}")
     if note_provider not in {"rules", "gemini"}:
         raise ValueError(f"Unsupported Explorer note provider: {note_provider}")
     drafts = RoutedExplorerDraftGenerator(
-        prompt_generator=prompt_generator,
-        source_generator=source_generator,
+        prompt_generator=gemini,
+        source_generator=gemini,
     )
     metadata_client = PythonYtDlpClient(
         timeout_seconds=url_timeout_seconds,
@@ -237,7 +229,7 @@ def create_explorer_service(
         youtube = YtDlpMetadataSourceExtractor(metadata_client, platform="YouTube")
         tiktok = YtDlpMetadataSourceExtractor(metadata_client, platform="TikTok")
         instagram = YtDlpMetadataSourceExtractor(metadata_client, platform="Instagram")
-        image_extractor = InlineImageSourceExtractor(rules)
+        image_extractor = InlineImageSourceExtractor()
     url_cache = (
         PostgresUrlSourceCache(database_url, ttl_seconds=url_cache_ttl_seconds)
         if database_url
@@ -267,7 +259,7 @@ def create_explorer_service(
         draft_cache_namespace=draft_cache_namespace,
         source_extraction_timeout_seconds=source_extraction_timeout_seconds,
         source_synthesis_timeout_seconds=source_synthesis_timeout_seconds,
-        fallback_drafts=rules,
+        fallback_drafts=safe_fallback,
         tag_catalog=tag_catalog,
         insight_catalog=insight_catalog,
     )
@@ -276,11 +268,11 @@ def create_explorer_service(
 def _create_development_explorer_service() -> ExplorerService:
     tag_catalog = YamlTagCatalog()
     insight_catalog = YamlInsightCatalog(tag_catalog)
-    drafts = RuleBasedExplorerDraftGenerator()
+    drafts = NonSemanticExplorerFallback()
     return ExplorerService(
         drafts=drafts,
         url_extractor=UnconfiguredUrlSourceExtractor(),
-        image_extractor=InlineImageSourceExtractor(drafts),
+        image_extractor=InlineImageSourceExtractor(),
         snapshots=InMemoryExplorerSnapshotRepository(),
         tag_catalog=tag_catalog,
         insight_catalog=insight_catalog,

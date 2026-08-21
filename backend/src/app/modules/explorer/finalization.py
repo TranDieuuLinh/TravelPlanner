@@ -1,5 +1,4 @@
 import logging
-from datetime import date
 
 from app.modules.explorer.contract import ExplorerBudget, ExplorerOutput
 from app.modules.explorer.defaults import defaulted_fields, estimate_budget_if_needed
@@ -23,29 +22,26 @@ def finalize_explorer_output(
     draft: ExplorerDraft,
     input_adm: str | None,
     adm_conflict: bool,
-    prompt_days: int | None,
     coverage: BatchCoverage | None,
-    prompt_people_explicit: bool,
     source_results: list[SourceExtractionResult] | None,
-    prompt_start_date: date | None,
     insight_catalog: InsightCatalog | None,
     budget_estimator: DestinationDailyBudgetEstimator,
 ) -> ExplorerOutput:
     warnings = source_warnings(coverage, source_results)
     timezone = timezone_for_destination(input_adm)
-    start_date = prompt_start_date or tomorrow()
+    start_date = draft.start_date or tomorrow()
     budget = draft.budget
     review_defaulted_fields = defaulted_fields(
-        prompt_days=prompt_days,
+        days=draft.days,
         budget=budget,
         people=draft.people,
-        people_explicit=prompt_people_explicit,
-        preferences_explicit=bool(draft.short_preferences),
+        people_explicit=draft.people_explicit,
+        preferences_explicit=draft.preferences_explicit,
     )
     if budget.source == "default":
         budget = ExplorerBudget(level="low", source="default")
     budget = normalize_budget_per_person(budget, draft.people)
-    days = prompt_days or 3
+    days = draft.days or 3
     budget = estimate_budget_if_needed(
         budget,
         destination=input_adm,

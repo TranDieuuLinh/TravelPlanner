@@ -20,7 +20,14 @@ from app.modules.conversation_memory.public import (
     MemoryFact,
     WorkingMemoryState,
 )
-from app.modules.explorer.public import create_explorer_service
+from app.modules.explorer.adapters.auto_tags import YamlTagCatalog
+from app.modules.explorer.adapters.development import (
+    InMemoryExplorerSnapshotRepository,
+    InlineImageSourceExtractor,
+    UnconfiguredUrlSourceExtractor,
+)
+from app.modules.explorer.models import ExplorerDraft
+from app.modules.explorer.service import ExplorerService
 from app.modules.supervisor.contract import ClassifierResult, SupervisorInput
 from app.modules.supervisor.public import SupervisorService
 from app.orchestration.root_graph import create_root_graph
@@ -42,23 +49,45 @@ class StubIntentClassifier:
         )
 
 
-def build_test_root_graph(checkpointer: MemorySaver | bool | None = False):
-    """Build root graph with fake/stub supervisor and rule-based explorer for deterministic testing.
+def build_test_root_graph(
+    checkpointer: MemorySaver | bool | None = False,
+    *,
+    initial_draft: ExplorerDraft | None = None,
+):
+    """Build root graph with structured test doubles and no provider calls.
 
     Defaults to checkpointer=False for single/multi-turn tests (Cases 01-03, 05) to avoid
     unregistered type serialization warnings when persistence is not being tested.
     Case 04 explicitly passes MemorySaver() to test volatile checkpointer behavior across graph instances.
     """
     supervisor_service = SupervisorService(classifier=StubIntentClassifier())
-    explorer_service = create_explorer_service(
-        draft_provider="rules",
-        source_draft_provider="rules",
+    drafts = BaselineDrafts(initial_draft or ExplorerDraft(inputAdm="Hanoi"))
+    explorer_service = ExplorerService(
+        drafts=drafts,
+        fallback_drafts=drafts,
+        url_extractor=UnconfiguredUrlSourceExtractor(),
+        image_extractor=InlineImageSourceExtractor(),
+        snapshots=InMemoryExplorerSnapshotRepository(),
+        tag_catalog=YamlTagCatalog(),
     )
     return create_root_graph(
         checkpointer=checkpointer,
         supervisor_service=supervisor_service,
         explorer_service=explorer_service,
     )
+
+
+class BaselineDrafts:
+    def __init__(self, first_draft: ExplorerDraft) -> None:
+        self.calls = 0
+        self.first_draft = first_draft
+
+    async def from_prompt(self, raw_prompt):
+        self.calls += 1
+        return self.first_draft if self.calls == 1 else ExplorerDraft()
+
+    async def from_sources(self, *, raw_prompt, sources):
+        return ExplorerDraft()
 
 
 class TestConversationMemoryBaseline(unittest.TestCase):
@@ -156,7 +185,10 @@ class TestConversationMemoryBaseline(unittest.TestCase):
         )
 
         # Simulate backend restart by instantiating a fresh graph instance (Process B) with a new volatile checkpointer
-        graph_b = build_test_root_graph(checkpointer=MemorySaver())
+        graph_b = build_test_root_graph(
+            checkpointer=MemorySaver(),
+            initial_draft=ExplorerDraft(),
+        )
 
         result_after_restart = asyncio.run(
             graph_b.ainvoke(
@@ -223,4 +255,3 @@ class TestConversationMemoryBaseline(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

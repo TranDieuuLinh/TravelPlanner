@@ -6,26 +6,7 @@ from app.modules.explorer.public import (
 )
 from app.modules.supervisor.source_action import (
     compose_source_summary,
-    infer_source_action,
 )
-
-
-def test_source_action_requires_a_source_and_distinguishes_summary() -> None:
-    assert infer_source_action("Tóm tắt nội dung liên kết này", attached=False) is None
-    assert (
-        infer_source_action(
-            "Tóm tắt nội dung liên kết này https://example.test/post",
-            attached=False,
-        )
-        == "summarize_source"
-    )
-    assert (
-        infer_source_action(
-            "Tạo lịch trình chuyến đi từ liên kết này",
-            attached=True,
-        )
-        == "plan_from_source"
-    )
 
 
 def test_source_summary_uses_only_normalized_explorer_output() -> None:

@@ -26,7 +26,7 @@ def projector(tmp_path) -> ExplorerHandoffProjector:
     return ExplorerHandoffProjector(YamlTagCatalog(path))
 
 
-def test_current_turn_wins_and_memory_tags_are_normalized(tmp_path) -> None:
+def test_current_turn_wins_and_only_canonical_memory_tags_are_kept(tmp_path) -> None:
     output = ExplorerOutput(
         status="ready",
         intakeId="intake-current",
@@ -47,7 +47,7 @@ def test_current_turn_wins_and_memory_tags_are_normalized(tmp_path) -> None:
             "durationDays": 7,
             "travelers": 5,
             "budget": "low",
-            "preferences": ["culture", "unknown"],
+            "preferences": ["Văn hóa", "unknown"],
             "avoids": ["nightlife", "unknown"],
         },
     )
@@ -67,6 +67,7 @@ def test_memory_fills_missing_trip_context_before_validation(tmp_path) -> None:
         intakeId="intake-follow-up",
         input_ADM=None,
         clarificationQuestion="Bạn muốn đi tỉnh hoặc thành phố nào?",
+        defaultedFields=["days", "people", "budget", "shortPreferences"],
     )
 
     handoff = projector(tmp_path).project(
@@ -75,7 +76,7 @@ def test_memory_fills_missing_trip_context_before_validation(tmp_path) -> None:
         memory={
             "destination": "Huế",
             "durationDays": 4,
-            "preferences": ["coffee"],
+            "preferences": ["đồ uống"],
         },
     )
 

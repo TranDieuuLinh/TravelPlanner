@@ -1,5 +1,6 @@
 import asyncio
 from collections import defaultdict
+from datetime import date
 from itertools import zip_longest
 
 from app.modules.explorer.adapters.auto_tags import YamlTagCatalog
@@ -59,8 +60,13 @@ walking, or nightlife belong in short_preferences, never input_items. Link a con
 request to a named venue with related_place_name. Source-derived requests belong in
 url_notes.
 Never infer trip days or people from source evidence. When the raw prompt does not state
-a party size, omit people or use the default of 2 adults; do not use 1 as a generic
-fallback. A price for one ticket, meal, or item is not a whole-trip budget. For a
+a duration, set days to null. When it does not state a party size, use the default of
+2 adults and set people_explicit=false; do not use 1 as a generic fallback. Set
+people_explicit=true only when the current raw prompt or preserved structured context
+explicitly supplies the party. Set preferences_explicit=true only when preferences or
+avoids were explicitly supplied by the user. Resolve natural-language and relative
+travel dates against the supplied current date and return start_date as an ISO date;
+otherwise return null. A price for one ticket, meal, or item is not a whole-trip budget. For a
 raw-prompt whole-trip amount, set budget.basis to
 per_person only when the user explicitly says per person; otherwise use group_total.
 Preserve source provenance, address_hint, and
@@ -155,6 +161,7 @@ class GeminiExplorerDraftGenerator:
 
     async def from_prompt(self, raw_prompt: str) -> ExplorerDraft:
         return await self._generate(
+            f"Current local date: {date.today().isoformat()}\n"
             "Extract this raw prompt. All input_items must be supported by it:\n"
             + raw_prompt
         )
@@ -290,6 +297,18 @@ class GeminiExplorerDraftGenerator:
                 "input_adm": next(
                     (item.input_adm for item in drafts if item.input_adm), None
                 ),
+                "days": next((item.days for item in drafts if item.days), None),
+                "start_date": next(
+                    (item.start_date for item in drafts if item.start_date), None
+                ),
+                "people": next(
+                    (item.people for item in drafts if item.people_explicit),
+                    first.people,
+                ),
+                "people_explicit": any(item.people_explicit for item in drafts),
+                "preferences_explicit": any(
+                    item.preferences_explicit for item in drafts
+                ),
                 "adm_candidates": [
                     item for draft in drafts for item in draft.adm_candidates
                 ],
@@ -373,29 +392,9 @@ class GeminiExplorerDraftGenerator:
                 "DRAFT_GENERATION_REJECTED",
                 "Gemini không thể xử lý yêu cầu này.",
             ) from exc
-        except (
-            LlmResponseError,
-            LlmError,
-            InvalidDraftTags,
-        ) as exc:
+        except (LlmResponseError, LlmError, InvalidDraftTags) as exc:
             raise ExplorerOperationError(
                 "DRAFT_GENERATION_INVALID",
                 "Gemini trả về structured draft không hợp lệ.",
                 retryable=True,
             ) from exc
-
-
-class RoutedExplorerDraftGenerator:
-    def __init__(self, *, prompt_generator, source_generator) -> None:
-        self.prompt_generator = prompt_generator
-        self.source_generator = source_generator
-
-    async def from_prompt(self, raw_prompt: str) -> ExplorerDraft:
-        return await self.prompt_generator.from_prompt(raw_prompt)
-
-    async def from_sources(
-        self, *, raw_prompt: str | None, sources: list[SourceExtractionResult]
-    ) -> ExplorerDraft:
-        return await self.source_generator.from_sources(
-            raw_prompt=raw_prompt, sources=sources
-        )

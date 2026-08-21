@@ -2,7 +2,6 @@ import asyncio
 import logging
 import re
 import unicodedata
-from datetime import date
 from uuid import uuid4
 
 from app.modules.explorer.adm_reconciliation import reconcile_adm_candidates
@@ -28,9 +27,6 @@ from app.modules.explorer.ports import (
 )
 from app.modules.explorer.retry import run_with_one_retry
 from app.modules.explorer.source_execution import mark_synthesis_timeout, safe_source
-from app.modules.explorer.trip_defaults import (
-    prompt_start_date,
-)
 from app.shared.contracts.agent import AgentError
 from app.shared.tools.daily_budget import DestinationDailyBudgetEstimator
 
@@ -38,10 +34,6 @@ logger = logging.getLogger(__name__)
 
 
 class ExplorerService:
-    _DAY = re.compile(r"\b(\d{1,2})\s*(?:ngày|days?)\b", re.IGNORECASE)
-    _PEOPLE = re.compile(
-        r"\b\d{1,3}\s*(?:người|adults?|people|persons?)\b", re.IGNORECASE
-    )
     _URL = re.compile(r"https?://[^\s<>\]\[\"']+", re.IGNORECASE)
 
     def __init__(
@@ -85,13 +77,9 @@ class ExplorerService:
             payload = payload.model_copy(
                 update={"urls": list(dict.fromkeys([*payload.urls, *embedded_urls]))}
             )
-        day_match = self._DAY.search(prompt or "")
         return {
             "intake_id": str(uuid4()),
             "payload": payload,
-            "prompt_days": int(day_match.group(1)) if day_match else None,
-            "prompt_people_explicit": bool(self._PEOPLE.search(prompt or "")),
-            "prompt_start_date": prompt_start_date(prompt),
         }
 
     async def prompt_draft(self, prompt: str) -> ExplorerDraft:
@@ -307,8 +295,8 @@ class ExplorerService:
             dict.fromkeys(note.strip() for note in draft.special_notes if note.strip())
         )
         if self.tag_catalog is not None:
-            preferences = self.tag_catalog.resolve(preferences)
-            avoids = self.tag_catalog.resolve(avoids)
+            preferences = self.tag_catalog.filter_allowed(preferences)
+            avoids = self.tag_catalog.filter_allowed(avoids)
         return draft.model_copy(
             update={
                 "places": places,
@@ -333,12 +321,16 @@ class ExplorerService:
                 ],
                 "places": [*source_draft.places, *prompt_draft.places],
                 "input_items": [*source_draft.input_items, *prompt_draft.input_items],
+                "days": prompt_draft.days,
+                "start_date": prompt_draft.start_date,
                 "budget": (
                     prompt_budget
                     if prompt_budget.source == "raw_prompt"
                     else source_draft.budget
                 ),
                 "people": prompt_draft.people,
+                "people_explicit": prompt_draft.people_explicit,
+                "preferences_explicit": prompt_draft.preferences_explicit,
                 "short_preferences": [
                     *source_draft.short_preferences,
                     *prompt_draft.short_preferences,
@@ -367,22 +359,16 @@ class ExplorerService:
         draft: ExplorerDraft,
         input_adm: str | None,
         adm_conflict: bool,
-        prompt_days: int | None,
         coverage: BatchCoverage | None,
-        prompt_people_explicit: bool = False,
         source_results: list[SourceExtractionResult] | None = None,
-        prompt_start_date: date | None = None,
     ) -> ExplorerOutput:
         return finalize_explorer_output(
             intake_id=intake_id,
             draft=draft,
             input_adm=input_adm,
             adm_conflict=adm_conflict,
-            prompt_days=prompt_days,
             coverage=coverage,
-            prompt_people_explicit=prompt_people_explicit,
             source_results=source_results,
-            prompt_start_date=prompt_start_date,
             insight_catalog=self.insight_catalog,
             budget_estimator=self.budget_estimator,
         )

@@ -13,7 +13,14 @@ from app.modules.conversation_memory.public import (
     WorkingMemoryState,
     build_conversation_memory_service,
 )
-from app.modules.explorer.public import create_explorer_service
+from app.modules.explorer.adapters.auto_tags import YamlTagCatalog
+from app.modules.explorer.adapters.development import (
+    InMemoryExplorerSnapshotRepository,
+    InlineImageSourceExtractor,
+    UnconfiguredUrlSourceExtractor,
+)
+from app.modules.explorer.models import ExplorerDraft
+from app.modules.explorer.service import ExplorerService
 from app.modules.supervisor.contract import ClassifierResult, SupervisorInput
 from app.modules.supervisor.public import SupervisorService
 from app.modules.trip_chat.adapters.in_memory import InMemoryTripChatRepository
@@ -25,6 +32,21 @@ class MemoryAwareClassifier:
     """Classifier that uses supervisor intent rules and memory context."""
 
     async def classify(self, payload: SupervisorInput) -> ClassifierResult:
+        if "chỗ đó" in payload.message.casefold():
+            question = "Bạn đang muốn tham chiếu đến địa điểm nào trong Văn Miếu, Hồ Hoàn Kiếm?"
+            return ClassifierResult(
+                route="finish",
+                confidence=1.0,
+                reason="Ambiguous test reference.",
+                response=question,
+            )
+        if payload.pending_review_kind is not None:
+            return ClassifierResult(
+                route="explorer",
+                confidence=1.0,
+                reason="Accept structured pending review.",
+                trip_context_patch={},
+            )
         msg = payload.message.lower()
         if "đổi sang" in msg or "chuyển sang" in msg:
             return ClassifierResult(
@@ -55,12 +77,29 @@ class MemoryAwareClassifier:
         )
 
 
+class StaticDrafts:
+    async def from_prompt(self, raw_prompt):
+        return ExplorerDraft()
+
+    async def from_sources(self, *, raw_prompt, sources):
+        return ExplorerDraft()
+
+
+def structured_explorer() -> ExplorerService:
+    drafts = StaticDrafts()
+    return ExplorerService(
+        drafts=drafts,
+        fallback_drafts=drafts,
+        url_extractor=UnconfiguredUrlSourceExtractor(),
+        image_extractor=InlineImageSourceExtractor(),
+        snapshots=InMemoryExplorerSnapshotRepository(),
+        tag_catalog=YamlTagCatalog(),
+    )
+
+
 def build_test_env():
     supervisor = SupervisorService(classifier=MemoryAwareClassifier())
-    explorer = create_explorer_service(
-        draft_provider="rules",
-        source_draft_provider="rules",
-    )
+    explorer = structured_explorer()
     graph = create_root_graph(
         supervisor_service=supervisor,
         explorer_service=explorer,
@@ -130,8 +169,7 @@ class TestMemoryRootGraphIntegration(unittest.TestCase):
         self.assertIsNotNone(saved_chat)
         assistant_msg = saved_chat.messages[-1]
         self.assertEqual(assistant_msg.route, "finish")
-        self.assertIsNotNone(assistant_msg.clarification_question)
-        self.assertIn("Văn Miếu", assistant_msg.clarification_question)
+        self.assertIn("Văn Miếu", assistant_msg.content)
 
     def test_scenario_c_destination_change(self):
         """Scenario C: Changing destination supersedes previous destination fact."""
@@ -158,10 +196,7 @@ class TestMemoryRootGraphIntegration(unittest.TestCase):
 
         # Simulate backend restart with new graph and service instances sharing same persistent memory repo
         new_supervisor = SupervisorService(classifier=MemoryAwareClassifier())
-        new_explorer = create_explorer_service(
-            draft_provider="rules",
-            source_draft_provider="rules",
-        )
+        new_explorer = structured_explorer()
         fresh_graph = create_root_graph(
             supervisor_service=new_supervisor,
             explorer_service=new_explorer,

@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     supervisor_llm_fallback_enabled: bool = True
     supervisor_llm_confidence_threshold: float = 0.65
     finisher_llm_max_output_tokens: int = Field(default=320, ge=128, le=1024)
-    explorer_draft_provider: Literal["rules", "gemini"] = "rules"
-    explorer_source_draft_provider: Literal["rules", "gemini"] = "gemini"
+    explorer_draft_provider: Literal["gemini"] = "gemini"
+    explorer_source_draft_provider: Literal["gemini"] = "gemini"
     explorer_llm_max_output_tokens: int = Field(default=4000, ge=256)
     explorer_source_chunk_characters: int = Field(default=20_000, ge=2_000, le=60_000)
     explorer_source_max_output_tokens: int = Field(default=8_000, ge=1_000)

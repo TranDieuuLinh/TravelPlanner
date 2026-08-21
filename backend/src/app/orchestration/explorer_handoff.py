@@ -1,4 +1,3 @@
-import re
 from dataclasses import dataclass
 
 from app.modules.explorer.public import (
@@ -36,11 +35,6 @@ class ExplorerHandoff:
 
 
 class ExplorerHandoffProjector:
-    _DAYS = re.compile(r"\b\d{1,2}\s*(?:ngày|days?)\b", re.IGNORECASE)
-    _PEOPLE = re.compile(
-        r"\b\d{1,3}\s*(?:người|adults?|people|persons?)\b", re.IGNORECASE
-    )
-
     def __init__(
         self,
         tag_catalog: TagCatalog,
@@ -81,14 +75,14 @@ class ExplorerHandoffProjector:
                 resolved_references=resolved_references,
             )
         )
-        days = self._days(output, raw_prompt, memory, has_source_input)
-        people = self._people(output, raw_prompt, memory)
+        days = self._days(output, memory, has_source_input)
+        people = self._people(output, memory)
         budget = self._budget(output, memory)
         preferences = list(
             dict.fromkeys(
                 [
                     *self.tag_catalog.filter_allowed(output.short_preferences),
-                    *self.tag_catalog.resolve(
+                    *self.tag_catalog.filter_allowed(
                         memory_field(memory, "preferences", []) or []
                     ),
                 ]
@@ -98,7 +92,9 @@ class ExplorerHandoffProjector:
             dict.fromkeys(
                 [
                     *self.tag_catalog.filter_allowed(output.short_avoids),
-                    *self.tag_catalog.resolve(memory_field(memory, "avoids", []) or []),
+                    *self.tag_catalog.filter_allowed(
+                        memory_field(memory, "avoids", []) or []
+                    ),
                 ]
             )
         )
@@ -142,17 +138,17 @@ class ExplorerHandoffProjector:
         return ExplorerHandoff(canonical, payload)
 
     @classmethod
-    def _days(cls, output, raw_prompt, memory, has_source_input) -> int:
+    def _days(cls, output, memory, has_source_input) -> int:
         remembered = memory_field(memory, "duration_days")
         has_new_intake = bool(has_source_input or output.places or output.input_items)
-        if remembered and not cls._DAYS.search(raw_prompt) and not has_new_intake:
+        if remembered and "days" in output.defaulted_fields and not has_new_intake:
             return remembered
         return output.days
 
     @classmethod
-    def _people(cls, output, raw_prompt, memory):
+    def _people(cls, output, memory):
         remembered = memory_field(memory, "travelers")
-        if remembered and not cls._PEOPLE.search(raw_prompt):
+        if remembered and "people" in output.defaulted_fields:
             return output.people.model_copy(
                 update={"adults": remembered, "children": 0, "infants": 0}
             )

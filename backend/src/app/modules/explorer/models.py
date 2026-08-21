@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -107,8 +108,12 @@ class ExplorerDraft(InternalModel):
     places: list[ExplorerPlace] = Field(default_factory=list)
     input_items: list[RequestedItem] = Field(default_factory=list)
     url_notes: list[SourceNote] = Field(default_factory=list)
+    days: int | None = Field(default=None, ge=1, le=30)
+    start_date: date | None = None
     budget: ExplorerBudget = Field(default_factory=ExplorerBudget)
     people: ExplorerPeople = Field(default_factory=ExplorerPeople)
+    people_explicit: bool = False
+    preferences_explicit: bool = False
     short_preferences: list[str] = Field(default_factory=list)
     short_avoids: list[str] = Field(default_factory=list)
     special_notes: list[str] = Field(default_factory=list)

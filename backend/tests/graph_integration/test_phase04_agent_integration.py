@@ -93,10 +93,10 @@ def test_information_finder_receives_compact_memory_context():
     nodes.information_finder = InformationGraph()
     asyncio.run(
         nodes.run_information_finder(
-            {
-                "message": "có gì chơi?",
-                "conversation_memory": memory_with_places(),
-                "resolved_references": [],
+                {
+                    "message": "có gì chơi?",
+                    "explorer_output": explorer_output(),
+                    "resolved_references": [],
                 "warnings": [],
             }
         )
@@ -118,11 +118,13 @@ def test_place_checker_fallback_receives_memory_candidates():
             return {"output": SimpleNamespace(warnings=[])}
 
     nodes.place_checker = PlaceGraph()
+    current = explorer_output().model_copy(
+        update={"places": merge_memory_places([], memory_with_places())}
+    )
     asyncio.run(
         nodes.run_place_checker(
             {
-                "explorer_output": explorer_output(),
-                "conversation_memory": memory_with_places(),
+                "explorer_output": current,
                 "warnings": [],
             }
         )
@@ -153,7 +155,11 @@ def test_new_url_input_does_not_inherit_stale_memory_duration():
 
     class ExplorerGraph:
         async def ainvoke(self, payload):
-            return {"output": explorer_output()}
+            return {
+                "output": explorer_output().model_copy(
+                    update={"defaulted_fields": ["days"]}
+                )
+            }
 
     nodes.explorer = ExplorerGraph()
     memory = memory_with_places().model_copy(update={"duration_days": 20})
@@ -177,7 +183,11 @@ def test_follow_up_without_new_input_inherits_memory_duration():
 
     class ExplorerGraph:
         async def ainvoke(self, payload):
-            return {"output": explorer_output()}
+            return {
+                "output": explorer_output().model_copy(
+                    update={"defaulted_fields": ["days"]}
+                )
+            }
 
     nodes.explorer = ExplorerGraph()
     memory = memory_with_places().model_copy(update={"duration_days": 20})
@@ -212,9 +222,10 @@ def test_follow_up_without_destination_reuses_memory_destination():
 
     update = asyncio.run(
         nodes.run_explorer(
-            {
-                "message": "Tôi muốn đi 4 ngày",
-                "conversation_memory": memory,
+                {
+                    "message": "Tôi muốn đi 4 ngày",
+                    "explorer_output": explorer_output(),
+                    "conversation_memory": memory,
                 "warnings": [],
             }
         )

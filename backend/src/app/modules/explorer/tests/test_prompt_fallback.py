@@ -1,7 +1,10 @@
 import asyncio
 
-from app.modules.explorer.adapters.development import RuleBasedExplorerDraftGenerator
+import pytest
+
+from app.modules.explorer.adapters.development import NonSemanticExplorerFallback
 from app.modules.explorer.contract import ExplorerInput
+from app.modules.explorer.errors import ExplorerOperationError
 from app.modules.explorer.service import ExplorerService
 
 
@@ -13,16 +16,15 @@ class FailingPromptGenerator:
         raise RuntimeError("provider unavailable")
 
 
-def test_prompt_only_request_falls_back_when_semantic_provider_fails():
+def test_prompt_provider_failure_never_falls_back_to_semantic_rules():
     service = ExplorerService(
         drafts=FailingPromptGenerator(),
-        fallback_drafts=RuleBasedExplorerDraftGenerator(),
+        fallback_drafts=NonSemanticExplorerFallback(),
         url_extractor=object(),
         image_extractor=object(),
         snapshots=object(),
     )
 
     prepared = service.prepare(ExplorerInput(raw_prompt="đi Hà Nội 2 ngày"))
-    draft = asyncio.run(service.prompt_draft(prepared["payload"].raw_prompt))
-
-    assert draft.input_adm == "Hanoi"
+    with pytest.raises(ExplorerOperationError, match="cần LLM"):
+        asyncio.run(service.prompt_draft(prepared["payload"].raw_prompt))

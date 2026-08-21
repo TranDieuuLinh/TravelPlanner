@@ -145,30 +145,39 @@ def test_low_confidence_llm_result_asks_for_clarification():
     assert decision.clarification_question
 
 
-def test_short_trip_prompt_uses_explorer_when_llm_is_unavailable():
+def test_unconfigured_llm_never_guesses_trip_intent():
     decision = decide(
         SupervisorService(classifier=None),
         "đi Hà Nội 2 ngày",
     )
 
-    assert decision.route == "explorer"
+    assert decision.route == "finish"
+    assert decision.clarification_question
     assert decision.warnings == ["Supervisor LLM chưa được cấu hình."]
 
 
-def test_open_ended_activity_rich_trip_prompt_uses_explorer():
+def test_pending_review_patch_is_accepted_only_from_llm_output():
+    classifier = FakeClassifier(
+        ClassifierResult(
+            route="explorer",
+            confidence=0.99,
+            reason="User requested the most luxurious budget tier.",
+            tripContextPatch={
+                "budget": {
+                    "operation": "set",
+                    "value": {"level": "high", "currency": "VND"},
+                }
+            },
+        )
+    )
+
     decision = decide(
-        SupervisorService(classifier=None),
-        "Tôi muốn đi du lịch, có nhiều hoạt động",
+        SupervisorService(classifier),
+        "tui muốn đi giàu sang mắc nhất vô lên plan dì",
+        pending_review_kind="defaults_proposed",
+        pending_review_fields=["budget"],
     )
 
     assert decision.route == "explorer"
-
-
-def test_short_destination_prompt_uses_information_finder_when_llm_is_unavailable():
-    decision = decide(
-        SupervisorService(classifier=None),
-        "Đà Lạt",
-    )
-
-    assert decision.route == "information_finder"
-    assert decision.warnings == ["Supervisor LLM chưa được cấu hình."]
+    assert decision.trip_context_patch.budget.value.level == "high"
+    assert decision.trip_context_patch.input_adm is None

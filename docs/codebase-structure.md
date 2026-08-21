@@ -52,10 +52,11 @@ giới HTTP. Thư mục `orchestration/` sở hữu root graph và ánh xạ cá
 contract giữa các module. Business rule về du lịch không nên đặt trong
 `orchestration/`.
 
-`itinerary_planner` ưu tiên graph Beam Search trong runtime Valhalla và giữ
-graph hybrid CP-SAT làm fallback khi Beam không tạo được itinerary hợp lệ.
-Beam và fallback dùng chung `PreparedPlanningProblem` cùng global Valhalla
-matrix trong một graph, nên fallback không chạy lại preprocessing/routing.
+`itinerary_planner` ưu tiên graph hybrid CP-SAT trong runtime Valhalla và chỉ
+dùng Beam Search làm fallback khi CP-SAT không tạo được itinerary khả thi hoặc
+route enrichment/repair thất bại. CP-SAT và Beam dùng chung
+`PreparedPlanningProblem` cùng global Valhalla matrix trong một graph, nên
+fallback không chạy lại preprocessing/routing.
 Valhalla adapter có bounded directed-pair cache theo graph version/profile và
 chỉ gọi provider cho các pair còn thiếu khi cache overlap đủ lớn; cache này
 không thay đổi database ownership.
@@ -265,8 +266,10 @@ Khi source-import có raw prompt, prompt draft nhẹ và source synthesis chạy
 song rồi merge theo precedence để không làm mất tín hiệu rõ từ người dùng.
 Prompt draft Gemini đọc `auto-attach/tags-auto.yml` ở từng request, nhận toàn bộ
 taxonomy trong system prompt và chỉ được trả exact key qua JSON Schema enum cho
-`shortPreferences`/`shortAvoids`; service kiểm tra lại output. Nhánh
-deterministic resolve tín hiệu qua cùng file trong bước normalize, vì vậy cả
+`shortPreferences`/`shortAvoids`; service kiểm tra lại output. Structured draft
+cũng trả `days`, `startDate`, `peopleExplicit` và `preferencesExplicit`; service
+không parse raw prompt bằng keyword hoặc regex để suy đoán các field này. Bước
+normalize deterministic chỉ kiểm tra schema, taxonomy và invariant, vì vậy cả
 draft cache cũ cũng tuân theo taxonomy mới mà không cần restart.
 Docker Compose mount toàn bộ `auto-attach/` read-only tại `/auto-attach` và đặt
 rõ `EXPLORER_TAGS_AUTO_PATH=/auto-attach/tags-auto.yml` cùng
@@ -315,9 +318,9 @@ socket timeout. Source synthesis có budget 105 giây và từng batch chunk có
 budget 60 giây; chunk đã hoàn thành được giữ lại, chunk còn treo bị hủy. Hàng
 đợi chunk chạy round-robin theo source để video dài không làm website hoặc clip
 ngắn bị starvation. Khi semantic provider chậm hoặc partial, adapter
-deterministic chỉ bổ sung các place nằm trong tiêu đề Markdown cấp hai được đánh
-số; body prose, transcript và danh sách cấp thấp như khách sạn/món ăn không được
-tự động nâng thành TravelPlace. Các budget cấu hình qua
+an toàn chỉ bảo toàn evidence đã có cấu trúc và các tiêu đề Markdown cấp hai
+được đánh số; adapter này không đọc prose, transcript hay raw prompt để suy đoán
+intent hoặc tự nâng khách sạn/món ăn thành TravelPlace. Các budget cấu hình qua
 `EXPLORER_SOURCE_EXTRACTION_TIMEOUT_SECONDS`,
 `EXPLORER_SOURCE_SYNTHESIS_TIMEOUT_SECONDS` và
 `EXPLORER_SOURCE_CHUNK_TIMEOUT_SECONDS`.
@@ -470,12 +473,13 @@ là endpoint tương thích cho các caller cũ. TripChat lưu `content` và
 `content_blocks` riêng trong cùng assistant message; message cũ được đọc với
 `contentBlocks=[]`.
 
-Supervisor là intent classifier có provider cấu hình được. Khi provider là
-`gemini`, mọi message được structured Gemini phân loại trước qua `shared/llm/`;
-route `finish` có thể kèm phản hồi ngắn cùng ngôn ngữ cho greeting, câu hỏi về
-trợ lý hoặc yêu cầu ngoài phạm vi. Rule deterministic chỉ là provider offline
-hoặc runtime fallback. Supervisor hiện được cấu hình
-`SUPERVISOR_CLASSIFIER_PROVIDER=gemini`; provider này yêu cầu `GEMINI_API_KEY`.
+Supervisor là structured intent classifier dùng Gemini qua `shared/llm/`.
+Model trả route, phản hồi tùy chọn, `TripContextPatch` cho pending Explorer
+review và `sourceAction` cho request có URL/ảnh trong cùng một call. Route
+`finish` có thể kèm phản hồi ngắn cùng ngôn ngữ cho greeting, câu hỏi về trợ lý
+hoặc yêu cầu ngoài phạm vi. Không có keyword/regex fallback để suy đoán intent;
+khi provider lỗi, fallback chỉ trả clarification an toàn. Runtime yêu cầu
+`SUPERVISOR_CLASSIFIER_PROVIDER=gemini` và `GEMINI_API_KEY`.
 Routing baseline chưa được production-evaluated. Trip Chat truyền tối đa sáu
 message trước đó với tiền tố `User:` hoặc `Assistant:`; root graph giữ nguyên
 role và không lặp message hiện tại trong context của Supervisor. Durable memory

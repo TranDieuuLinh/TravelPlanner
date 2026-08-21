@@ -1,14 +1,14 @@
-# Beam Search parallel runtime
+# CP-SAT primary và Beam Search fallback
 
 Cập nhật lần cuối: 2026-08-21.
 
-Đây là runtime Beam-first. Ứng dụng ưu tiên Beam Search qua factory
-`build_valhalla_beam_first_itinerary_planner_graph`; prefix preprocessing và
-routing matrix chỉ chạy một lần. Nếu Beam trả lỗi, kết quả `PARTIAL` hoặc
-timeline không hợp lệ, node Hybrid CP-SAT dùng lại cùng prepared/routing state
-làm fallback và output nhận warning tương ứng. Factory
-`build_beam_search_itinerary_planner_graph` vẫn cho phép kiểm thử Beam Search
-độc lập.
+Runtime ưu tiên Hybrid CP-SAT qua factory
+`build_valhalla_cp_sat_first_itinerary_planner_graph`; prefix preprocessing và
+routing matrix chỉ chạy một lần. Nếu CP-SAT không có kết quả khả thi hoặc route
+enrichment/repair thất bại, Beam Search dùng lại cùng prepared/routing state làm
+fallback và output nhận warning tương ứng. Các factory Beam-first và Beam-only
+vẫn được giữ cho compatibility và kiểm thử độc lập, nhưng FastAPI không dùng
+chúng làm mặc định.
 
 Beam Search nhận `PreparedPlanningProblem` và `RoutingProblem` sau global
 Valhalla matrix. Mỗi transition phải đạt các hard checks sau:
@@ -54,7 +54,8 @@ Rating gốc vẫn được giữ trong stop metadata để bảo toàn provenan
 thêm `bayesianRating` cho giá trị dùng khi xếp hạng. CP-SAT output vẫn hợp lệ
 và để `evaluation` là `null` khi đi qua graph cũ.
 
-Giới hạn mặc định là beam width 32 và tối đa 16 stop/ngày. Một global deadline
+Khi được gọi làm fallback, giới hạn mặc định là beam width 32 và tối đa 16
+stop/ngày. Một global deadline
 bao phủ mọi ngày và mọi nhánh backtracking, không reset theo `_search_day`:
 10 giây cho một ngày, 20 giây cho 2–3 ngày và 30 giây cho chuyến dài hơn. Vòng
 candidate kiểm tra deadline định kỳ; complete incumbent được giữ khi hết giờ,

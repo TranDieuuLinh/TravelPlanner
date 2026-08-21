@@ -1,5 +1,3 @@
-import re
-
 from app.modules.explorer.public import (
     ExplorerOutput,
     ExplorerReview,
@@ -7,7 +5,6 @@ from app.modules.explorer.public import (
     apply_trip_context_patch,
     build_explorer_review,
 )
-from app.modules.supervisor.public import infer_source_action
 from app.orchestration.explorer_handoff import explorer_output_to_intent
 from app.orchestration.memory_projection import (
     supervisor_conversation_context,
@@ -50,9 +47,10 @@ def _merge_previous_explorer_output(previous, current, message: str):
     updates = {}
     if not current.input_adm:
         updates["input_adm"] = previous.input_adm
-    if not re.search(r"\b\d{1,2}\s*(?:ngày|days?)\b", message, re.IGNORECASE):
+    defaulted = set(current.defaulted_fields)
+    if "days" in defaulted:
         updates["days"] = previous.days
-    if not re.search(r"\b\d{1,3}\s*(?:người|people|pax)\b", message, re.IGNORECASE):
+    if "people" in defaulted:
         updates["people"] = previous.people
     previous_places = previous.places or []
     current_places = current.places or []
@@ -98,34 +96,18 @@ class ExplorerReviewNodes:
                 "pending_review_fields": list(pending_review.missing_fields or pending_review.defaulted_fields),
             })
             decision = result["decision"]
-            if decision.route == "explorer":
-                patch_decision = self.supervisor_service.decide_explorer_review_reply(
-                    message=state["message"],
-                    review=pending_review,
-                    tag_definitions=self.explorer_tag_catalog.definitions(),
-                )
-                decision = decision.model_copy(update={
-                    "trip_context_patch": (
-                        patch_decision.trip_context_patch
-                        if patch_decision.trip_context_patch is not None
-                        else TripContextPatch()
-                    ),
-                })
             update = {
                 **self._new_turn_update(),
                 "decision": decision,
                 "warnings": decision.warnings,
                 "suggestions": [],
                 "clarification_question": decision.clarification_question,
+                "source_action": decision.source_action,
             }
             if decision.response is not None:
                 update["response"] = decision.response
             return update
 
-        source_action = infer_source_action(
-            state.get("message") or "",
-            attached=bool(state.get("urls") or state.get("images")),
-        )
         conversation_context = supervisor_conversation_context(
             state.get("recent_messages"),
             state.get("response"),
@@ -142,13 +124,8 @@ class ExplorerReviewNodes:
             "conversation_summary": state.get("conversation_summary"),
             "explorer_output": _dump_explorer_output(state.get("explorer_output")),
         }
-        if source_action == "summarize_source":
-            decision = self.supervisor_service.decide_source_action(source_action)
-        else:
-            result = await self.supervisor.ainvoke(supervisor_payload)
-            decision = result["decision"]
-            if decision.route != "explorer":
-                source_action = None
+        result = await self.supervisor.ainvoke(supervisor_payload)
+        decision = result["decision"]
         update = {
             **self._new_turn_update(),
             "decision": decision,
@@ -156,7 +133,7 @@ class ExplorerReviewNodes:
             "warnings": decision.warnings,
             "suggestions": list(decision.suggestions),
             "clarification_question": None,
-            "source_action": source_action,
+            "source_action": decision.source_action,
         }
         if decision.response is not None:
             response = decision.response

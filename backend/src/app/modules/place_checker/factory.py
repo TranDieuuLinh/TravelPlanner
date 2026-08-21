@@ -28,7 +28,7 @@ def build_postgres_place_checker_pipeline(
     tag_catalog = YamlTagCatalog()
     catalog = PostgresPlaceCatalog(
         database_url,
-        tag_filter=tag_catalog.resolve,
+        tag_filter=tag_catalog.filter_allowed,
     )
     search_tool = SearchPlacesTool(catalog, external_place_search)
     gap_source = SearchPlacesGapSource(
@@ -73,6 +73,6 @@ def build_postgres_place_search_tool(
     tag_catalog = YamlTagCatalog()
     catalog = PostgresPlaceCatalog(
         database_url,
-        tag_filter=tag_catalog.resolve,
+        tag_filter=tag_catalog.filter_allowed,
     )
     return SearchPlacesTool(catalog), catalog

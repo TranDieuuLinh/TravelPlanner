@@ -1,16 +1,7 @@
 import os
 from pathlib import Path
-import unicodedata
 
 import yaml
-
-
-def _normalized_words(value: str) -> str:
-    normalized = unicodedata.normalize("NFKC", value).casefold()
-    return " ".join(
-        "".join(character if character.isalnum() else " " for character in normalized)
-        .split()
-    )
 
 
 class YamlTagCatalog:
@@ -39,30 +30,6 @@ class YamlTagCatalog:
 
     def definitions(self) -> dict[str, list[str]]:
         return self._read_definitions()
-
-    def tags_for(self, value: str) -> list[str]:
-        return self._tags_for(value, self.definitions())
-
-    @staticmethod
-    def _tags_for(value: str, definitions: dict[str, list[str]]) -> list[str]:
-        normalized_value = f" {_normalized_words(value)} "
-        return [
-            tag
-            for tag, keywords in definitions.items()
-            if _normalized_words(tag) == _normalized_words(value)
-            or any(
-                f" {_normalized_words(keyword)} " in normalized_value
-                for keyword in keywords
-            )
-        ]
-
-    def resolve(self, values: list[str]) -> list[str]:
-        definitions = self.definitions()
-        return list(dict.fromkeys(
-            tag
-            for value in values
-            for tag in self._tags_for(value, definitions)
-        ))
 
     def filter_allowed(self, values: list[str]) -> list[str]:
         allowed = set(self.definitions())

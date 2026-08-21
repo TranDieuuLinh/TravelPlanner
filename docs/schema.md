@@ -104,7 +104,7 @@ tag, pool và provider note đã phân loại candidate đó là nhà hàng.
 
 | Module | Input | Output |
 |---|---|---|
-| `supervisor` | `SupervisorInput`, gồm compact `currentPlan` khi Trip Chat đã có lịch | `SupervisorDecision` (`route`, `confidence`, `reason`, tùy chọn `response`, `clarificationQuestion`, `warnings`, `planEdit`) |
+| `supervisor` | `SupervisorInput`, gồm compact `currentPlan` khi Trip Chat đã có lịch | `SupervisorDecision` (`route`, `confidence`, `reason`, tùy chọn `response`, `clarificationQuestion`, `warnings`, `planEdit`, `tripContextPatch`, `sourceAction`) |
 | `explorer` | `ExplorerInput` | `ExplorerOutput` |
 | `information_finder` | `InformationFinderInput` | `InformationFinderOutput` (`answer`, `sources`, `warnings`) |
 | `place_checker` | `PlaceCheckerInput` | `PlaceCheckerOutput` |
@@ -171,6 +171,12 @@ Reference ngày/item do model trả về phải khớp snapshot; provider lỗi 
 deterministic edit fallback. Structured `EditOperation` của API legacy vẫn được
 hỗ trợ với `planEdit=null`.
 
+Cùng structured call đó trả `tripContextPatch` khi đang chờ Explorer review và
+`sourceAction` khi request có URL/ảnh. Slang, typo, budget level, destination và
+ý định lập lịch/tóm tắt nguồn đều do model phân loại. Backend chỉ validate
+schema, enum và invariant của patch/action; provider lỗi trả clarification an
+toàn, không chạy keyword hoặc regex fallback để đoán intent.
+
 Khi `planEdit` là mutation hợp lệ, Trip Chat gọi lại đúng primitive mà UI sửa
 thủ công sử dụng. PostgreSQL khóa hàng theo optimistic revision, cập nhật
 `currentPlannerOutput` và chèn cặp user/assistant trong cùng transaction; cả
@@ -225,9 +231,9 @@ kết thúc trước PlaceChecker và Itinerary Planner.
   aggregate `completeness`; JSON public cũng không trả budget source,
   clarification, warnings hoặc structured `AgentError`. Với prompt provider Gemini, taxonomy mới nhất từ
   `tags-auto.yml` được đưa vào system prompt và JSON Schema enum; output được
-  kiểm tra lại để hai danh sách chỉ chứa exact key trong file. Adapter
-  deterministic resolve tín hiệu cũ qua cùng taxonomy; public boundary chỉ lọc
-  key hợp lệ, không tự map lại semantic value. Public JSON cũng không trả `status`; trạng thái `ready`,
+  kiểm tra lại để hai danh sách chỉ chứa exact key trong file. Public boundary
+  chỉ lọc key hợp lệ, không tự map lại semantic value. Public JSON cũng không
+  trả `status`; trạng thái `ready`,
   `partial`, `clarification` hoặc `error` vẫn được `ExplorerService` và graph
   dùng nội bộ. Các field chẩn đoán vẫn được graph dùng nội bộ.
 
@@ -253,11 +259,14 @@ Giá vé/món riêng không phải whole-trip budget.
 `defaultedFields`. Derived `shortAvoids` vẫn nằm trong pending Explorer output
 để project sang PlaceChecker nhưng không được đưa vào review hoặc câu trả lời
 mặc định của Supervisor.
-Draft generator có adapter deterministic và structured Gemini; prompt provider
-được chọn bằng `EXPLORER_DRAFT_PROVIDER`, source provider bằng
-`EXPLORER_SOURCE_DRAFT_PROVIDER`. `tags-auto.yml` được đọc lại ở mỗi lần tạo
-prompt draft và mỗi lần normalize/output, nên thay đổi taxonomy có hiệu lực mà
-không restart backend; draft lấy từ cache cũng được normalize bằng bản hiện tại.
+Draft generator dùng structured Gemini cho cả prompt và source; hai provider
+`EXPLORER_DRAFT_PROVIDER` và `EXPLORER_SOURCE_DRAFT_PROVIDER` chỉ nhận `gemini`.
+Model trả cả `days`, `startDate`, `peopleExplicit` và `preferencesExplicit`.
+Backend không dùng keyword/regex để suy đoán intent từ raw prompt; fallback an
+toàn chỉ bảo toàn evidence đã có cấu trúc và báo lỗi retryable nếu prompt cần
+LLM. `tags-auto.yml` được đọc lại ở mỗi lần tạo prompt draft và mỗi lần
+normalize/output, nên thay đổi taxonomy có hiệu lực mà không restart backend;
+draft lấy từ cache cũng được normalize bằng bản hiện tại.
 
 `SourceArtifact` là contract nội bộ giữa importer và bước synthesis, không phải
 field public của `ExplorerOutput`. Artifact phân biệt `url_metadata`, `caption`,
@@ -267,10 +276,11 @@ cache canonicalize TikTok/Instagram/Facebook bằng cách bỏ toàn bộ query 
 khi tra `source_documents`, tương thích artifact cache legacy v6. URL và ảnh
 trong cùng request được chạy song song. URL media đánh giá primary evidence từ
 native transcript/caption, title, description, location và tags bằng structured
-semantic preflight cùng policy deterministic. Primary chỉ đủ khi có destination
-hoặc named place, đủ travel detail và confidence tối thiểu; prompt yêu cầu
-`tất cả`/`đầy đủ` luôn ép fallback. Lỗi preflight cũng fallback an toàn thay vì
-bỏ media. YouTube ưu tiên full subtitle/automatic caption mà không tải video;
+semantic preflight; model cũng trả `exhaustiveRequested`. Policy deterministic
+chỉ kiểm tra các field có cấu trúc, confidence và ngưỡng coverage, không dò từ
+khóa trong raw prompt. Primary chỉ đủ khi có destination hoặc named place và đủ
+travel detail; lỗi preflight vẫn fallback tải media an toàn. YouTube ưu tiên
+full subtitle/automatic caption mà không tải video;
 metadata-only đủ coverage cũng không tải media. Nếu primary thiếu mới tải
 audio-only để STT; transcript vẫn thiếu thì chạy riêng frame OCR, không STT lặp.
 Audio được chia chunk có timestamp và mặc định chỉ transcribe một chunk Gemini
@@ -551,8 +561,10 @@ contract legacy phục vụ PlanEditor; output mới được trả riêng qua
 `plannerOutput` để biểu diễn overnight, geometry và solver metadata.
 `people` được sao chép từ Planner input để Trip Chat lưu cùng snapshot; frontend
 vì vậy vẫn hiển thị đúng quy mô nhóm sau khi tải lại chat.
-Module ưu tiên factory Beam Search trong runtime Valhalla và dùng graph hybrid
-CP-SAT làm fallback khi Beam thất bại hoặc trả lịch không đầy đủ. Beam áp hard
+Module ưu tiên factory hybrid CP-SAT trong runtime Valhalla và dùng Beam Search
+làm fallback khi CP-SAT solver hoặc route enrichment/repair thất bại. Hai nhánh
+dùng chung preprocessing và Valhalla matrix; fallback không query matrix lại.
+Beam áp hard
 rule không nối restaurant-to-restaurant,
 kiểm tra distance Q3, rating tối thiểu 3.0, review count từ Q2/P50,
 opening window và khoảng chờ tối đa 45 phút.

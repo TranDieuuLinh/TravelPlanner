@@ -1,13 +1,6 @@
-import re
 from dataclasses import dataclass
 
 from app.modules.explorer.models import SourceArtifact
-
-
-_EXHAUSTIVE_REQUEST = re.compile(
-    r"\b(?:tất\s+cả|toàn\s+bộ|đầy\s+đủ|mọi|hết|all|every|full|exhaustive)\b",
-    re.IGNORECASE,
-)
 
 
 @dataclass(frozen=True)
@@ -52,7 +45,7 @@ class PrimaryEvidenceCoveragePolicy:
         facts: PrimaryEvidenceFacts,
         *,
         transcript_timeline_ratio: float | None = None,
-        raw_prompt: str | None = None,
+        exhaustive_requested: bool = False,
     ) -> PrimaryEvidenceCoverage:
         transcript_text = "\n".join(
             artifact.text
@@ -66,8 +59,6 @@ class PrimaryEvidenceCoveragePolicy:
             artifact.artifact_type == "caption" for artifact in artifacts
         )
         transcript_characters = sum(character.isalnum() for character in transcript_text)
-        exhaustive = bool(_EXHAUSTIVE_REQUEST.search(raw_prompt or ""))
-
         technical_transcript_coverage = has_transcript and (
             (
                 transcript_timeline_ratio is not None
@@ -92,13 +83,13 @@ class PrimaryEvidenceCoveragePolicy:
             )
         )
         sufficient = (
-            not exhaustive
+            not exhaustive_requested
             and facts.confidence >= self.minimum_confidence
             and (useful_transcript or useful_description)
         )
 
         reasons: list[str] = []
-        if exhaustive:
+        if exhaustive_requested:
             reasons.append("exhaustive_request")
         if facts.confidence < self.minimum_confidence:
             reasons.append("low_semantic_confidence")

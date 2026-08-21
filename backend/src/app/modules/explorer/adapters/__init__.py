@@ -1,7 +1,7 @@
 from app.modules.explorer.adapters.development import (
     InMemoryExplorerSnapshotRepository,
     InlineImageSourceExtractor,
-    RuleBasedExplorerDraftGenerator,
+    NonSemanticExplorerFallback,
     UnconfiguredUrlSourceExtractor,
 )
 from app.modules.explorer.adapters.draft_cache import (
@@ -12,10 +12,8 @@ from app.modules.explorer.adapters.source_extraction_cache import (
     InMemorySourceExtractionCache,
     PostgresSourceExtractionCache,
 )
-from app.modules.explorer.adapters.gemini import (
-    GeminiExplorerDraftGenerator,
-    RoutedExplorerDraftGenerator,
-)
+from app.modules.explorer.adapters.draft_routing import RoutedExplorerDraftGenerator
+from app.modules.explorer.adapters.gemini import GeminiExplorerDraftGenerator
 from app.modules.explorer.adapters.image_source import GeminiImageSourceExtractor
 from app.modules.explorer.adapters.image_cache import InMemoryImageOcrCache
 from app.modules.explorer.adapters.media_analysis import GeminiMediaAnalyzer
@@ -68,7 +66,7 @@ __all__ = [
     "PostgresUrlSourceCache",
     "PostgresExplorerDraftCache",
     "PostgresSourceExtractionCache",
-    "RuleBasedExplorerDraftGenerator",
+    "NonSemanticExplorerFallback",
     "RoutedExplorerDraftGenerator",
     "TikTokHtmlMediaClient",
     "UnconfiguredUrlSourceExtractor",

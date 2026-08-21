@@ -57,7 +57,7 @@ def test_structured_llm_output_is_validated_and_minimal_context_is_sent():
     suggestion_schema = response_schema["properties"]["suggestions"]["items"]
     assert suggestion_schema["additionalProperties"] is False
     assert suggestion_schema["required"] == ["field", "label", "value"]
-    assert "default" not in json.dumps(response_schema)
+    assert '"default":' not in json.dumps(response_schema)
 
 
 def test_classifier_returns_structured_plan_edit_in_the_same_call():
@@ -78,6 +78,29 @@ def test_classifier_returns_structured_plan_edit_in_the_same_call():
     assert result.plan_edit.item.duration_minutes == 90
     assert json.loads(client.calls[0][0])["currentPlan"] == plan
     assert len(client.calls) == 1
+
+
+def test_classifier_returns_semantic_trip_patch_and_source_action():
+    client = FakeLlmClient(
+        '{"route":"explorer","confidence":0.99,"reason":"luxury update",'
+        '"tripContextPatch":{"budget":{"operation":"set",'
+        '"value":{"level":"high","currency":"VND"}}},'
+        '"sourceAction":"plan_from_source"}'
+    )
+    result = asyncio.run(
+        GeminiIntentClassifier(client).classify(
+            SupervisorInput(
+                message="tui muốn đi giàu sang mắc nhất vô lên plan dì",
+                has_source_input=True,
+                pending_review_kind="defaults_proposed",
+                pending_review_fields=["budget"],
+            )
+        )
+    )
+
+    assert result.trip_context_patch.budget.value.level == "high"
+    assert result.trip_context_patch.input_adm is None
+    assert result.source_action == "plan_from_source"
 
 
 def test_classifier_receives_all_six_role_tagged_context_messages():

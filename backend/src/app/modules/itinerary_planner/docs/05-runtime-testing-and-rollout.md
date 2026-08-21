@@ -86,15 +86,16 @@ ID khác nhau dù cùng travel-place signature. Candidate `user_input` hoặc `u
 vào `unscheduled` với reason code `not_selected_by_optimizer`; candidate bị
 loại trước optimizer giữ reason code validation/feasibility ban đầu.
 
-FastAPI runtime dùng graph Beam-first có prefix `prepare_problem` và
-`build_travel_matrix` chung. Beam `PARTIAL`, deadline, exception hoặc route
-reflow failure chuyển sang Hybrid CP-SAT trên cùng `PreparedPlanningProblem` và
+FastAPI runtime dùng graph CP-SAT-first có prefix `prepare_problem` và
+`build_travel_matrix` chung. Hybrid CP-SAT chạy optimize và route enrichment
+trước. Solver error, output không khả thi hoặc route repair/enrichment failure
+mới chuyển sang Beam Search trên cùng `PreparedPlanningProblem` và
 `RoutingProblem`; fallback không gọi lại matrix. Beam dùng một global deadline
 cho toàn bộ ngày và nhánh backtracking, kiểm tra định kỳ ngay trong vòng
 candidate. Budget mặc định là 10 giây cho một ngày, 20 giây cho 2–3 ngày và 30
 giây cho chuyến dài hơn; giá trị explicit trong `BeamSearchConfig` ghi đè budget
-adaptive. Khi deadline tới, complete incumbent được giữ, còn incomplete plan
-chuyển fallback với reason rõ ràng.
+adaptive. Nếu cả CP-SAT và Beam đều thất bại, graph trả lỗi cuối thay vì xuất
+lịch một phần.
 
 ## State nội bộ
 

@@ -53,9 +53,7 @@ class ExplorerNodes:
         return {"output": self.service.finalize(
             intake_id=state["intake_id"], draft=state["normalized_draft"],
             input_adm=state.get("input_adm"), adm_conflict=state.get("adm_conflict", False),
-            prompt_days=state.get("prompt_days"), coverage=state.get("coverage"),
-            prompt_people_explicit=state.get("prompt_people_explicit", False),
-            prompt_start_date=state.get("prompt_start_date"),
+            coverage=state.get("coverage"),
             source_results=state.get("source_results"),
         )}
 

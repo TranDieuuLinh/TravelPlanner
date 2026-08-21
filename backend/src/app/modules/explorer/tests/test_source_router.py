@@ -285,7 +285,6 @@ def test_partial_output_identifies_failed_source_without_echoing_query() -> None
         draft=ExplorerDraft(inputAdm="Hà Nội"),
         input_adm="Hà Nội",
         adm_conflict=False,
-        prompt_days=None,
         coverage="partial",
         source_results=[failed],
     )
@@ -313,7 +312,6 @@ def test_partial_output_identifies_failed_media_branch() -> None:
         draft=ExplorerDraft(inputAdm="Hà Nội"),
         input_adm="Hà Nội",
         adm_conflict=False,
-        prompt_days=None,
         coverage="usable",
         source_results=[partial],
     )

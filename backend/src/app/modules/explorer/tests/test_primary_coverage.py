@@ -65,7 +65,7 @@ def test_exhaustive_request_forces_media_fallback() -> None:
             description_useful=True,
             confidence=0.95,
         ),
-        raw_prompt="Lấy đầy đủ mọi địa điểm trong video",
+        exhaustive_requested=True,
     )
 
     assert coverage.sufficient is False
@@ -78,7 +78,7 @@ def test_gemini_evaluator_applies_local_thresholds() -> None:
             return (
                 '{"destination_found":true,"named_place_count":2,'
                 '"travel_detail_count":2,"description_useful":true,'
-                '"confidence":0.9}'
+                '"confidence":0.9,"exhaustive_requested":false}'
             )
 
     evaluator = GeminiPrimaryEvidenceEvaluator(Client())  # type: ignore[arg-type]

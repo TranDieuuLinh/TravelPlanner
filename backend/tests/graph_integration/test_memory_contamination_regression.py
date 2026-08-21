@@ -16,7 +16,14 @@ from app.modules.conversation_memory.public import (
     InMemoryMemoryRepository,
     build_conversation_memory_service,
 )
-from app.modules.explorer.public import create_explorer_service
+from app.modules.explorer.adapters.auto_tags import YamlTagCatalog
+from app.modules.explorer.adapters.development import (
+    InMemoryExplorerSnapshotRepository,
+    InlineImageSourceExtractor,
+    UnconfiguredUrlSourceExtractor,
+)
+from app.modules.explorer.models import ExplorerDraft
+from app.modules.explorer.service import ExplorerService
 from app.modules.information_finder.contract import (
     InformationFinderOutput,
     SourceReference,
@@ -72,11 +79,24 @@ class MockInformationFinderProvider:
         )
 
 
+class HanoiDrafts:
+    async def from_prompt(self, raw_prompt):
+        return ExplorerDraft(inputAdm="Hà Nội", days=3)
+
+    async def from_sources(self, *, raw_prompt, sources):
+        return ExplorerDraft(inputAdm="Hà Nội", days=3)
+
+
 def build_end_to_end_env():
     supervisor = SupervisorService(classifier=EndToEndRegressionClassifier())
-    explorer = create_explorer_service(
-        draft_provider="rules",
-        source_draft_provider="rules",
+    drafts = HanoiDrafts()
+    explorer = ExplorerService(
+        drafts=drafts,
+        fallback_drafts=drafts,
+        url_extractor=UnconfiguredUrlSourceExtractor(),
+        image_extractor=InlineImageSourceExtractor(),
+        snapshots=InMemoryExplorerSnapshotRepository(),
+        tag_catalog=YamlTagCatalog(),
     )
     graph = create_root_graph(
         supervisor_service=supervisor,

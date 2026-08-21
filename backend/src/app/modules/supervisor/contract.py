@@ -52,13 +52,13 @@ class ClassifierResult(BaseModel):
     entity_names: list[str] = Field(default_factory=list, max_length=30)
     suggestions: list[dict[str, object]] = Field(default_factory=list, max_length=4)
     plan_edit: NaturalLanguagePlanEdit | None = None
+    trip_context_patch: TripContextPatch | None = None
+    source_action: SourceAction | None = None
 
 
 class SupervisorDecision(ClassifierResult):
     clarification_question: str | None = Field(default=None, max_length=500)
     warnings: list[str] = Field(default_factory=list, max_length=10)
-    trip_context_patch: TripContextPatch | None = None
-    source_action: SourceAction | None = None
 
 
 class ComposedAnswer(BaseModel):

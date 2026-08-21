@@ -74,7 +74,7 @@ def test_collection_operations_and_avoid_conflict(tmp_path) -> None:
             },
             "shortPreferences": {
                 "operation": "add",
-                "values": ["nature"],
+                "values": ["thiên nhiên"],
             },
             "shortAvoids": {
                 "operation": "add",

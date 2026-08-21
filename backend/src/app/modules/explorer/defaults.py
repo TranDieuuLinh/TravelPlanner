@@ -8,14 +8,14 @@ from app.shared.tools.daily_budget import DestinationDailyBudgetEstimator
 
 def defaulted_fields(
     *,
-    prompt_days: int | None,
+    days: int | None,
     budget: ExplorerBudget,
     people: ExplorerPeople,
     people_explicit: bool,
     preferences_explicit: bool,
 ) -> list[ExplorerDefaultedField]:
     fields: list[ExplorerDefaultedField] = []
-    if prompt_days is None:
+    if days is None:
         fields.append("days")
     if budget.source == "default":
         fields.append("budget")

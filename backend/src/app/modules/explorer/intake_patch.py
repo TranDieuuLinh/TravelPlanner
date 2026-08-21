@@ -366,7 +366,7 @@ def _apply_strings(current, patch, tag_catalog: TagCatalog | None) -> list[str]:
         return []
     values = patch.values
     if tag_catalog is not None:
-        values = tag_catalog.resolve(values)
+        values = tag_catalog.filter_allowed(values)
     remove_keys = {_key(value) for value in values}
     if patch.operation == "remove":
         return [value for value in current if _key(value) not in remove_keys]
