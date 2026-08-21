@@ -15,9 +15,12 @@ from app.modules.itinerary_planner.public import (
     build_valhalla_directions_service,
 )
 from app.modules.observability.public import build_observability_service
-from app.modules.place_checker.public import build_postgres_place_search_tool
+from app.modules.place_checker.public import (
+    build_postgres_place_search_tool,
+    build_subplace_display_service,
+)
 from app.modules.trip_chat.public import build_trip_chat_repository
-from app.bootstrap import get_graph
+from app.bootstrap import get_graph, get_llm_client
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -103,9 +106,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             application.state.manual_place_search_tool,
             application.state.manual_place_search_catalog,
         ) = build_postgres_place_search_tool(settings.database_url)
+        application.state.subplace_display_service = build_subplace_display_service(
+            application.state.manual_place_search_catalog,
+            llm_client=(get_llm_client() if settings.gemini_api_key else None),
+            max_output_tokens=settings.place_checker_subplace_note_max_output_tokens,
+        )
     else:
         application.state.manual_place_search_tool = None
         application.state.manual_place_search_catalog = None
+        application.state.subplace_display_service = None
     application.state.conversation_memory_service = (
         build_conversation_memory_service(settings)
         if settings.conversation_memory_enabled

@@ -22,12 +22,6 @@ function PinIcon() {
   );
 }
 
-function formatCoordinate(value?: number | null) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value.toFixed(6)
-    : "—";
-}
-
 function formatDuration(minutes?: number | null) {
   if (!minutes) return null;
   if (minutes < 60) return `${minutes} phút`;
@@ -123,7 +117,11 @@ function SubplaceCard({
   const hasCoordinates =
     typeof subplace.latitude === "number" &&
     typeof subplace.longitude === "number";
-  const noteCount = subplace.description ? 1 : 0;
+  const hasGeminiNote = Boolean(
+    subplace.note &&
+      subplace.noteSource === "gemini" &&
+      subplace.noteActivityItemIds?.length
+  );
 
   return (
     <article
@@ -194,48 +192,51 @@ function SubplaceCard({
             </div>
           </div>
         </header>
-        <div className="itinerarySubplaceAddress">
-          {subplace.address ? <span>{subplace.address}</span> : null}
-          <code>
-            {formatCoordinate(subplace.latitude)}, {formatCoordinate(subplace.longitude)}
-          </code>
-        </div>
-        <button
-          aria-expanded={expanded}
-          className="itinerarySubplaceNoteButton"
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleDetails();
-          }}
-          type="button"
-        >
-          <NoteIcon />
-          <span>Ghi chú</span>
-          {noteCount ? <small>{noteCount}</small> : null}
-        </button>
-        {expanded ? (
+        {subplace.address ? (
+          <div className="itinerarySubplaceAddress">
+            <span>{subplace.address}</span>
+          </div>
+        ) : null}
+        {hasGeminiNote ? (
+          <button
+            aria-expanded={expanded}
+            className="itinerarySubplaceNoteButton"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleDetails();
+            }}
+            type="button"
+          >
+            <NoteIcon />
+            <span>Ghi chú</span>
+            <small>1</small>
+          </button>
+        ) : null}
+        {expanded && hasGeminiNote ? (
           <div className="itinerarySubplaceDetails">
-            <strong>Thông tin điểm bên trong</strong>
-            <p>{subplace.description ?? "Chưa có ghi chú bổ sung cho địa điểm này."}</p>
+            <strong>Gợi ý tại điểm bên trong</strong>
+            <p>{subplace.note}</p>
           </div>
         ) : null}
       </div>
       <div className="itinerarySubplaceCardActions">
-        <button
-          aria-label={`Xem thông tin ${subplace.name}`}
-          aria-expanded={expanded}
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleDetails();
-          }}
-          type="button"
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24">
-            <circle cx="5" cy="12" r="1.5" />
-            <circle cx="12" cy="12" r="1.5" />
-            <circle cx="19" cy="12" r="1.5" />
-          </svg>
-        </button>
+        {hasGeminiNote ? (
+          <button
+            aria-label={`Xem ghi chú Gemini cho ${subplace.name}`}
+            aria-expanded={expanded}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleDetails();
+            }}
+            type="button"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <circle cx="5" cy="12" r="1.5" />
+              <circle cx="12" cy="12" r="1.5" />
+              <circle cx="19" cy="12" r="1.5" />
+            </svg>
+          </button>
+        ) : null}
         <span aria-label="Điểm tham quan" className="itineraryTypeIcon" role="img">
           <ActivityIcon />
         </span>
@@ -273,7 +274,6 @@ export function PlannerSubplaceFocus({
         </div>
         <span>{group.totalCount}</span>
       </header>
-      <p>Chọn một điểm để phóng to vị trí. Các điểm này chỉ mang tính thông tin, không tạo thêm chặng đi.</p>
       <div className="itinerarySubplaceFocusList">
         {group.items.map((subplace, index) => (
           <SubplaceCard

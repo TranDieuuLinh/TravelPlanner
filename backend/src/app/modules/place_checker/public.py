@@ -23,6 +23,7 @@ from app.modules.place_checker.resolution.enrichment import EvidenceEnrichmentSe
 from app.modules.place_checker.factory import (
     build_postgres_place_checker_pipeline,
     build_postgres_place_search_tool,
+    build_subplace_display_service,
 )
 from app.modules.place_checker.selection.food.service import FoodRestaurantSelectionService
 from app.modules.place_checker.selection.food.contract import (
@@ -179,5 +180,6 @@ __all__ = [
     "build_place_checker_pipeline_graph",
     "build_postgres_place_checker_pipeline",
     "build_postgres_place_search_tool",
+    "build_subplace_display_service",
     "manual_search_router",
 ]

@@ -137,6 +137,11 @@ class Settings(BaseSettings):
         ge=256,
         le=8192,
     )
+    place_checker_subplace_note_max_output_tokens: int = Field(
+        default=2048,
+        ge=256,
+        le=8192,
+    )
     route_provider: Literal["valhalla", "disabled"] = "valhalla"
     valhalla_base_url: str = "http://localhost:8002"
     valhalla_timeout_seconds: float = Field(default=180.0, gt=0)

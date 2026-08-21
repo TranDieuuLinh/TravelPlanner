@@ -607,6 +607,12 @@ SubPlace active, mỗi child mới có một `Has_Subplace`, một `Offer_Item`,
 và description có provenance. Bán kính gần nhau không tự tạo quan hệ; các điểm
 độc lập và bản ghi nghi duplicate vẫn giữ nguyên để xử lý ở batch riêng.
 
+Migration `022_complete_subplace_activity_items.sql` bổ sung đúng một
+`ActivityItem` cho sáu SubPlace trước đó chỉ offer ProductItem, DrinkItem hoặc
+FoodItem. Migration giữ nguyên các item cũ, tái sử dụng provenance hiện có và
+đưa coverage nguồn note lên 37/37 SubPlace active có ít nhất một cạnh
+`Offer_Item -> ActivityItem`.
+
 Đợt chuẩn hóa dữ liệu cũng đã merge các bản ghi duplicate `Nhà Thờ Lớn Hà Nội`
 và `WinMart`, giữ entity có nhiều review hơn, chuyển alias/quan hệ không trùng
 sang entity giữ lại và loại quan hệ trùng.
@@ -628,8 +634,13 @@ ranking candidate và không gửi child properties/items trong relationship
 evidence. Vì vậy SubPlace không tham gia optimization hoặc routing. Read path riêng
 `GET /v1/plans/places/subplaces?parentPlaceIds=` query trực tiếp cạnh
 `Has_Subplace` và các property `address`, `latitude`, `longitude`, `image`,
-`description`, `time_duration`, `price_min`, `rating`, `review_count` sau khi
-itinerary đã render; dữ liệu chỉ phục vụ card/pin frontend và không được lưu
+`time_duration`, `price_min`, `rating`, `review_count` sau khi itinerary đã
+render. Cùng query đó chỉ lấy `Offer_Item` có target active `ActivityItem` làm
+ngữ cảnh cho structured Gemini sinh ghi chú ngắn. Public response đánh dấu
+`noteSource="gemini"` và liệt kê `noteActivityItemIds`; context nội bộ
+Offer/Activity không được serialize. Property `description` không còn được dùng
+làm ghi chú. Thiếu ActivityItem hoặc Gemini lỗi thì note để trống, không dùng
+fallback. Toàn bộ dữ liệu này chỉ phục vụ card/pin frontend và không được lưu
 ngược vào planner output.
 Named-place SQL search chung cả năm type theo canonical name, alias, address và
 cây ADM, lấy top-1 trước khi cân nhắc Google Maps; query này không đọc

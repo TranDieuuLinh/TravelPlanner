@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import json
 from math import isfinite
 import re
 
 from app.modules.place_checker.subplaces.contract import (
+    SubplaceOfferItemContext,
     SubplaceGroup,
     SubplaceSummary,
 )
@@ -13,6 +15,7 @@ from app.modules.place_checker.subplaces.contract import (
 SUBPLACES_BY_PARENT_SQL = """
 WITH ranked AS (
     SELECT relationship.from_entity_id AS parent_place_id,
+           parent.canonical_name AS parent_place_name,
            child.id AS place_id,
            child.canonical_name AS name,
            count(*) OVER (
@@ -34,11 +37,13 @@ WITH ranked AS (
     WHERE relationship.relationship_type = 'Has_Subplace'
       AND relationship.from_entity_id = ANY($1::text[])
 )
-SELECT ranked.parent_place_id, ranked.place_id, ranked.name,
+SELECT ranked.parent_place_id, ranked.parent_place_name,
+       ranked.place_id, ranked.name,
        ranked.total_count, ranked.child_order,
        properties.address, properties.latitude, properties.longitude,
-       properties.image, properties.description, properties.time_duration,
-       properties.price_min, properties.rating, properties.review_count
+       properties.image, properties.time_duration, properties.price_min,
+       properties.rating, properties.review_count,
+       COALESCE(activities.offer_items, '[]'::jsonb)::text AS offer_items
 FROM ranked
 LEFT JOIN LATERAL (
     SELECT max(property.value) FILTER (
@@ -56,9 +61,6 @@ LEFT JOIN LATERAL (
                )
            ) AS image,
            max(property.value) FILTER (
-               WHERE property.key IN ('description', 'story', 'note')
-           ) AS description,
-           max(property.value) FILTER (
                WHERE property.key = 'time_duration'
            ) AS time_duration,
            max(property.value) FILTER (
@@ -73,6 +75,33 @@ LEFT JOIN LATERAL (
     FROM knowledge_properties property
     WHERE property.entity_id = ranked.place_id
 ) properties ON true
+LEFT JOIN LATERAL (
+    SELECT jsonb_agg(
+               jsonb_build_object(
+                   'relationshipType', 'Offer_Item',
+                   'activityItemId', item.id,
+                   'activityItemName', item.canonical_name,
+                   'action', CASE
+                       WHEN jsonb_typeof(offer.recommendations::jsonb) = 'object'
+                       THEN offer.recommendations::jsonb ->> 'action'
+                       ELSE NULL
+                   END,
+                   'displayTemplate', CASE
+                       WHEN jsonb_typeof(offer.recommendations::jsonb) = 'object'
+                       THEN offer.recommendations::jsonb ->> 'displayTemplate'
+                       ELSE NULL
+                   END
+               )
+               ORDER BY offer.created_at, item.canonical_name, item.id
+           ) AS offer_items
+    FROM knowledge_relationships offer
+    JOIN knowledge_entities item
+      ON item.id = offer.to_entity_id
+     AND item.entity_type = 'ActivityItem'
+     AND item.status <> 'rejected'
+    WHERE offer.from_entity_id = ranked.place_id
+      AND offer.relationship_type = 'Offer_Item'
+) activities ON true
 WHERE ranked.child_order <= $2
 ORDER BY ranked.parent_place_id, ranked.child_order
 """
@@ -125,6 +154,22 @@ def _duration_minutes(value: object) -> int | None:
     return minutes if 1 <= minutes <= 1440 else None
 
 
+def _offer_items(value: object) -> list[SubplaceOfferItemContext]:
+    if not value:
+        return []
+    try:
+        payload = json.loads(value) if isinstance(value, str) else value
+        if not isinstance(payload, list):
+            return []
+        return [
+            SubplaceOfferItemContext.model_validate(item)
+            for item in payload[:20]
+            if isinstance(item, dict)
+        ]
+    except (TypeError, ValueError):
+        return []
+
+
 class PostgresSubplaceMixin:
     async def list_subplaces(
         self,
@@ -142,6 +187,7 @@ class PostgresSubplaceMixin:
         )
         items_by_parent: dict[str, list[SubplaceSummary]] = defaultdict(list)
         total_by_parent: dict[str, int] = {}
+        name_by_parent: dict[str, str] = {}
         for row in rows:
             parent_id = str(row["parent_place_id"])
             image_urls = self._image_urls({"image": row["image"]})
@@ -161,11 +207,6 @@ class PostgresSubplaceMixin:
                         maximum=180,
                     ),
                     image_url=image_urls[0] if image_urls else None,
-                    description=(
-                        str(row["description"]).strip()
-                        if row["description"]
-                        else None
-                    ),
                     duration_minutes=_duration_minutes(row["time_duration"]),
                     cost_per_person=_number(row["price_min"]),
                     rating=_number(row["rating"], maximum=5),
@@ -174,14 +215,17 @@ class PostgresSubplaceMixin:
                         if (review_count := _number(row["review_count"])) is not None
                         else None
                     ),
+                    offer_items=_offer_items(row["offer_items"]),
                 )
             )
             total_by_parent[parent_id] = int(row["total_count"])
+            name_by_parent[parent_id] = str(row["parent_place_name"])
         return [
             SubplaceGroup(
                 parent_place_id=parent_id,
                 total_count=total_by_parent[parent_id],
                 items=items_by_parent[parent_id],
+                parent_place_name=name_by_parent[parent_id],
             )
             for parent_id in parent_ids
             if parent_id in total_by_parent

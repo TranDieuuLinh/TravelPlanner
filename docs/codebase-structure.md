@@ -257,8 +257,9 @@ Backend hiện chỉ expose:
 - `GET/POST/DELETE /v1/trip-chats` và các endpoint message theo chat có auth
 - `GET /v1/plans/places/search` tìm địa điểm chuẩn hóa trong Knowledge Graph cho thao tác thêm thủ công
 - `GET /v1/plans/places/subplaces?parentPlaceIds=` batch-load các `SubPlace`
-  trực tiếp của `TravelPlace` để frontend hiển thị; endpoint không tạo stop hay
-  đưa child vào planner/routing.
+  trực tiếp của `TravelPlace` để frontend hiển thị; note chỉ được structured
+  Gemini sinh từ `Offer_Item -> ActivityItem`, endpoint không tạo stop hay đưa
+  child vào planner/routing.
 - `POST /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/replace` thay
   địa điểm và repair nguyên tử đúng một ngày
 - `GET /v1/trip-chats/bootstrap` trả tối đa 30 summary gần nhất cùng full chat
@@ -644,12 +645,19 @@ Knowledge Graph ontology còn khai báo `SubPlace` và cạnh cấu trúc
 bốn item type hiện có; property contract của SubPlace giống TravelPlace.
 PlaceChecker/Planner pipeline không duyệt hoặc chiếu child vào candidate,
 optimization hay routing. Read path riêng `/v1/plans/places/subplaces` chỉ
-chiếu child có địa chỉ, ảnh, tọa độ, mô tả, thời lượng, giá và rating cho
-frontend: card cha preview tối đa ba child, còn chế độ xem tất cả dùng card cùng
-ngôn ngữ thị giác với TravelPlace chính và map chỉ pin/zoom các SubPlace, không
-vẽ route. Khi mở chế độ này, frontend
+chiếu child có địa chỉ, ảnh, tọa độ, thời lượng, giá và rating cho frontend.
+Package `place_checker/subplaces/` dùng port/service riêng; PostgreSQL adapter
+đọc `Offer_Item` chỉ khi target là active `ActivityItem`, còn Gemini adapter tạo
+ghi chú structured tối đa hai câu. Service cache có giới hạn trong memory và
+không dùng `description` hoặc deterministic fallback làm note. Frontend chỉ hiện
+note có `noteSource="gemini"` cùng provenance ActivityItem: card cha preview tối
+đa ba child, còn chế độ xem tất cả dùng card cùng ngôn ngữ thị giác với
+TravelPlace chính và map chỉ pin/zoom các SubPlace, không vẽ route. Khi mở chế
+độ này, frontend
 thay toàn bộ day tabs/card/chặng của lịch trình bằng subsection của parent; nút
 quay lại khôi phục lịch trình chính tại ngày đang xem.
+Migration 022 giữ các Product/Drink/Food offer hiện có và bổ sung ActivityItem
+cho sáu child còn thiếu, nên 37/37 SubPlace active có nguồn cho luồng note này.
 Nhánh food query `FoodItem`/`DrinkItem` có `Has_Style` rồi reverse `Offer_Item`
 sang Restaurant/DrinkDessert trong bán kính tọa độ 5 km quanh tối đa 8-12 anchor
 đại diện. SpecialNear là evidence. Service giữ Style/Item provenance, gộp

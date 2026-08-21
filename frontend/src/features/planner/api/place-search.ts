@@ -27,11 +27,13 @@ export type SubplaceSummary = {
   latitude?: number | null;
   longitude?: number | null;
   imageUrl?: string | null;
-  description?: string | null;
   durationMinutes?: number | null;
   costPerPerson?: number | null;
   rating?: number | null;
   reviewCount?: number | null;
+  note?: string | null;
+  noteSource?: "gemini" | null;
+  noteActivityItemIds?: string[];
 };
 
 export type SubplaceGroup = {

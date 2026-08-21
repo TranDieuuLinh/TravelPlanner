@@ -42,6 +42,16 @@ def test_subplace_lookup_uses_a_bounded_repeated_parent_query() -> None:
     assert parent_ids["schema"]["minItems"] == 1
     assert parent_ids["schema"]["maxItems"] == 50
 
+    schemas = app.openapi()["components"]["schemas"]
+    summary_properties = schemas["SubplaceSummary"]["properties"]
+    group_properties = schemas["SubplaceGroup"]["properties"]
+    assert "note" in summary_properties
+    assert "noteSource" in summary_properties
+    assert "noteActivityItemIds" in summary_properties
+    assert "description" not in summary_properties
+    assert "offerItems" not in summary_properties
+    assert "parentPlaceName" not in group_properties
+
 
 def test_manual_search_returns_planning_metadata_for_catalog_matches() -> None:
     class FakeTool:
@@ -98,7 +108,7 @@ def test_manual_search_returns_planning_metadata_for_catalog_matches() -> None:
 
 
 def test_subplaces_endpoint_keeps_children_informational() -> None:
-    class FakeCatalog:
+    class FakeService:
         async def list_subplaces(self, parent_place_ids, *, per_parent_limit):
             assert parent_place_ids == ["kg:old-quarter"]
             assert per_parent_limit == 50
@@ -121,7 +131,7 @@ def test_subplaces_endpoint_keeps_children_informational() -> None:
         list_subplaces_for_plan(
             parent_place_ids=["kg:old-quarter"],
             _=None,
-            catalog=FakeCatalog(),
+            service=FakeService(),
         )
     )
 

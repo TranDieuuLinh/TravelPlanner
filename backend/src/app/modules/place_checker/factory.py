@@ -3,6 +3,9 @@ from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCat
 from app.modules.place_checker.adapters.gemini_source_note_translator import (
     GeminiSourceNoteTranslator,
 )
+from app.modules.place_checker.adapters.gemini_subplace_note_generator import (
+    GeminiSubplaceNoteGenerator,
+)
 from app.modules.place_checker.adapters.search_places_gap_source import (
     SearchPlacesGapSource,
 )
@@ -21,6 +24,7 @@ from app.modules.place_checker.selection.food.service import (
     FoodRestaurantSelectionService,
 )
 from app.modules.place_checker.service import TripContextBuilder
+from app.modules.place_checker.subplaces.service import SubplaceDisplayService
 from app.shared.tools.search_places import SearchPlacesTool
 from app.shared.tools.search_places.ports import ExternalPlaceSearch
 from app.shared.llm import LlmClient
@@ -93,3 +97,21 @@ def build_postgres_place_search_tool(
         tag_filter=tag_catalog.filter_allowed,
     )
     return SearchPlacesTool(catalog), catalog
+
+
+def build_subplace_display_service(
+    catalog: PostgresPlaceCatalog,
+    *,
+    llm_client: LlmClient | None = None,
+    max_output_tokens: int = 2048,
+) -> SubplaceDisplayService:
+    """Compose frontend-only SubPlace notes from Offer_Item ActivityItems."""
+    return SubplaceDisplayService(
+        catalog,
+        GeminiSubplaceNoteGenerator(
+            llm_client,
+            max_output_tokens=max_output_tokens,
+        )
+        if llm_client is not None
+        else None,
+    )

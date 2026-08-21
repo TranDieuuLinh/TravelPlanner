@@ -57,7 +57,17 @@ có nguồn xác nhận quan hệ thành phần: Đại Trung Môn dưới Văn 
 Mông Phụ dưới Làng cổ Đường Lâm và Chợ gốm dưới Làng gốm Bát Tràng. Các cặp
 chỉ gần về tọa độ không bị chuyển. PlaceChecker/Planner không đọc
 `Has_Subplace`; chỉ endpoint trình bày của frontend đọc child sau khi plan đã
-được tạo.
+được tạo. Migration 022 bổ sung ActivityItem cho sáu SubPlace trước đó chỉ có
+ProductItem/DrinkItem/FoodItem; các item cũ vẫn được giữ. Sau migration, 37/37
+SubPlace active có ít nhất một `Offer_Item -> ActivityItem` để làm nguồn note.
+
+Ghi chú trên card SubPlace không dùng property `description`. Read path chỉ tạo
+request khi child có chuỗi `SubPlace -> Offer_Item -> ActivityItem`, gửi tên
+SubPlace cùng `action`, `displayTemplate` và identity ActivityItem vào structured
+Gemini, rồi trả `note`, `noteSource="gemini"` và `noteActivityItemIds` cho
+frontend. Kết quả được cache có giới hạn trong memory theo đúng input. Nếu thiếu
+ActivityItem, thiếu Gemini key hoặc provider lỗi thì API không trả note và UI
+không hiện nút ghi chú; không có fallback tự suy diễn.
 
 ## Ranh giới API
 
@@ -70,7 +80,7 @@ chỉ gần về tọa độ không bị chuyển. PlaceChecker/Planner không �
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
 | `POST /v1/trip-chats/{chatId}/messages` | `SendTripChatMessageInput`; khi chat có `currentPlannerOutput`, Gemini nhận compact plan context để trả structured edit intent | `TripChatMessageResponse`; edit hợp lệ dùng cùng optimistic-revision mutation với UI thủ công |
 | `GET /v1/plans/places/search?query=&destination=&topK=` | `Authorization: Bearer <accessToken>`, query text and optional destination; `topK` defaults to `5` | Tối đa năm địa điểm chuẩn hóa; name/alias tham gia xếp hạng, catalog match trả thêm opening hours, duration và estimated cost khi có |
-| `GET /v1/plans/places/subplaces?parentPlaceIds=` | `Authorization: Bearer <accessToken>`; lặp `parentPlaceIds` tối đa 50 TravelPlace | Nhóm SubPlace trực tiếp theo parent, tối đa 50 child/parent, dùng riêng cho UI; không thay đổi planner output hoặc route |
+| `GET /v1/plans/places/subplaces?parentPlaceIds=` | `Authorization: Bearer <accessToken>`; lặp `parentPlaceIds` tối đa 50 TravelPlace | Nhóm SubPlace trực tiếp theo parent, tối đa 50 child/parent; note chỉ có khi structured Gemini sinh từ `Offer_Item -> ActivityItem`; dùng riêng cho UI, không thay đổi planner output hoặc route |
 | `POST /v1/trip-chats/{chatId}/plan/unscheduled-places/confirm` | Multipart địa điểm gốc, match đã chọn, ngày đích và `expectedRevision` | `TripChat` sau khi thêm stop và xóa entry chưa xếp nguyên tử |
 | `DELETE /v1/trip-chats/{chatId}/plan/unscheduled-places` | Multipart địa điểm gốc và `expectedRevision` | `TripChat` sau khi xóa entry chưa xếp |
 | `POST /v1/trip-chats/{chatId}/plan/items` | Multipart item fields và `expectedRevision` | `TripChat` sau khi thêm địa điểm vào ngày đã chọn |

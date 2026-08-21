@@ -6285,13 +6285,6 @@
   font-weight: 900;
 }
 
-.itinerary .itinerarySubplaceFocus > p {
-  margin: 0 2px;
-  color: #72817d;
-  font-size: .56rem;
-  line-height: 1.45;
-}
-
 .itinerary .itinerarySubplaceFocusList {
   display: grid;
   gap: 12px;
@@ -6405,14 +6398,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.itinerary .itinerarySubplaceAddress code {
-  width: fit-content;
-  padding: 0;
-  background: transparent;
-  color: #668079;
-  font-size: .5rem;
 }
 
 .itinerary .itinerarySubplaceMetric,

@@ -73,4 +73,5 @@ trung-plans/
 !backend/migrations/019_curate_hanoi_subplaces.sql
 !backend/migrations/020_reparent_ba_dinh_subplaces.sql
 !backend/migrations/021_curate_nearby_travelplace_subplaces.sql
+!backend/migrations/022_complete_subplace_activity_items.sql
 *.local*

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.modules.auth.public import AuthUser, require_current_user
 from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCatalog
 from app.modules.place_checker.subplaces.contract import SubplaceGroup
+from app.modules.place_checker.subplaces.service import SubplaceDisplayService
 from app.shared.tools.search_places import (
     AdministrativeArea,
     PlaceSearchRequest,
@@ -29,9 +30,9 @@ def _search_dependencies(request: Request) -> tuple[SearchPlacesTool, PostgresPl
     return tool, catalog
 
 
-def _catalog_dependency(request: Request) -> PostgresPlaceCatalog:
-    catalog = getattr(request.app.state, "manual_place_search_catalog", None)
-    if catalog is None:
+def _subplace_service_dependency(request: Request) -> SubplaceDisplayService:
+    service = getattr(request.app.state, "subplace_display_service", None)
+    if service is None:
         raise HTTPException(
             status_code=503,
             detail={
@@ -39,7 +40,7 @@ def _catalog_dependency(request: Request) -> PostgresPlaceCatalog:
                 "message": "Dữ liệu địa điểm chưa được cấu hình.",
             },
         )
-    return catalog
+    return service
 
 
 @router.get("/places/search")
@@ -114,7 +115,7 @@ async def list_subplaces_for_plan(
         alias="parentPlaceIds",
     ),
     _: AuthUser = Depends(require_current_user),
-    catalog: PostgresPlaceCatalog = Depends(_catalog_dependency),
+    service: SubplaceDisplayService = Depends(_subplace_service_dependency),
 ) -> list[SubplaceGroup]:
-    """Return nested informational places without turning them into plan stops."""
-    return await catalog.list_subplaces(parent_place_ids, per_parent_limit=50)
+    """Return frontend-only SubPlaces with ActivityItem-grounded Gemini notes."""
+    return await service.list_subplaces(parent_place_ids, per_parent_limit=50)
