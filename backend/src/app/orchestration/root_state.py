@@ -58,3 +58,4 @@ class RootState(TypedDict, total=False):
     pending_user_context: list[dict]
     suggestions: list[dict[str, object]]
     warnings: list[str]
+    trip_context_changed: bool

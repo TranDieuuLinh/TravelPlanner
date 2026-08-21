@@ -5,12 +5,15 @@ from app.modules.plan_editor.contract import (
     PlanItemEdit,
     PlanEditorInput,
     PlanEditorOutput,
+    TripContextEditorInput,
+    TripContextEditorOutput,
 )
 from app.modules.plan_editor.adapters import GeminiPlanEditIntentResolver
 from app.modules.plan_editor.graph import build_plan_editor_graph
 from app.modules.plan_editor.ports import PlanEditIntentResolver
 from app.modules.plan_editor.service import (
     NaturalLanguagePlanEditor,
+    PlanEditorService,
     compact_plan_for_edit,
     validate_natural_language_plan_edit,
 )
@@ -40,6 +43,9 @@ __all__ = [
     "PlanItemEdit",
     "PlanEditorInput",
     "PlanEditorOutput",
+    "PlanEditorService",
+    "TripContextEditorInput",
+    "TripContextEditorOutput",
     "build_gemini_natural_language_plan_editor",
     "build_plan_editor_graph",
     "compact_plan_for_edit",

@@ -5,6 +5,7 @@ from app.orchestration.root_state import RootState
 from app.orchestration.routes import (
     route_after_explorer,
     route_after_place_checker,
+    route_after_plan_editor,
     route_supervisor,
 )
 from app.shared.persistence import create_checkpointer
@@ -62,8 +63,12 @@ def create_root_graph(
         {"itinerary_planner": "itinerary_planner", "finish": "finish"},
     )
     builder.add_edge("itinerary_planner", "finish")
-    builder.add_edge("information_finder", END)
-    builder.add_edge("plan_editor", "finish")
+    builder.add_edge("information_finder", "finish")
+    builder.add_conditional_edges(
+        "plan_editor",
+        route_after_plan_editor,
+        {"place_checker": "place_checker", "finish": "finish"},
+    )
     builder.add_edge("finish", END)
 
     compile_checkpointer = (

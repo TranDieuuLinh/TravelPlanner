@@ -29,7 +29,12 @@ from app.modules.place_checker.public import (
     build_place_checker_graph,
     build_place_checker_pipeline_graph,
 )
-from app.modules.plan_editor.public import PlanEditorInput, build_plan_editor_graph
+from app.modules.plan_editor.public import (
+    PlanEditorInput,
+    PlanEditorService,
+    TripContextEditorInput,
+    build_plan_editor_graph,
+)
 from app.modules.supervisor.public import (
     SupervisorService,
     build_supervisor_graph,
@@ -87,6 +92,8 @@ class RootNodes(ExplorerReviewNodes):
             itinerary_planner_graph or build_itinerary_planner_graph()
         )
         self.plan_editor = build_plan_editor_graph()
+        self.plan_editor_service = PlanEditorService()
+        self.finisher = finisher_service or ItineraryFinisher()
 
     async def run_information_finder(self, state: RootState) -> dict:
         result = await self.information_finder.ainvoke(
@@ -298,6 +305,22 @@ class RootNodes(ExplorerReviewNodes):
 
     async def run_plan_editor(self, state: RootState) -> dict:
         decision = state.get("decision")
+        trip_context_patch = getattr(decision, "trip_context_patch", None)
+        explorer_output = state.get("explorer_output")
+        if trip_context_patch is not None and explorer_output is not None:
+            result = self.plan_editor_service.edit_trip_context(
+                TripContextEditorInput(
+                    explorer_output=explorer_output,
+                    patch=trip_context_patch,
+                    raw_user_message=state.get("message") or "",
+                )
+            )
+            return {
+                "explorer_output": result.explorer_output,
+                "trip_context_changed": result.changed,
+                "warnings": [*state.get("warnings", []), *result.warnings],
+                "response": "Đã cập nhật thông tin chuyến đi.",
+            }
         natural_edit = getattr(decision, "plan_edit", None)
         if natural_edit is not None:
             if natural_edit.action == "clarify":

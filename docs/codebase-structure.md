@@ -134,6 +134,10 @@ Itinerary Planner hiện dùng response deterministic của chính route. Vì v�
 không có Gemini call phát sinh tại `finish`. Finisher không nhận raw prompt hay
 raw payload của provider.
 Module `plan_editor` vẫn giữ graph legacy cho `Itinerary` và sở hữu contract cùng
+validation helper của `NaturalLanguagePlanEdit`. Module `plan_editor` cũng sở hữu
+structured trip-context edit: nhận `ExplorerOutput` qua public contract, áp dụng
+`TripContextPatch` và trả output mới để root handoff sang PlaceChecker; Supervisor
+chỉ phân loại route và tạo patch.
 validation helper của `NaturalLanguagePlanEdit`. Trip Chat gửi compact view của
 `currentPlannerOutput` vào root graph; một structured Gemini call của Supervisor
 vừa chọn route vừa trả lệnh sửa. Root PlanEditor chỉ handoff quyết định này về

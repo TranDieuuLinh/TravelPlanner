@@ -7,9 +7,30 @@ from app.modules.plan_editor.contract import (
     PlanEditorOutput,
 )
 from app.modules.plan_editor.ports import PlanEditIntentResolver
+from app.modules.explorer.public import (
+    YamlInsightCatalog,
+    YamlTagCatalog,
+    apply_trip_context_patch,
+)
+from app.modules.plan_editor.contract import TripContextEditorInput, TripContextEditorOutput
 
 
 class PlanEditorService:
+    def edit_trip_context(self, payload: TripContextEditorInput) -> TripContextEditorOutput:
+        tag_catalog = YamlTagCatalog()
+        updated = apply_trip_context_patch(
+            payload.explorer_output,
+            payload.patch,
+            raw_user_message=payload.raw_user_message,
+            tag_catalog=tag_catalog,
+            insight_catalog=YamlInsightCatalog(tag_catalog),
+        )
+        return TripContextEditorOutput(
+            explorer_output=updated,
+            changed=updated.model_dump(mode="python")
+            != payload.explorer_output.model_dump(mode="python"),
+        )
+
     def edit(self, payload: PlanEditorInput) -> PlanEditorOutput:
         itinerary = deepcopy(payload.itinerary)
         operation = payload.operation

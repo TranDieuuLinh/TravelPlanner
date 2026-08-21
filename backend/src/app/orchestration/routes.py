@@ -34,3 +34,7 @@ def route_after_place_checker(
         if status_value in {"completed", "conditional", "partial"}
         else "finish"
     )
+
+
+def route_after_plan_editor(state: RootState) -> Literal["place_checker", "finish"]:
+    return "place_checker" if state.get("trip_context_changed") else "finish"

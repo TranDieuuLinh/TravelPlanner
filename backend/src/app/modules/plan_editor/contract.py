@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from app.shared.contracts.itinerary import Itinerary
+from app.modules.explorer.public import ExplorerOutput, TripContextPatch
 
 
 class EditOperation(BaseModel):
@@ -27,6 +28,18 @@ class PlanEditorInput(BaseModel):
 
 class PlanEditorOutput(BaseModel):
     itinerary: Itinerary
+    changed: bool
+    warnings: list[str] = Field(default_factory=list)
+
+
+class TripContextEditorInput(BaseModel):
+    explorer_output: ExplorerOutput
+    patch: TripContextPatch
+    raw_user_message: str = Field(default="", max_length=4000)
+
+
+class TripContextEditorOutput(BaseModel):
+    explorer_output: ExplorerOutput
     changed: bool
     warnings: list[str] = Field(default_factory=list)
 

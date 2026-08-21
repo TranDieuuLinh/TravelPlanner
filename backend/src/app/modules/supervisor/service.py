@@ -209,6 +209,7 @@ class SupervisorService:
         if result.route == "plan_editor" and not (
             (payload.has_itinerary and payload.has_edit_operation)
             or has_natural_edit
+            or (payload.explorer_output is not None and result.trip_context_patch is not None)
         ):
             if not self._fallback_enabled:
                 raise SupervisorClassificationError(
