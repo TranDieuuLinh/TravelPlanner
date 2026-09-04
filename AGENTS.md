@@ -3,7 +3,7 @@
 Đây là điểm bắt đầu dành cho coding agent làm việc với TravelPlanner. Phải đọc
 file này trước khi thay đổi code.
 
-Ngày cập nhật: 2026-08-20.
+Ngày cập nhật: 2026-09-04.
 
 ## Trạng thái backend hiện tại
 
@@ -68,7 +68,7 @@ README hoặc log.
 ## Quy tắc tag JSON
 
 - Trước khi thay đổi, kiểm tra hoặc đưa ví dụ JSON có field `tags`, phải đọc
-  lại `auto-attach/tags-auto.yml` trong chính worktree hiện tại.
+  lại `backend/auto-attach/tags-auto.yml` trong chính worktree hiện tại.
 - Mọi giá trị xuất hiện trong `tags` của JSON public phải là key hiện có trong
   `tags-auto.yml`; không tự tạo tag mới hoặc hard-code bản sao của từ điển vào
   source code.

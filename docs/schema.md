@@ -1,6 +1,6 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-21.
+Cập nhật lần cuối: 2026-09-04.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
@@ -421,7 +421,7 @@ qua relationship evidence, còn `Has_Style` chỉ kế thừa timing cụ thể 
 và không được giữ thành public tag. Travel reserve dùng một query canonical;
 SpecialExperience, OfferItem và quality cùng tham gia core rank. Preference,
 avoid và diversity chỉ dùng canonical key được resolve runtime từ
-`auto-attach/tags-auto.yml`. Preference bằng số tag khớp chia tổng tag canonical
+`backend/auto-attach/tags-auto.yml`. Preference bằng số tag khớp chia tổng tag canonical
 của candidate; avoid là hard filter. TravelPlace diversity lấy trung bình
 `1 / (1 + số lần tag đã chọn)` rồi cộng với trọng số 5%, bên cạnh 10%
 preference và 85% core. Quota giữ thứ tự rerank này và không làm PlaceChecker

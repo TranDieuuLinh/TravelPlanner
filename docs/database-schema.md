@@ -1,6 +1,6 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-21.
+Cập nhật lần cuối: 2026-09-04.
 
 ## Phạm vi và trạng thái
 
@@ -662,7 +662,7 @@ thương mại như art supply store, photo booth, garden center và plant servi
 không thêm cột và không ghi ngược category.
 
 PlaceChecker metadata read path resolve property `tags` qua
-`auto-attach/tags-auto.yml` tại runtime và chỉ chuyển canonical key hợp lệ.
+`backend/auto-attach/tags-auto.yml` tại runtime và chỉ chuyển canonical key hợp lệ.
 Relationship evidence từ `Special_Experience`, `Offer_Item`, `Has_Style` và
 `Special_Near` nằm ở field provenance riêng, không trở thành taxonomy group.
 Scoring dùng các canonical tag này cho preference ratio, hard avoid và độ mới

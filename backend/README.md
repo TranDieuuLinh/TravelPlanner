@@ -1,6 +1,6 @@
 # Travel Planner Agents
 
-Cập nhật lần cuối: 2026-08-21.
+Cập nhật lần cuối: 2026-09-04.
 
 Greenfield modular backend for a LangGraph-based travel-planning workflow.
 
@@ -174,7 +174,7 @@ For Explorer-only contract testing, use `POST /v1/explorer/invoke` with
 `rawPrompt`, `urls`, and/or `images`. Send `forceRefresh: true` to bypass the
 URL cache. This bypasses Supervisor, PlaceChecker,
 and ItineraryPlanner and returns the compact public `ExplorerApiOutput`.
-For Gemini prompt intake, `auto-attach/tags-auto.yml` is read on every request,
+For Gemini prompt intake, `backend/auto-attach/tags-auto.yml` is read on every request,
 injected as the authoritative taxonomy, and applied as JSON Schema enums for
 `shortPreferences` and `shortAvoids`. The response is validated again before
 use. The deterministic fallback resolves its legacy signals through the same

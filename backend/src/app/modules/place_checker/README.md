@@ -1,6 +1,6 @@
 # Hướng dẫn triển khai PlaceChecker
 
-Cập nhật lần cuối: 2026-08-21.
+Cập nhật lần cuối: 2026-09-04.
 
 Thư mục này chứa kế hoạch triển khai stage PlaceChecker. Các module Python
 production sẽ được thêm bên cạnh `docs/` khi từng task được thực hiện.
@@ -119,7 +119,7 @@ TravelPlace. `place_id` không bị đổi theo category.
 `Special_Experience` trạng thái `pending` nhận trust thấp hơn; đây không phải
 phân ngày hoặc quyết định itinerary.
 
-Compact output chỉ dùng tag hợp lệ từ `auto-attach/tags-auto.yml`; `Has_Style`
+Compact output chỉ dùng tag hợp lệ từ `backend/auto-attach/tags-auto.yml`; `Has_Style`
 không được chiếu thành tag/style semantic. Output vẫn gửi
 `audience={adultOnly,kidSuitable}`. Trip gửi `party={adults,kids}` cùng
 `preferences={tags,avoidTags,styles}`; Planner tiếp tục quyết định eligibility,
@@ -158,7 +158,7 @@ metadata. Direct PlaceChecker payload tự gửi extra key sẽ thành
 candidate-level validation issue.
 
 `ExplorerHandoffProjector` là boundary duy nhất của root: merge Conversation
-Memory theo precedence, resolve tag bằng `auto-attach/tags-auto.yml`, validate
+Memory theo precedence, resolve tag bằng `backend/auto-attach/tags-auto.yml`, validate
 final-dedupe place và gộp source evidence, rồi tạo `PlaceCheckerInput`. Root
 không gate theo `ready`/`partial` hoặc `input_ADM`; thiếu destination được trả
 dạng `blocked`, còn Explorer/provider/runtime failure được trả dạng `error` có

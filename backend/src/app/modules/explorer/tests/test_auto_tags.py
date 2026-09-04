@@ -1,4 +1,12 @@
+from pathlib import Path
+
 from app.modules.explorer.adapters.auto_tags import YamlTagCatalog
+
+
+def test_default_catalog_is_owned_by_backend_runtime() -> None:
+    backend_root = Path(__file__).resolve().parents[5]
+
+    assert YamlTagCatalog().path == backend_root / "auto-attach" / "tags-auto.yml"
 
 
 def test_catalog_rereads_allowed_tag_keys_when_file_changes(tmp_path) -> None:

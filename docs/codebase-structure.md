@@ -1,6 +1,6 @@
 # Cấu trúc codebase hiện tại
 
-Cập nhật lần cuối: 2026-08-21.
+Cập nhật lần cuối: 2026-09-04.
 
 ## Các ứng dụng cấp cao nhất
 
@@ -278,14 +278,14 @@ tiếp. Source-import chạy URL và ảnh song song, đánh giá coverage trư�
 hợp, rồi hai route hội tụ tại normalize, reconcile ADM và policy mặc định.
 Khi source-import có raw prompt, prompt draft nhẹ và source synthesis chạy song
 song rồi merge theo precedence để không làm mất tín hiệu rõ từ người dùng.
-Prompt draft Gemini đọc `auto-attach/tags-auto.yml` ở từng request, nhận toàn bộ
+Prompt draft Gemini đọc `backend/auto-attach/tags-auto.yml` ở từng request, nhận toàn bộ
 taxonomy trong system prompt và chỉ được trả exact key qua JSON Schema enum cho
 `shortPreferences`/`shortAvoids`; service kiểm tra lại output. Structured draft
 cũng trả `days`, `startDate`, `peopleExplicit` và `preferencesExplicit`; service
 không parse raw prompt bằng keyword hoặc regex để suy đoán các field này. Bước
 normalize deterministic chỉ kiểm tra schema, taxonomy và invariant, vì vậy cả
 draft cache cũ cũng tuân theo taxonomy mới mà không cần restart.
-Docker Compose mount toàn bộ `auto-attach/` read-only tại `/auto-attach` và đặt
+Docker Compose mount toàn bộ `backend/auto-attach/` read-only tại `/auto-attach` và đặt
 rõ `EXPLORER_TAGS_AUTO_PATH=/auto-attach/tags-auto.yml` cùng
 `EXPLORER_INSIGHT_USER_PATH=/auto-attach/insight-user.yml`; hai catalog đọc lại
 file tại runtime nên chỉnh taxonomy/insight không cần build lại image.
@@ -380,7 +380,7 @@ Explorer chỉ trích xuất và giữ provenance, không resolve place. Sau Exp
 root luôn chạy đúng một `ExplorerHandoffProjector`; không còn gate theo status
 `ready`/`partial` hoặc `input_ADM`. Projector ưu tiên dữ liệu rõ của turn hiện
 tại, dùng Conversation Memory để lấp context còn thiếu, merge place một lần,
-resolve preferences/avoids theo `auto-attach/tags-auto.yml`, validate lại
+resolve preferences/avoids theo `backend/auto-attach/tags-auto.yml`, validate lại
 canonical `ExplorerOutput`, lồng note vào source tương ứng, bỏ place tags,
 confidence và provenance nội bộ rồi tạo `PlaceCheckerInput`. Budget tại boundary
 luôn là tổng toàn chuyến cho một người. Final dedupe chạy sau memory merge, giữ
@@ -596,7 +596,7 @@ gợi ý phải đạt Bayesian rating điều chỉnh từ 4,2/5 và có window
 từ 18:00; DrinkDessert dùng window ban ngày 07:00–18:00. Hai pool được cap riêng
 rồi gộp vào `entertainment[]`. Direct-user/URL bypass optional cap và giữ
 provenance. Planner vẫn sở hữu source-mix, day assignment và tối ưu cuối.
-PlaceChecker canonicalize tag từ database qua `auto-attach/tags-auto.yml` ở mỗi
+PlaceChecker canonicalize tag từ database qua `backend/auto-attach/tags-auto.yml` ở mỗi
 request. Activity score gồm 85% core fit/quality, 10% preference và 5% tag
 diversity; preference là tỷ lệ tag candidate khớp, avoid là hard filter, còn
 mỗi tag diversity đóng góp `1 / (1 + số lần đã chọn)`. Pool quota giữ nguyên

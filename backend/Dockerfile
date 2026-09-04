@@ -8,6 +8,7 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md ./
 COPY src ./src
+COPY auto-attach /auto-attach
 
 ARG PIP_INDEX_URL
 

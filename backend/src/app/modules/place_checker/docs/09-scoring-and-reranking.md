@@ -23,7 +23,7 @@ place và giữ component đủ để audit.
 ```
 
 Preference match đọc direct public tags của candidate/metadata. Tag phải là key
-hiện có trong `auto-attach/tags-auto.yml`; technical provenance và relationship
+hiện có trong `backend/auto-attach/tags-auto.yml`; technical provenance và relationship
 type không được đưa vào `tags` để tạo preference match giả.
 
 ## Hard filter và penalty

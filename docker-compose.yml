@@ -17,7 +17,7 @@ services:
       - "${BACKEND_PORT:?Set BACKEND_PORT in backend/.env}:8000"
     volumes:
       - ./backend:/app
-      - ./auto-attach:/auto-attach:ro
+      - ./backend/auto-attach:/auto-attach:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command:

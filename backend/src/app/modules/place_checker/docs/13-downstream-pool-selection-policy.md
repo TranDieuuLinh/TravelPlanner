@@ -49,7 +49,7 @@ signal trong cùng rank. Không có bucket bắt buộc cho SpecialExperience v�
 có phase “special thiếu thì query toàn Hà Nội”; catalog query đã trả candidate
 toàn ADM trong một lượt.
 
-Activity scoring chỉ dùng canonical key từ `auto-attach/tags-auto.yml` cho ba
+Activity scoring chỉ dùng canonical key từ `backend/auto-attach/tags-auto.yml` cho ba
 quyết định preference, avoid và diversity. Tag/alias đọc từ Knowledge Graph
 được resolve qua catalog runtime trước khi scoring; tag kỹ thuật hoặc group khác
 không đi vào công thức. Avoid là hard filter. Phần preference của một candidate
@@ -125,7 +125,7 @@ khái niệm.
 
 ## Tag và output
 
-Mọi public tag phải là key runtime từ `auto-attach/tags-auto.yml`; catalog đọc
+Mọi public tag phải là key runtime từ `backend/auto-attach/tags-auto.yml`; catalog đọc
 lại file khi resolve/filter/scoring nên thay đổi taxonomy không cần restart
 backend. Technical provenance và relationship type nằm ở field riêng, không giả
 thành tag.

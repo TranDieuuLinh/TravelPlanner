@@ -27,7 +27,7 @@ các signal chất lượng. Candidate key/place ID được dedup toàn cục t
 Trong một result set, các nguồn sau chỉ là signal, không phải tầng recovery nối
 tiếp:
 
-- tag property trực tiếp đã được lọc qua `auto-attach/tags-auto.yml`;
+- tag property trực tiếp đã được lọc qua `backend/auto-attach/tags-auto.yml`;
 - `Special_Experience` từ ADM;
 - `Offer_Item`;
 - rating/review và metadata quality.
