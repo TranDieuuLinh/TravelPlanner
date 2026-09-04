@@ -2,6 +2,21 @@ export type UrlOnlyInputResult =
   | { ok: true; urls: string[] }
   | { ok: false; message: string };
 
+export const URL_SOURCE_ACTION_PROMPTS = [
+  {
+    label: "Tạo lịch trình từ liên kết",
+    value: "Tạo lịch trình chuyến đi từ liên kết này",
+  },
+  {
+    label: "Tóm tắt nội dung liên kết",
+    value: "Tóm tắt nội dung liên kết này",
+  },
+] as const;
+
+export function canSubmitPlannerSource(prompt: string, urls: string[]): boolean {
+  return Boolean(prompt.trim()) && urls.length > 0;
+}
+
 export function parseUrlOnlyInput(value: string): UrlOnlyInputResult {
   const entries = value
     .split(/\s+/)

@@ -53,6 +53,10 @@ class TravelMatrix:
     provider: str
     provider_version: str
     cache_key: str | None = None
+    logical_pair_count: int = 0
+    pair_cache_hit_count: int = 0
+    provider_pair_count: int = 0
+    batch_count: int = 0
 
     def cell(self, origin_node_id: str, destination_node_id: str) -> MatrixCell:
         origin = self.node_ids.index(origin_node_id)

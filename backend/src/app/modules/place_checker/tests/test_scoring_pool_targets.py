@@ -1,4 +1,4 @@
-from app.modules.place_checker.scoring import CandidateScoringService
+from app.modules.place_checker.scoring.service import CandidateScoringService
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 from app.modules.place_checker.tests.test_scoring_reranking import (
     NOW,
@@ -41,7 +41,7 @@ def test_default_reserve_grows_with_trip_days() -> None:
     )
 
     assert result.reserve_limit_per_gap == 60
-    assert result.pool_target == 181
+    assert result.pool_target == 95
     assert len(result.ranked) == 8
 
 
@@ -75,39 +75,49 @@ def test_global_ranking_can_exceed_per_gap_limit() -> None:
     assert result.ranked[-1].rank == 12
 
 
-def test_pool_category_balancing_keeps_discovery_groups_in_pool() -> None:
-    groups = [
-        "food",
-        "drink",
-        "culture",
-        "nature",
-        "shopping",
-        "nightlife",
-        "workshop",
-        "performance",
-        "outdoor",
-        "family",
-        "special_experience",
-        "local_activity",
+def test_pool_limit_preserves_tag_diversity_reranking() -> None:
+    canonical_tags = [
+        "di tích",
+        "lịch sử",
+        "Tâm linh",
+        "quân sự",
+        "Văn hóa",
+        "kiến thức",
+        "kiến trúc",
+        "thiên nhiên",
+        "biển",
+        "núi",
+        "sinh thái",
+        "cảnh quan",
     ]
-    result = CandidateScoringService().rank(
-        retrieval(
-            *[
-                candidate(
-                    f"{index}-{group}",
-                    pool_category=group,
-                    category="travel_place",
-                )
-                for group in groups
-                for index in range(2)
-            ]
-        ),
+    batch = retrieval(
+        *[
+            candidate(
+                f"{index}-{tag}",
+                tags=[tag],
+                category="travel_place",
+            )
+            for tag in canonical_tags
+            for index in range(2)
+        ]
+    )
+    service = CandidateScoringService()
+    full = service.rank(
+        batch,
         analysis_context().model_copy(update={"days": 1}),
         empty_places(),
-        reserve_limit_per_gap=20,
+        reserve_limit_per_gap=60,
+        max_total_candidates=24,
+    )
+    result = service.rank(
+        batch,
+        analysis_context().model_copy(update={"days": 1}),
+        empty_places(),
+        reserve_limit_per_gap=60,
         max_total_candidates=12,
     )
 
-    selected_groups = {item.candidate.pool_category for item in result.ranked}
     assert len(result.ranked) == 12
-    assert selected_groups == set(groups)
+    assert [item.candidate.candidate_key for item in result.ranked] == [
+        item.candidate.candidate_key for item in full.ranked[:12]
+    ]

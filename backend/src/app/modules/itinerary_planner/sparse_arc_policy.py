@@ -3,6 +3,9 @@ from collections.abc import Mapping
 from app.modules.itinerary_planner.routing_models import CandidatePair, SafeTravel
 
 
+MEAL_ACCESS_NEIGHBOR_LIMIT = 6
+
+
 def meal_access_pairs(
     feasible: Mapping[CandidatePair, frozenset[int]],
     travel: Mapping[CandidatePair, SafeTravel],
@@ -38,6 +41,7 @@ def meal_access_pairs(
                 day=day,
                 origin_ids={food_id},
                 destination_ids=activity_ids,
+                limit=MEAL_ACCESS_NEIGHBOR_LIMIT,
             )
             _select_nearest(
                 selected,
@@ -46,6 +50,7 @@ def meal_access_pairs(
                 day=day,
                 origin_ids=activity_ids,
                 destination_ids={food_id},
+                limit=MEAL_ACCESS_NEIGHBOR_LIMIT,
             )
     return frozenset(selected)
 
@@ -58,6 +63,7 @@ def _select_nearest(
     day: int,
     origin_ids: set[str],
     destination_ids: set[str],
+    limit: int = 1,
 ) -> None:
     options = [
         pair
@@ -67,6 +73,9 @@ def _select_nearest(
         and day in feasible_days
     ]
     if options:
-        selected.add(
-            min(options, key=lambda pair: (travel[pair].safe_minutes, pair))
+        selected.update(
+            sorted(
+                options,
+                key=lambda pair: (travel[pair].safe_minutes, pair),
+            )[:limit]
         )

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { logout, type AdminUser } from "../../lib/shared/auth";
+import { apiRequest } from "../../lib/shared/api-client";
 
 type NavLink = {
   href: string;
@@ -54,17 +55,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   useEffect(() => {
-    fetch("/api/admin-session", {
-      credentials: "include"
-    })
-      .then((response) => {
-        if (!response.ok) {
-          setAuthenticated(false);
-          router.push("/login");
-          return null;
-        }
-        return response.json();
-      })
+    apiRequest<AdminUser>("/me")
       .then((payload: AdminUser | null) => {
         if (!payload) return;
         if (payload.role !== "admin") {

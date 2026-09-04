@@ -1,7 +1,7 @@
 from decimal import Decimal
 
-from app.modules.place_checker.budget_analysis import BudgetAnalysisService
-from app.modules.place_checker.capacity_analysis import CapacityAnalysisService
+from app.modules.place_checker.analysis.budget import BudgetAnalysisService
+from app.modules.place_checker.analysis.capacity import CapacityAnalysisService
 from app.modules.place_checker.contract import CapacityRange
 from app.modules.place_checker.enums import (
     BudgetAssessmentStatus,

@@ -1,8 +1,8 @@
 import asyncio
 
 from app.modules.place_checker.enums import CostTier
-from app.modules.place_checker.food_selection_contract import SelectedFoodRestaurant
-from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
+from app.modules.place_checker.selection.food.contract import SelectedFoodRestaurant
+from app.modules.place_checker.planning.builder import PlaceCheckerPlannerOutputBuilder
 from app.modules.place_checker.tests.test_pipeline_output import (
     metadata,
     payload,
@@ -20,7 +20,7 @@ def test_existing_food_pool_candidate_counts_as_special_near_by_relationship() -
         food_item_name="Phở",
         offered_food_item_id="food:pho",
         offered_food_item_name="Phở",
-        food_match_type="direct_id",
+        food_match_type="special_experience",
         food_match_confidence=1,
         restaurant_id="kg:pho",
         restaurant_name="Pho Hanoi",
@@ -49,7 +49,7 @@ def test_existing_food_pool_candidate_counts_as_special_near_by_relationship() -
 
     assert existing.priority == "user_input"
     assert anchor.place_id in existing.relationships
-    assert anchor.place_id not in builder.unpaired_travel_place_ids(result)
+    assert anchor.place_id not in builder.unpaired_activity_anchor_ids(result)
 
 
 def test_general_food_without_meal_window_does_not_fill_planner_pool() -> None:

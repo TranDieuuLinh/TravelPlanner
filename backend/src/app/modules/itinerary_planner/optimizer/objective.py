@@ -354,32 +354,7 @@ def _meal_deviation(model, variables, weights):
 
 def _fatigue(model, problem, variables, weights):
     terms = []
-    food_ids = {food.place_id for food in problem.valid_food}
     for day in range(1, problem.trip.days + 1):
-        assignments = [
-            variable
-            for (candidate_id, candidate_day), variable in variables.assigned.items()
-            if candidate_day == day
-        ]
-        stop_excess = variables.remember(
-            model.NewIntVar(0, len(assignments), f"stop_excess:{day}")
-        )
-        model.AddMaxEquality(stop_excess, [sum(assignments) - 6, 0])
-        terms.append(stop_excess * weights.excess_stop)
-        active = sum(
-            problem.candidate_by_id[candidate_id].duration_minutes * variable
-            for (candidate_id, candidate_day), variable in variables.assigned.items()
-            if candidate_day == day and candidate_id not in food_ids
-        ) + sum(
-            MEAL_POLICIES[meal].duration_minutes * variable
-            for (food_id, meal_day, meal), variable in variables.meal.items()
-            if meal_day == day
-        )
-        active_excess = variables.remember(
-            model.NewIntVar(0, 1440, f"active_excess:{day}")
-        )
-        model.AddMaxEquality(active_excess, [active - 600, 0])
-        terms.append(active_excess * weights.excess_active_minute)
         for (candidate_id, candidate_day), end in variables.end.items():
             if candidate_day != day:
                 continue

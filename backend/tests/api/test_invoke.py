@@ -69,6 +69,7 @@ def test_agent_invoke_forwards_force_refresh_to_root_graph():
         "/v1/agent/invoke",
         json={
             "threadId": "thread-refresh",
+            "message": "Tạo lịch trình chuyến đi từ liên kết này",
             "urls": ["https://example.test/post"],
             "forceRefresh": True,
         },
@@ -76,6 +77,18 @@ def test_agent_invoke_forwards_force_refresh_to_root_graph():
 
     assert response.status_code == 200
     assert received["force_refresh"] is True
+
+
+def test_agent_invoke_rejects_url_without_a_message():
+    response = TestClient(create_app()).post(
+        "/v1/agent/invoke",
+        json={
+            "threadId": "thread-url-without-message",
+            "urls": ["https://example.test/post"],
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def test_invoke_returns_finish_fields_in_camel_case():
@@ -121,7 +134,48 @@ def test_invoke_returns_planner_output_in_camel_case():
                         "destination": "Hà Nội",
                         "timezone": "Asia/Ho_Chi_Minh",
                         "people": 2,
-                        "days": [],
+                        "days": [
+                            {
+                                "day": 1,
+                                "date": "2026-08-22",
+                                "stops": [
+                                    {
+                                        "itemId": "planner:1:ho-guom",
+                                        "placeId": "ho-guom",
+                                        "name": "Hồ Gươm",
+                                        "kind": "place",
+                                        "priority": "url",
+                                        "startMinute": 480,
+                                        "endMinute": 540,
+                                        "durationMinutes": 60,
+                                        "coordinates": {
+                                            "latitude": 21.0285,
+                                            "longitude": 105.8542,
+                                        },
+                                        "notes": {
+                                            "text": "Nên đến trước 8 giờ.",
+                                            "sourceType": "url",
+                                            "sourceUrl": "https://example.test/video",
+                                        },
+                                        "personalNotes": "Nhớ mang ô.",
+                                        "costPerPerson": 0,
+                                    }
+                                ],
+                                "legs": [],
+                                "activityMinutes": 60,
+                                "travelMinutes": 0,
+                                "costPerPerson": 0,
+                                "costBreakdown": {
+                                    "accommodation": 0,
+                                    "food": 0,
+                                    "localTransport": 0,
+                                    "activities": 0,
+                                    "misc": 0,
+                                    "total": 0,
+                                    "currency": "VND",
+                                },
+                            }
+                        ],
                         "totalCostPerPerson": 0,
                         "currency": "VND",
                         "solver": {
@@ -152,6 +206,15 @@ def test_invoke_returns_planner_output_in_camel_case():
     payload = response.json()
     assert payload["itinerary"] is None
     assert payload["plannerOutput"]["destination"] == "Hà Nội"
+    note = payload["plannerOutput"]["days"][0]["stops"][0]["notes"]
+    assert note == {
+        "text": "Nên đến trước 8 giờ.",
+        "sourceType": "url",
+        "sourceUrl": "https://example.test/video",
+    }
+    assert payload["plannerOutput"]["days"][0]["stops"][0]["personalNotes"] == (
+        "Nhớ mang ô."
+    )
     assert "planner_output" not in payload
 
 
@@ -242,10 +305,15 @@ def test_explorer_invoke_returns_full_explorer_contract(tmp_path):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["status"] == "ready"
+    assert "status" not in payload
     assert payload["input_ADM"] == "Huế"
     assert payload["days"] == 3
     assert "schemaVersion" not in payload
+    assert "clarificationQuestion" not in payload
+    assert "warnings" not in payload
+    assert "completeness" not in payload
+    assert "error" not in payload
+    assert "urlNotes" not in payload
     traces = app.state.observability_service.store.page("traces", 1, 25)["items"]
     assert len(traces) == 1
     assert traces[0]["entryPoint"] == "explorer.invoke"

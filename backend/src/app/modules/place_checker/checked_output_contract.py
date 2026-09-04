@@ -14,7 +14,7 @@ from app.modules.place_checker.enums import (
     SourceTier,
     VerificationStatus,
 )
-from app.modules.place_checker.evaluation_contract import (
+from app.modules.place_checker.evaluation.contract import (
     DataQualityEvaluation,
     EvaluationFinding,
     PlaceEvaluation,

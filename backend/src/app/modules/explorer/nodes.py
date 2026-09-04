@@ -1,3 +1,4 @@
+from app.modules.explorer.errors import agent_error_from_exception
 from app.modules.explorer.service import ExplorerService
 from app.modules.explorer.state import ExplorerState
 from app.shared.contracts.agent import AgentError
@@ -12,9 +13,11 @@ class ExplorerNodes:
 
     async def extract_prompt_structured_draft(self, state: ExplorerState) -> dict:
         try:
-            return {"draft": await self.service.prompt_draft(state["payload"].raw_prompt or "")}
+            return {"draft": await self.service.prompt_draft(
+                self.service.llm_prompt(state["payload"])
+            )}
         except Exception as exc:
-            return {"failure": self.service.error_from_exception(
+            return {"failure": agent_error_from_exception(
                 exc, "DRAFT_GENERATION_FAILED"
             )}
 
@@ -33,7 +36,7 @@ class ExplorerNodes:
             draft = await self.service.source_draft(state["payload"], state["source_results"])
             return {"draft": draft}
         except Exception as exc:
-            return {"failure": self.service.error_from_exception(
+            return {"failure": agent_error_from_exception(
                 exc, "DRAFT_GENERATION_FAILED"
             )}
 
@@ -50,8 +53,7 @@ class ExplorerNodes:
         return {"output": self.service.finalize(
             intake_id=state["intake_id"], draft=state["normalized_draft"],
             input_adm=state.get("input_adm"), adm_conflict=state.get("adm_conflict", False),
-            prompt_days=state.get("prompt_days"), coverage=state.get("coverage"),
-            prompt_start_date=state.get("prompt_start_date"),
+            coverage=state.get("coverage"),
             source_results=state.get("source_results"),
         )}
 

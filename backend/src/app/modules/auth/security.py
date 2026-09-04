@@ -2,17 +2,15 @@ import base64
 import binascii
 import hashlib
 import hmac
-import os
 import json
+import os
 import secrets
 import time
 from typing import Any
 
 
 def password_hash(password: str, salt: bytes) -> str:
-    digest = hashlib.scrypt(
-        password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1
-    )
+    digest = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2**14, r=8, p=1)
     return base64.urlsafe_b64encode(digest).decode("ascii")
 
 
@@ -38,7 +36,9 @@ def _unb64(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
-def create_jwt(*, subject: int, token_type: str, secret: str, ttl_seconds: int, role: str) -> str:
+def create_jwt(
+    *, subject: int, token_type: str, secret: str, ttl_seconds: int, role: str
+) -> str:
     """Create a compact HS256 JWT without adding a runtime dependency."""
     now = int(time.time())
     header = {"alg": "HS256", "typ": "JWT"}
@@ -50,8 +50,10 @@ def create_jwt(*, subject: int, token_type: str, secret: str, ttl_seconds: int, 
         "exp": now + ttl_seconds,
         "jti": secrets.token_urlsafe(16),
     }
-    encoded = f"{_b64(json.dumps(header, separators=(",", ":")).encode())}.{_b64(json.dumps(payload, separators=(",", ":")).encode())}"
-    signature = hmac.new(secret.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256).digest()
+    encoded = f"{_b64(json.dumps(header, separators=(',', ':')).encode())}.{_b64(json.dumps(payload, separators=(',', ':')).encode())}"
+    signature = hmac.new(
+        secret.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256
+    ).digest()
     return f"{encoded}.{_b64(signature)}"
 
 
@@ -61,7 +63,9 @@ def decode_jwt(token: str, *, secret: str, expected_type: str) -> dict[str, Any]
         if len(parts) != 3:
             return None
         encoded = f"{parts[0]}.{parts[1]}"
-        expected = hmac.new(secret.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256).digest()
+        expected = hmac.new(
+            secret.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256
+        ).digest()
         if not hmac.compare_digest(_unb64(parts[2]), expected):
             return None
         header = json.loads(_unb64(parts[0]))
@@ -73,5 +77,12 @@ def decode_jwt(token: str, *, secret: str, expected_type: str) -> dict[str, Any]
         if not str(payload.get("sub", "")).isdigit():
             return None
         return payload
-    except (ValueError, TypeError, KeyError, json.JSONDecodeError, binascii.Error, UnicodeError):
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        json.JSONDecodeError,
+        binascii.Error,
+        UnicodeError,
+    ):
         return None

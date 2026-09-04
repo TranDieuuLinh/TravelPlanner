@@ -114,6 +114,46 @@ def test_tiktok_html_extracts_matching_embedded_video() -> None:
     }
 
 
+def test_tiktok_reads_metadata_without_downloading_media() -> None:
+    page = b"""
+    <script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+    {"scope":{"itemStruct":{"id":"123","desc":"Ho Guom, Van Mieu",
+    "author":{"nickname":"Travel VN"},"video":{"duration":12,
+    "playAddr":"https://v16-webapp-prime.tiktok.com/video.mp4"}}}}
+    </script>
+    """
+
+    class PageResponse:
+        status_code = 200
+        content = page
+        text = page.decode()
+
+        def raise_for_status(self):
+            pass
+
+    class PageSession:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get(self, url: str, **kwargs):
+            self.calls += 1
+            return PageResponse()
+
+        def close(self):
+            pass
+
+    session = PageSession()
+    client = TikTokHtmlMediaClient(session_factory=lambda: session)
+
+    metadata = asyncio.run(client.extract(
+        "https://www.tiktok.com/@travel/video/123?share=private"
+    ))
+
+    assert metadata["description"] == "Ho Guom, Van Mieu"
+    assert metadata["duration"] == 12
+    assert session.calls == 1
+
+
 def test_tiktok_html_downloads_four_parallel_ranges(tmp_path) -> None:
     payload = b"0123456789abcdef"
     calls: list[str | None] = []

@@ -1,6 +1,7 @@
 from typing import Literal
 
 from app.orchestration.root_state import RootState
+from app.modules.explorer.public import ExplorerReview
 
 
 def route_supervisor(
@@ -11,16 +12,15 @@ def route_supervisor(
 
 def route_after_explorer(
     state: RootState,
-) -> Literal["place_checker", "finish"]:
-    if state.get("pending_user_context"):
-        return "finish"
-    output = state["explorer_output"]
-    return "place_checker" if explorer_can_plan(output) else "finish"
-
-
-def explorer_can_plan(output) -> bool:
-    """A partial source import may continue when trip identity is complete."""
-    return output.status in {"ready", "partial"} and bool(output.input_adm)
+) -> Literal["supervisor_review", "supervisor_source_summary", "place_checker"]:
+    if state.get("source_action") == "summarize_source":
+        return "supervisor_source_summary"
+    review = ExplorerReview.model_validate(state["explorer_review"])
+    return (
+        "place_checker"
+        if review is not None and review.kind == "ready_for_execution"
+        else "supervisor_review"
+    )
 
 
 def route_after_place_checker(
@@ -29,4 +29,12 @@ def route_after_place_checker(
     output = state["place_output"]
     status = getattr(output, "status", None)
     status_value = getattr(status, "value", status)
-    return "finish" if status_value == "blocked" else "itinerary_planner"
+    return (
+        "itinerary_planner"
+        if status_value in {"completed", "conditional", "partial"}
+        else "finish"
+    )
+
+
+def route_after_plan_editor(state: RootState) -> Literal["place_checker", "finish"]:
+    return "place_checker" if state.get("trip_context_changed") else "finish"

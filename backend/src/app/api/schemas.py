@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from app.modules.explorer.public import ExplorerImageInput, ExplorerInput
+from app.modules.explorer.public import ExplorerImageInput, ExplorerInput, ExplorerOutput
 from app.modules.information_finder.public import AnswerBlock, SourceReference
 from app.modules.itinerary_planner.public import ItineraryPlannerOutput
 from app.modules.plan_editor.public import EditOperation
@@ -31,6 +31,10 @@ class InvokeRequest(ApiModel):
             images=self.images,
             force_refresh=self.force_refresh,
         )
+        if explorer_input.urls and not explorer_input.raw_prompt:
+            raise ValueError(
+                "A URL request must include a planning or summary message."
+            )
         self.message = explorer_input.raw_prompt
         self.urls = explorer_input.urls
 
@@ -45,3 +49,5 @@ class InvokeResponse(ApiModel):
     warnings: list[str] = Field(default_factory=list)
     content_blocks: list[AnswerBlock] = Field(default_factory=list)
     sources: list[SourceReference] = Field(default_factory=list)
+    suggestions: list[dict[str, object]] = Field(default_factory=list)
+    explorer_output: ExplorerOutput | None = None

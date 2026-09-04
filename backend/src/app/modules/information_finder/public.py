@@ -1,4 +1,5 @@
 from app.modules.information_finder.contract import (
+    AnswerMetadata,
     AnswerBlock,
     ComparisonBlock,
     ComparisonOption,
@@ -19,11 +20,17 @@ from app.modules.information_finder.contract import (
     VerseBlock,
 )
 from app.modules.information_finder.graph import build_information_finder_graph
+from app.modules.information_finder.entity_linking import materialize_entity_spans
 from app.modules.information_finder.service import InformationFinderService
+from app.modules.information_finder.tools.budget_ranges import (
+    BudgetRangeResult,
+    BudgetRangeTool,
+)
 
 __all__ = [
     "InformationFinderInput",
     "InformationFinderOutput",
+    "AnswerMetadata",
     "AnswerBlock",
     "ComparisonBlock",
     "ComparisonOption",
@@ -42,4 +49,7 @@ __all__ = [
     "TextSpan",
     "VerseBlock",
     "build_information_finder_graph",
+    "materialize_entity_spans",
+    "BudgetRangeResult",
+    "BudgetRangeTool",
 ]

@@ -5,4 +5,5 @@ from app.modules.information_finder.contract import InformationFinderOutput
 
 class InformationFinderState(TypedDict, total=False):
     query: str
+    force_refresh: bool
     output: InformationFinderOutput

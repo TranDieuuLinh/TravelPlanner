@@ -14,7 +14,7 @@ WITH RECURSIVE adm_descendants(id) AS (
     JOIN knowledge_relationships location
       ON location.from_entity_id = restaurant.id
      AND location.relationship_type = 'Located_In'
-    WHERE restaurant.entity_type IN ('Restaurant', 'DrinkDessert')
+    WHERE restaurant.entity_type = 'Restaurant'
       AND restaurant.status <> 'rejected'
       AND location.to_entity_id IN (SELECT id FROM adm_descendants)
       AND NOT (restaurant.id = ANY($5::text[]))
@@ -95,8 +95,6 @@ WITH RECURSIVE adm_descendants(id) AS (
 ), special_foods AS (
     SELECT food.id AS food_item_id,
            food.canonical_name AS food_item_name,
-           style.id AS style_id,
-           style.canonical_name AS style_name,
            LEAST(1.0, GREATEST(0.0, COALESCE(
                NULLIF(special.recommendations::jsonb->>'priority', '')::double precision
                    / 100.0,
@@ -108,12 +106,6 @@ WITH RECURSIVE adm_descendants(id) AS (
            ))) AS food_confidence
     FROM knowledge_relationships special
     JOIN knowledge_entities food ON food.id = special.to_entity_id
-    JOIN knowledge_relationships styled
-      ON styled.from_entity_id = food.id
-     AND styled.relationship_type = 'Has_Style'
-    JOIN knowledge_entities style
-      ON style.id = styled.to_entity_id
-     AND style.entity_type = 'Style'
     WHERE special.from_entity_id = $1
       AND special.relationship_type = 'Special_Experience'
       AND food.entity_type IN ('FoodItem', 'DrinkItem')
@@ -122,13 +114,13 @@ WITH RECURSIVE adm_descendants(id) AS (
     SELECT relation.from_entity_id AS restaurant_id,
            special_food.food_item_id,
            special_food.food_item_name,
-           special_food.style_id,
-           special_food.style_name,
+           NULL::text AS style_id,
+           NULL::text AS style_name,
            special_food.food_priority,
            special_food.food_confidence,
            special_food.food_item_id AS offered_food_item_id,
            special_food.food_item_name AS offered_food_item_name,
-           'direct_id'::text AS food_match_type,
+           'special_experience'::text AS food_match_type,
            1.0::double precision AS food_match_confidence,
            0.70::double precision AS offer_confidence
     FROM knowledge_relationships relation
@@ -140,25 +132,19 @@ WITH RECURSIVE adm_descendants(id) AS (
     SELECT offer.from_entity_id,
            food.id,
            food.canonical_name,
-           style.id,
-           style.canonical_name,
+           NULL::text,
+           NULL::text,
            0.35::double precision,
            0.70::double precision,
            food.id,
            food.canonical_name,
-           'offer_item_fallback'::text,
+           'offer_item'::text,
            1.0::double precision,
            0.70::double precision
     FROM knowledge_relationships offer
     JOIN knowledge_entities food
       ON food.id = offer.to_entity_id
      AND food.entity_type IN ('FoodItem', 'DrinkItem')
-    JOIN knowledge_relationships styled
-      ON styled.from_entity_id = food.id
-     AND styled.relationship_type = 'Has_Style'
-    JOIN knowledge_entities style
-      ON style.id = styled.to_entity_id
-     AND style.entity_type = 'Style'
     WHERE offer.relationship_type = 'Offer_Item'
       AND COALESCE(offer.recommendations::jsonb->>'status', 'verified') <> 'rejected'
 ), ranked_pairs AS (
@@ -166,7 +152,7 @@ WITH RECURSIVE adm_descendants(id) AS (
            nearby.restaurant_id,
            nearby.restaurant_name,
            nearby.distance_km,
-           COALESCE(nearby.edge_threshold_km, $3, 5.0) AS threshold_km,
+           COALESCE(nearby.edge_threshold_km, 5.0) AS threshold_km,
            evidence.food_item_id,
            evidence.food_item_name,
            evidence.style_id,
@@ -179,13 +165,13 @@ WITH RECURSIVE adm_descendants(id) AS (
            evidence.food_confidence,
            evidence.offer_confidence,
            CASE
-               WHEN $3::double precision IS NULL THEN 'general_adm'
-               WHEN nearby.has_special_near THEN 'both'
-               ELSE 'computed_distance'
+               WHEN nearby.has_special_near AND nearby.distance_km <= 5.0 THEN 'both'
+               WHEN nearby.has_special_near THEN 'kg_special_near'
+               WHEN nearby.distance_km <= 5.0 THEN 'computed_distance'
+               ELSE 'general_adm'
            END AS proximity_source,
            row_number() OVER (
                PARTITION BY nearby.anchor_place_id,
-                            evidence.style_id,
                             evidence.food_item_id
                ORDER BY nearby.distance_km,
                         evidence.food_item_id,
@@ -214,7 +200,6 @@ SELECT anchor_place_id,
 FROM ranked_pairs
 WHERE style_rank <= LEAST($4, 4)
 ORDER BY anchor_place_id,
-         style_id,
          style_rank,
          food_item_id,
          restaurant_id

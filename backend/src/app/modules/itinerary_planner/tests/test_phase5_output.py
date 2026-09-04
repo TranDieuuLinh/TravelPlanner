@@ -71,6 +71,7 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
         "sourceType": "url",
         "sourceUrl": "https://example.test/video",
     }
+    places[0]["personalNotes"] = "Người dùng muốn ghé sau bữa sáng."
     provider = GeneratedRouteDetailProvider()
     graph = build_itinerary_planner_graph(
         GeneratedMatrixProvider(),
@@ -119,13 +120,11 @@ def test_phase5_enriches_only_selected_arcs_and_finalizes_output() -> None:
     assert lake.item_id == "planner:1:lake"
     assert lake.notes is not None
     assert lake.notes.source_type == "url"
-    assert lake.personal_notes is None
+    assert lake.personal_notes == "Người dùng muốn ghé sau bữa sáng."
     assert {
         day: [interval.model_dump(by_alias=True) for interval in intervals or []]
         for day, intervals in (lake.opening_hours or {}).items()
-    } == {
-        "1": [{"startMinute": 480, "endMinute": 1020}]
-    }
+    } == {"1": [{"startMinute": 480, "endMinute": 1020}]}
     assert [item.period for item in output.source_mix] == ["morning", "evening"]
 
 

@@ -20,7 +20,14 @@ from app.modules.conversation_memory.public import (
     MemoryFact,
     WorkingMemoryState,
 )
-from app.modules.explorer.public import create_explorer_service
+from app.modules.explorer.adapters.auto_tags import YamlTagCatalog
+from app.modules.explorer.adapters.development import (
+    InMemoryExplorerSnapshotRepository,
+    InlineImageSourceExtractor,
+    UnconfiguredUrlSourceExtractor,
+)
+from app.modules.explorer.models import ExplorerDraft
+from app.modules.explorer.service import ExplorerService
 from app.modules.supervisor.contract import ClassifierResult, SupervisorInput
 from app.modules.supervisor.public import SupervisorService
 from app.orchestration.root_graph import create_root_graph
@@ -42,23 +49,45 @@ class StubIntentClassifier:
         )
 
 
-def build_test_root_graph(checkpointer: MemorySaver | bool | None = False):
-    """Build root graph with fake/stub supervisor and rule-based explorer for deterministic testing.
+def build_test_root_graph(
+    checkpointer: MemorySaver | bool | None = False,
+    *,
+    initial_draft: ExplorerDraft | None = None,
+):
+    """Build root graph with structured test doubles and no provider calls.
 
     Defaults to checkpointer=False for single/multi-turn tests (Cases 01-03, 05) to avoid
     unregistered type serialization warnings when persistence is not being tested.
     Case 04 explicitly passes MemorySaver() to test volatile checkpointer behavior across graph instances.
     """
     supervisor_service = SupervisorService(classifier=StubIntentClassifier())
-    explorer_service = create_explorer_service(
-        draft_provider="rules",
-        source_draft_provider="rules",
+    drafts = BaselineDrafts(initial_draft or ExplorerDraft(inputAdm="Hanoi"))
+    explorer_service = ExplorerService(
+        drafts=drafts,
+        fallback_drafts=drafts,
+        url_extractor=UnconfiguredUrlSourceExtractor(),
+        image_extractor=InlineImageSourceExtractor(),
+        snapshots=InMemoryExplorerSnapshotRepository(),
+        tag_catalog=YamlTagCatalog(),
     )
     return create_root_graph(
         checkpointer=checkpointer,
         supervisor_service=supervisor_service,
         explorer_service=explorer_service,
     )
+
+
+class BaselineDrafts:
+    def __init__(self, first_draft: ExplorerDraft) -> None:
+        self.calls = 0
+        self.first_draft = first_draft
+
+    async def from_prompt(self, raw_prompt):
+        self.calls += 1
+        return self.first_draft if self.calls == 1 else ExplorerDraft()
+
+    async def from_sources(self, *, raw_prompt, sources):
+        return ExplorerDraft()
 
 
 class TestConversationMemoryBaseline(unittest.TestCase):
@@ -76,10 +105,8 @@ class TestConversationMemoryBaseline(unittest.TestCase):
                 config=self.config,
             )
         )
-        self.assertEqual(result["decision"].route, "finish")
+        self.assertEqual(result["decision"].route, "explorer")
         self.assertEqual(result["explorer_output"].input_adm, "Hanoi")
-        assert "bao nhiêu ngày" in result["clarification_question"]
-        assert "Ngân sách" in result["clarification_question"]
         self.assertIsNotNone(result.get("response"))
 
     def test_case_02_multiturn_deictic_reference_baseline_gap(self):
@@ -100,12 +127,11 @@ class TestConversationMemoryBaseline(unittest.TestCase):
         )
         # Baseline check: Without conversation memory resolution, Turn 2 lacks destination
         # and returns clarification question instead of resolving "các điểm bên trên".
-        self.assertEqual(result_turn2["decision"].route, "finish")
+        self.assertEqual(result_turn2["decision"].route, "explorer")
+        self.assertEqual(result_turn2["explorer_output"].status, "clarification")
         self.assertEqual(
             result_turn2["clarification_question"],
-            "Để tiếp tục, Penguin cần thêm:\n"
-            "1. Bạn muốn đi tỉnh hoặc thành phố nào?\n"
-            "2. Ngân sách dự kiến cho chuyến đi là bao nhiêu?",
+            "Bạn muốn đi tỉnh hoặc thành phố nào?",
         )
         self.assertIsNone(result_turn2.get("planner_output"))
         self.assertIsNone(result_turn2.get("itinerary"))
@@ -130,7 +156,7 @@ class TestConversationMemoryBaseline(unittest.TestCase):
             )
         )
         # Baseline check: "chỗ đó" is unresolved. Explorer output has no destination or resolved place.
-        self.assertEqual(result_turn2["decision"].route, "finish")
+        self.assertEqual(result_turn2["decision"].route, "explorer")
         self.assertIsNone(result_turn2.get("planner_output"))
         self.assertIsNone(result_turn2.get("itinerary"))
         explorer_output = result_turn2.get("explorer_output")
@@ -159,7 +185,10 @@ class TestConversationMemoryBaseline(unittest.TestCase):
         )
 
         # Simulate backend restart by instantiating a fresh graph instance (Process B) with a new volatile checkpointer
-        graph_b = build_test_root_graph(checkpointer=MemorySaver())
+        graph_b = build_test_root_graph(
+            checkpointer=MemorySaver(),
+            initial_draft=ExplorerDraft(),
+        )
 
         result_after_restart = asyncio.run(
             graph_b.ainvoke(
@@ -168,14 +197,11 @@ class TestConversationMemoryBaseline(unittest.TestCase):
             )
         )
         # Baseline check: InMemorySaver in graph B has no state for fixed_thread_id; context is lost
-        self.assertEqual(result_after_restart["decision"].route, "finish")
+        self.assertEqual(result_after_restart["decision"].route, "explorer")
         self.assertEqual(result_after_restart["explorer_output"].status, "clarification")
         self.assertEqual(
             result_after_restart["clarification_question"],
-            "Để tiếp tục, Penguin cần thêm:\n"
-            "1. Bạn muốn đi tỉnh hoặc thành phố nào?\n"
-            "2. Bạn muốn đi trong bao nhiêu ngày?\n"
-            "3. Ngân sách dự kiến cho chuyến đi là bao nhiêu?",
+            "Bạn muốn đi tỉnh hoặc thành phố nào?",
         )
         self.assertIsNone(result_after_restart.get("planner_output"))
         self.assertIsNone(result_after_restart.get("itinerary"))

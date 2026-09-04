@@ -1,3 +1,8 @@
+from app.modules.place_checker.adapters.postgres_generic_ranking_sql import (
+    GENERIC_TRAVEL_RANKING_CTES,
+)
+
+
 PLACE_SEARCH_SQL = """
 WITH RECURSIVE adm_descendants(id) AS (
     SELECT $2::text
@@ -29,82 +34,15 @@ WITH RECURSIVE adm_descendants(id) AS (
      AND location.relationship_type = 'Located_In'
     WHERE entity.entity_type = ANY($3::text[])
       AND entity.status <> 'rejected'
-      AND location.to_entity_id IN (SELECT id FROM adm_descendants)
-), generic_travel_ranked AS (
-    SELECT entity.id,
-           row_number() OVER (
-               PARTITION BY EXISTS (
-                   SELECT 1
-                   FROM knowledge_relationships special
-                   WHERE special.to_entity_id = entity.id
-                     AND special.from_entity_id IN (SELECT id FROM adm_scope)
-                     AND special.relationship_type = 'Special_Experience'
-               )
-               ORDER BY
-                   EXISTS (
-                       SELECT 1
-                       FROM knowledge_relationships offered
-                       JOIN knowledge_entities activity
-                         ON activity.id = offered.to_entity_id
-                        AND activity.entity_type = 'ActivityItem'
-                       WHERE offered.from_entity_id = entity.id
-                         AND offered.relationship_type = 'Offer_Item'
-                   ) DESC,
-                   (
-                       (props.latitude IS NOT NULL)::integer
-                       + (props.longitude IS NOT NULL)::integer
-                       + (
-                           props.time_duration IS NOT NULL
-                           OR EXISTS (
-                               SELECT 1
-                               FROM knowledge_relationships styled
-                               JOIN knowledge_properties style_property
-                                 ON style_property.entity_id = styled.to_entity_id
-                                AND style_property.key = 'time_duration'
-                               WHERE styled.from_entity_id = entity.id
-                                 AND styled.relationship_type = 'Has_Style'
-                           )
-                       )::integer
-                       + (
-                           props.price_min IS NOT NULL
-                           OR props.price_max IS NOT NULL
-                       )::integer
-                   ) DESC,
-                   NULLIF(props.rating, '')::double precision DESC NULLS LAST,
-                   NULLIF(props.review_count, '')::bigint DESC NULLS LAST,
-                   entity.id
-           ) AS discovery_rank
-    FROM scoped
-    JOIN knowledge_entities entity ON entity.id = scoped.id
-    LEFT JOIN LATERAL (
-        SELECT
-            max(property.value) FILTER (WHERE property.key = 'latitude') AS latitude,
-            max(property.value) FILTER (WHERE property.key = 'longitude') AS longitude,
-            max(property.value) FILTER (WHERE property.key = 'time_duration') AS time_duration,
-            max(property.value) FILTER (WHERE property.key = 'price_min') AS price_min,
-            max(property.value) FILTER (WHERE property.key = 'price_max') AS price_max,
-            max(property.value) FILTER (WHERE property.key = 'rating') AS rating,
-            max(property.value) FILTER (WHERE property.key = 'review_count') AS review_count
-        FROM knowledge_properties property
-        WHERE property.entity_id = entity.id
-    ) props ON true
-    WHERE $1 = 'travel place'
-      AND entity.entity_type = 'TravelPlace'
-      AND props.latitude IS NOT NULL
-      AND props.longitude IS NOT NULL
-      AND (
-          props.time_duration IS NOT NULL
-          OR EXISTS (
-              SELECT 1
-              FROM knowledge_relationships styled
-              JOIN knowledge_properties style_property
-                ON style_property.entity_id = styled.to_entity_id
-               AND style_property.key = 'time_duration'
-              WHERE styled.from_entity_id = entity.id
-                AND styled.relationship_type = 'Has_Style'
-          )
+      AND NOT EXISTS (
+          SELECT 1
+          FROM knowledge_properties discovery_policy
+          WHERE discovery_policy.entity_id = entity.id
+            AND discovery_policy.key = 'generic_discovery_excluded'
+            AND lower(btrim(discovery_policy.value)) = 'true'
       )
-), lexical_hits AS (
+      AND location.to_entity_id IN (SELECT id FROM adm_descendants)
+), __GENERIC_TRAVEL_RANKING_CTES__, lexical_hits AS (
     SELECT entity.id, similarity(entity.normalized_name, $1) AS preliminary_score
     FROM scoped
     JOIN knowledge_entities entity ON entity.id = scoped.id
@@ -120,31 +58,8 @@ WITH RECURSIVE adm_descendants(id) AS (
     JOIN knowledge_relationships relation ON relation.from_entity_id = scoped.id
     JOIN knowledge_entities target ON target.id = relation.to_entity_id
     WHERE $1 <> ''
-      AND relation.relationship_type IN ('Offer_Item', 'Has_Style')
+      AND relation.relationship_type = 'Offer_Item'
       AND target.normalized_name % $1
-    UNION ALL
-    SELECT styled.from_entity_id, 1.0 - styled.style_rank * 0.01
-    FROM (
-        SELECT relation.from_entity_id,
-               row_number() OVER (
-                   PARTITION BY relation.to_entity_id
-                   ORDER BY relation.from_entity_id
-               ) AS style_rank
-        FROM scoped
-        JOIN knowledge_relationships relation ON relation.from_entity_id = scoped.id
-        WHERE $1 = 'restaurant'
-          AND relation.relationship_type = 'Has_Style'
-          AND relation.to_entity_id IN (
-              'style_breakfast', 'style_lunch', 'style_dinner'
-          )
-    ) styled
-    WHERE styled.style_rank <= 20
-    UNION ALL
-    SELECT relation.from_entity_id, 0.90
-    FROM scoped
-    JOIN knowledge_relationships relation ON relation.from_entity_id = scoped.id
-    WHERE $1 = 'cafe'
-      AND relation.relationship_type = 'Has_Style'
     UNION ALL
     SELECT special.to_entity_id, 0.0
     FROM knowledge_relationships special
@@ -204,6 +119,7 @@ SELECT entity.id, entity.canonical_name, entity.entity_type, entity.status,
        ) AS match_score
 FROM candidate_ids
 JOIN knowledge_entities entity ON entity.id = candidate_ids.id
+LEFT JOIN generic_travel_ranked generic_rank ON generic_rank.id = entity.id
 LEFT JOIN LATERAL (
     SELECT array_agg(DISTINCT alias.alias) AS values,
            max(similarity(alias.normalized_alias, $1)) AS score
@@ -224,13 +140,12 @@ LEFT JOIN LATERAL (
     FROM (
         SELECT CASE relation.relationship_type
                    WHEN 'Offer_Item' THEN 'item:' || target.canonical_name
-                   WHEN 'Has_Style' THEN 'style:' || target.canonical_name
                END AS label,
                similarity(target.normalized_name, $1) AS label_score
         FROM knowledge_relationships relation
         JOIN knowledge_entities target ON target.id = relation.to_entity_id
         WHERE relation.from_entity_id = entity.id
-          AND relation.relationship_type IN ('Offer_Item', 'Has_Style')
+          AND relation.relationship_type = 'Offer_Item'
         UNION ALL
         SELECT 'experience:special_experience', 0.0
         FROM knowledge_relationships relation
@@ -238,6 +153,11 @@ LEFT JOIN LATERAL (
         WHERE relation.to_entity_id = entity.id
           AND relation.relationship_type = 'Special_Experience'
           AND relation.from_entity_id IN (SELECT id FROM adm_scope)
+        UNION ALL
+        SELECT property.value, 0.0
+        FROM knowledge_properties property
+        WHERE property.entity_id = entity.id
+          AND property.key = 'tags'
     ) labels
 ) tags ON true
 LEFT JOIN LATERAL (
@@ -267,37 +187,24 @@ LEFT JOIN LATERAL (
           AND special.relationship_type = 'Special_Experience'
         UNION ALL
         SELECT relation.relationship_type,
-               CASE relation.relationship_type
-                   WHEN 'Offer_Item' THEN COALESCE(
-                       CASE jsonb_typeof(relation.recommendations::jsonb)
-                           WHEN 'array' THEN (
-                               SELECT max((evidence->>'confidence')::double precision)
-                               FROM jsonb_array_elements(relation.recommendations::jsonb) evidence
-                               WHERE evidence ? 'confidence'
-                           )
-                           WHEN 'object' THEN
-                               (relation.recommendations::jsonb->>'confidence')::double precision
-                       END,
-                       CASE WHEN relation.recommendations::jsonb->>'status' = 'pending'
-                            THEN 0.45 ELSE 0.72 END
-                   )
-                   WHEN 'Has_Style' THEN LEAST(
-                       0.75,
-                       0.45 + COALESCE(
-                           (relation.recommendations::jsonb->>'priority')::double precision / 400,
-                           0.10
+               COALESCE(
+                   CASE jsonb_typeof(relation.recommendations::jsonb)
+                       WHEN 'array' THEN (
+                           SELECT max((evidence->>'confidence')::double precision)
+                           FROM jsonb_array_elements(relation.recommendations::jsonb) evidence
+                           WHERE evidence ? 'confidence'
                        )
-                   )
-               END
+                       WHEN 'object' THEN
+                           (relation.recommendations::jsonb->>'confidence')::double precision
+                   END,
+                   CASE WHEN relation.recommendations::jsonb->>'status' = 'pending'
+                        THEN 0.45 ELSE 0.72 END
+               )
         FROM knowledge_relationships relation
         JOIN knowledge_entities target ON target.id = relation.to_entity_id
         WHERE relation.from_entity_id = entity.id
-          AND relation.relationship_type IN ('Offer_Item', 'Has_Style')
-          AND (
-              target.normalized_name % $1
-              OR ($1 IN ('restaurant', 'cafe')
-                  AND relation.relationship_type = 'Has_Style')
-          )
+          AND relation.relationship_type = 'Offer_Item'
+          AND target.normalized_name % $1
     ) scored_relations
     ORDER BY score DESC, kind
     LIMIT 1
@@ -407,8 +314,9 @@ LEFT JOIN LATERAL (
     ) edge
 ) relations ON true
 ORDER BY relationship_score DESC, match_score DESC,
-         NULLIF(props.rating, '')::double precision DESC NULLS LAST,
+         generic_rank.bayesian_quality DESC NULLS LAST,
+         generic_rank.bayesian_rating DESC NULLS LAST,
          NULLIF(props.review_count, '')::bigint DESC NULLS LAST,
          entity.canonical_name
 LIMIT $4
-"""
+""".replace("__GENERIC_TRAVEL_RANKING_CTES__", GENERIC_TRAVEL_RANKING_CTES)

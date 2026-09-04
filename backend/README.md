@@ -1,6 +1,6 @@
 # Travel Planner Agents
 
-Cập nhật lần cuối: 2026-08-18.
+Cập nhật lần cuối: 2026-08-21.
 
 Greenfield modular backend for a LangGraph-based travel-planning workflow.
 
@@ -14,11 +14,18 @@ Consumers may import a module only through its `public.py` file.
 Supervisor
 ├── InformationFinder -> END
 ├── PlanEditor        -> END
-└── Explorer -> PlaceChecker -> ItineraryPlanner -> END
+└── Explorer -> ExplorerHandoffProjector -> PlaceChecker -> ItineraryPlanner -> Finisher -> END
 ```
 
 The root graph lives in `src/app/orchestration`. It maps data between public
-module contracts and does not contain travel-planning rules.
+module contracts and does not contain travel-planning rules. Every Explorer
+result reaches one handoff projector; it merges conversation memory, hot-loads
+the tag taxonomy, final-deduplicates places while preserving their sources,
+revalidates the canonical output, nests source notes, removes place
+tags/confidence/internal provenance, normalizes whole-trip budget per person,
+and creates `PlaceCheckerInput`. Missing destination and runtime failures become
+structured PlaceChecker `blocked`/`error` results instead of route gates or raw
+exceptions.
 
 ## Module boundary
 
@@ -56,8 +63,14 @@ This is a working architecture scaffold, not a production travel-data system.
   three STT requests. OCR uses
   `GEMINI_IMAGE_OCR_MODEL`, while STT uses `GEMINI_AUDIO_MODEL`; a failed media
   branch is logged and reported without discarding successful evidence from the
-  other branch. YouTube prefers captions and falls back to chunked audio
-  transcription, limited to one audio chunk at a time by default. Generic
+  other branch. URL media now runs a semantic preflight over native transcript,
+  title, description, location, and tags. Evidence with a destination/place and
+  enough concrete travel details skips media download; uncertain, sparse, or
+  explicitly exhaustive requests fall back conservatively. YouTube prefers
+  captions, uses description-only evidence when it passes that gate, otherwise
+  falls back to chunked audio transcription and then frame OCR only if the
+  transcript remains insufficient. TikTok and Instagram run STT/OCR only after
+  their metadata fails the same gate. Generic
   websites use `trafilatura`, trying
   Safari-impersonated `curl-cffi` and then a bounded
   Playwright Chromium fallback after HTTP block.
@@ -71,7 +84,7 @@ This is a working architecture scaffold, not a production travel-data system.
   key rotation that honors provider `Retry-After` responses.
   URL extraction is cached in Explorer-owned PostgreSQL `source_documents` by
   canonical URL, extractor version, and a seven-day default TTL. The adapter
-  reads legacy `old_one` version-6 artifacts and writes normalized version 8.
+  reads legacy normalized artifacts and writes coverage-gated version 9.
   Raw-image OCR is memoized in a bounded process-local LRU by a SHA-256 digest;
   `forceRefresh=true` bypasses URL, draft, and image OCR cache hits. Cache
   failures do not block extraction.
@@ -80,7 +93,12 @@ This is a working architecture scaffold, not a production travel-data system.
   assistant-meta, and out-of-scope `finish` requests. There is no keyword-based
   Supervisor routing provider. The baseline model and routing policy are not
   production-evaluated.
-- Explorer currently parses destination and duration from simple text input.
+- Explorer applies 3-day/2-adult/low-budget defaults, preserves every valid
+  explicit preference, and appends every priority tag from the applicable
+  `insight-user.yml` groups without random sampling or a four-tag cap. Final
+  preference/avoid tags must also be keys in `tags-auto.yml`. Explorer exposes
+  structured trip-context patch operations for Supervisor integration. Only
+  missing/conflicting ADM is a blocking clarification.
 - InformationFinder uses cache-first hybrid PostgreSQL/pgvector retrieval,
   optional Tavily Search, and an optional structured answer generator through
   the shared Gemini client. Without configuration it returns a truthful
@@ -100,6 +118,10 @@ This is a working architecture scaffold, not a production travel-data system.
   then returns the plan in `plannerOutput`.
   Valhalla must be configured and available for production matrix routing;
   missing route geometry after a valid matrix is surfaced as a warning.
+- Finisher reads only normalized planner output, prioritizes selected URL notes,
+  and returns a concise Vietnamese response. Gemini performs the natural-language
+  rendering when configured; a deterministic Vietnamese fallback remains
+  available without a key or when the provider fails.
 - The root graph uses the PostgreSQL checkpointer when `DATABASE_URL` is set and
   fails startup composition if a usable psycopg runtime is missing. Development
   without a database uses the explicit in-memory fallback.
@@ -151,19 +173,38 @@ curl -X POST http://127.0.0.1:8000/v1/agent/invoke \
 For Explorer-only contract testing, use `POST /v1/explorer/invoke` with
 `rawPrompt`, `urls`, and/or `images`. Send `forceRefresh: true` to bypass the
 URL cache. This bypasses Supervisor, PlaceChecker,
-and ItineraryPlanner and returns the complete `ExplorerOutput`.
+and ItineraryPlanner and returns the compact public `ExplorerApiOutput`.
+For Gemini prompt intake, `auto-attach/tags-auto.yml` is read on every request,
+injected as the authoritative taxonomy, and applied as JSON Schema enums for
+`shortPreferences` and `shortAvoids`. The response is validated again before
+use. The deterministic fallback resolves its legacy signals through the same
+file, while the public boundary only retains exact declared keys. Edits do not
+require a backend restart.
 For Instagram pages that require a logged-in session, export a Netscape-format
 cookie file outside source control and set `EXPLORER_YTDLP_COOKIE_FILE` to its
 absolute path. TikTok does not use the yt-dlp fallback. Cookie files are ignored
 by the backend `.gitignore`; never commit or log them.
-Docker Compose loads provider, Explorer, and local PostgreSQL/pgvector settings
-from `backend/.env` when that file exists. The single Compose file includes the
-`postgres` service and the backend connects to it through the Docker service
-name:
+Docker Compose loads provider and database settings from `backend/.env`. It
+does not provision PostgreSQL; local and cloud PostgreSQL are two external
+configuration options selected through `DATABASE_URL`:
+
+```dotenv
+# Backend in Docker -> PostgreSQL installed/running on the host
+DATABASE_URL=postgresql://USER:PASSWORD@host.docker.internal:5432/DBNAME
+
+# Cloud PostgreSQL
+DATABASE_URL=postgresql://USER:PASSWORD@CLOUD_HOST:5432/DBNAME?sslmode=require
+```
+
+Use `localhost` for a local PostgreSQL server only when running Uvicorn directly
+on the host. Start the application services with:
 
 ```bash
 docker compose --env-file backend/.env up -d
 ```
+
+The selected database must already exist, include pgvector where required, and
+have the migrations above applied.
 
 Run tests:
 

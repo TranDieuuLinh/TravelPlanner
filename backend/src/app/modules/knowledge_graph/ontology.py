@@ -6,6 +6,11 @@ class NodeTypeProperties(TypedDict):
     optionalProperties: list[str]
 
 
+class RelationshipEndpointRule(TypedDict):
+    fromTypes: list[str]
+    toTypes: list[str]
+
+
 # This mirrors the concrete node types in
 # trung-plans/plans-for-new-version/knowledge/schema.yml. Abstract parents are
 # merged into each concrete node type so the frontend receives one usable shape.
@@ -56,6 +61,18 @@ ACTIVITY_OPTIONAL = ENTITY_OPTIONAL + [
     "image",
 ]
 STYLE_OPTIONAL = ENTITY_OPTIONAL + ["style_group", "time_windows", "time_duration", "story"]
+ITEM_TYPES = ["ActivityItem", "DrinkItem", "FoodItem", "ProductItem"]
+OFFER_ITEM_SOURCE_TYPES = [
+    "ADM0",
+    "ADM1",
+    "ADM2",
+    "Accommodation",
+    "DrinkDessert",
+    "Entertainment",
+    "Restaurant",
+    "SubPlace",
+    "TravelPlace",
+]
 
 NODE_TYPES = [
     "ADM0",
@@ -70,6 +87,7 @@ NODE_TYPES = [
     "ProductItem",
     "Restaurant",
     "Style",
+    "SubPlace",
     "TravelPlace",
 ]
 
@@ -78,11 +96,23 @@ RELATIONSHIP_TYPES = [
     "Located_In",
     "Offer_Item",
     "Has_Style",
+    "Has_Subplace",
     "Special_Experience",
     "Special_Near",
     "Near",
     "Must_Visit",
 ]
+
+RELATIONSHIP_ENDPOINT_RULES: dict[str, RelationshipEndpointRule] = {
+    "Has_Subplace": {
+        "fromTypes": ["TravelPlace"],
+        "toTypes": ["SubPlace"],
+    },
+    "Offer_Item": {
+        "fromTypes": OFFER_ITEM_SOURCE_TYPES,
+        "toTypes": ITEM_TYPES,
+    },
+}
 
 PROPERTY_KEYS = [
     "id",
@@ -154,6 +184,10 @@ NODE_TYPE_PROPERTIES["Style"] = {
     "requiredProperties": ENTITY_REQUIRED,
     "optionalProperties": STYLE_OPTIONAL,
 }
+NODE_TYPE_PROPERTIES["SubPlace"] = {
+    "requiredProperties": PLACE_REQUIRED,
+    "optionalProperties": PLACE_OPTIONAL,
+}
 
 
 def ontology_payload() -> dict[str, object]:
@@ -161,5 +195,6 @@ def ontology_payload() -> dict[str, object]:
         "nodeTypes": NODE_TYPES,
         "propertyKeys": PROPERTY_KEYS,
         "relationshipTypes": RELATIONSHIP_TYPES,
+        "relationshipEndpointRules": RELATIONSHIP_ENDPOINT_RULES,
         "nodeTypeProperties": NODE_TYPE_PROPERTIES,
     }

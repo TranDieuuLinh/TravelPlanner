@@ -1,6 +1,39 @@
 import asyncio
 
+from app.modules.explorer.adapters import (
+    CurlCffiWebsiteFetcher,
+    GeminiAudioTranscriber,
+    GeminiExplorerDraftGenerator,
+    GeminiImageSourceExtractor,
+    GeminiMediaAnalyzer,
+    GeminiPrimaryEvidenceEvaluator,
+    InlineImageSourceExtractor,
+    InMemoryExplorerDraftCache,
+    InMemoryExplorerSnapshotRepository,
+    InMemoryImageOcrCache,
+    InMemoryUrlSourceCache,
+    PlaywrightWebsiteRenderer,
+    PostgresExplorerDraftCache,
+    PostgresUrlSourceCache,
+    PythonYtDlpClient,
+    PythonYtDlpMediaClient,
+    RoutedExplorerDraftGenerator,
+    NonSemanticExplorerFallback,
+    TikTokHtmlMediaClient,
+    UnconfiguredUrlSourceExtractor,
+    UrlSourceRouter,
+    WebsiteSourceExtractor,
+    YouTubeTranscriptSourceExtractor,
+    YtDlpAudioClient,
+    YtDlpCaptionClient,
+    YtDlpMetadataSourceExtractor,
+    YtDlpSocialSourceExtractor,
+    YamlInsightCatalog,
+)
+from app.modules.explorer.adapters.auto_tags import YamlTagCatalog
+from app.modules.explorer.api_output import to_explorer_api_output
 from app.modules.explorer.contract import (
+    ExplorerApiOutput,
     ExplorerBudget,
     ExplorerImageInput,
     ExplorerInput,
@@ -11,44 +44,38 @@ from app.modules.explorer.contract import (
     RequestedItem,
     SourceNote,
 )
-from app.modules.explorer.adapters import (
-    CurlCffiWebsiteFetcher,
-    GeminiExplorerDraftGenerator,
-    GeminiImageSourceExtractor,
-    GeminiMediaAnalyzer,
-    InMemoryImageOcrCache,
-    InMemoryExplorerDraftCache,
-    InMemoryExplorerSnapshotRepository,
-    InMemoryUrlSourceCache,
-    InlineImageSourceExtractor,
-    PythonYtDlpClient,
-    PythonYtDlpMediaClient,
-    PlaywrightWebsiteRenderer,
-    PostgresUrlSourceCache,
-    PostgresExplorerDraftCache,
-    RuleBasedExplorerDraftGenerator,
-    RoutedExplorerDraftGenerator,
-    TikTokHtmlMediaClient,
-    UnconfiguredUrlSourceExtractor,
-    UrlSourceRouter,
-    WebsiteSourceExtractor,
-    YtDlpMetadataSourceExtractor,
-    YtDlpSocialSourceExtractor,
-    GeminiAudioTranscriber,
-    YouTubeTranscriptSourceExtractor,
-    YtDlpAudioClient,
-    YtDlpCaptionClient,
-)
 from app.modules.explorer.graph import build_explorer_graph as _compile_explorer_graph
-from app.modules.explorer.intake_requirements import keep_unknown_context_requests
+from app.modules.explorer.intake_patch import (
+    BudgetPatch,
+    CollectionOperation,
+    IntegerScalarPatch,
+    ItemCollectionPatch,
+    PeoplePatch,
+    PlaceCollectionPatch,
+    ScalarOperation,
+    StringCollectionPatch,
+    StringScalarPatch,
+    TripContextPatch,
+    apply_trip_context_patch,
+)
+from app.modules.explorer.review import build_explorer_review
+from app.modules.explorer.review_contract import (
+    ExplorerReview,
+    ExplorerReviewBudget,
+    ExplorerReviewContext,
+    ExplorerReviewKind,
+)
+from app.modules.explorer.ports import TagCatalog
+from app.modules.explorer.place_dedupe import deduplicate_places
+from app.modules.explorer.place_keys import place_name_key
 from app.modules.explorer.service import ExplorerService
+from app.modules.explorer.tools import normalize_budget_per_person
 from app.shared.llm import LlmClient
-from app.shared.contracts.user_context import UserContextRequest
 
 
 def create_explorer_service(
     *,
-    draft_provider: str = "rules",
+    draft_provider: str = "gemini",
     source_draft_provider: str = "gemini",
     llm_client: LlmClient | None = None,
     image_llm_client: LlmClient | None = None,
@@ -59,7 +86,6 @@ def create_explorer_service(
     source_max_concurrency: int = 5,
     synthesis_max_concurrency: int = 6,
     synthesis_limiter: asyncio.Semaphore | None = None,
-    minimum_synthesis_coverage: float = 0.8,
     dedupe_provider: str = "gemini",
     note_provider: str = "gemini",
     url_timeout_seconds: float = 30,
@@ -83,8 +109,12 @@ def create_explorer_service(
     url_cache_ttl_seconds: float = 604_800,
     draft_cache_ttl_seconds: float = 604_800,
     draft_cache_namespace: str = "explorer-draft-v1",
+    tags_auto_path: str | None = None,
+    insight_user_path: str | None = None,
 ) -> ExplorerService:
-    rules = RuleBasedExplorerDraftGenerator()
+    tag_catalog = YamlTagCatalog(tags_auto_path)
+    insight_catalog = YamlInsightCatalog(tag_catalog, insight_user_path)
+    safe_fallback = NonSemanticExplorerFallback()
     gemini = None
     if llm_client is not None:
         gemini = GeminiExplorerDraftGenerator(
@@ -98,30 +128,23 @@ def create_explorer_service(
             dedupe_provider=dedupe_provider,
             note_provider=note_provider,
             source_chunk_timeout_seconds=source_chunk_timeout_seconds,
+            tag_catalog=tag_catalog,
         )
-    if draft_provider == "gemini":
-        if gemini is None:
-            raise ValueError("Gemini Explorer requires an LlmClient.")
-        prompt_generator = gemini
-    elif draft_provider == "rules":
-        prompt_generator = rules
-    else:
+    if draft_provider != "gemini":
         raise ValueError(f"Unsupported Explorer draft provider: {draft_provider}")
-    if source_draft_provider == "gemini":
-        source_generator = gemini or rules
-    elif source_draft_provider == "rules":
-        source_generator = rules
-    else:
+    if source_draft_provider != "gemini":
         raise ValueError(
             f"Unsupported Explorer source draft provider: {source_draft_provider}"
         )
+    if gemini is None:
+        raise ValueError("Gemini Explorer requires an LlmClient.")
     if dedupe_provider not in {"rules", "gemini"}:
         raise ValueError(f"Unsupported Explorer dedupe provider: {dedupe_provider}")
     if note_provider not in {"rules", "gemini"}:
         raise ValueError(f"Unsupported Explorer note provider: {note_provider}")
     drafts = RoutedExplorerDraftGenerator(
-        prompt_generator=prompt_generator,
-        source_generator=source_generator,
+        prompt_generator=gemini,
+        source_generator=gemini,
     )
     metadata_client = PythonYtDlpClient(
         timeout_seconds=url_timeout_seconds,
@@ -135,6 +158,11 @@ def create_explorer_service(
     )
     vision_client = image_llm_client or llm_client
     speech_client = audio_llm_client or llm_client or vision_client
+    coverage_evaluator = (
+        GeminiPrimaryEvidenceEvaluator(llm_client)
+        if llm_client is not None
+        else None
+    )
     if vision_client is not None:
         analyzer = GeminiMediaAnalyzer(
             vision_client,
@@ -153,17 +181,24 @@ def create_explorer_service(
             max_filesize_mb=max_media_mb,
             max_workers=4,
         )
+        tiktok_client = TikTokHtmlMediaClient(
+            timeout_seconds=url_timeout_seconds,
+            max_filesize_mb=max_media_mb,
+            max_workers=4,
+        )
         tiktok = YtDlpSocialSourceExtractor(
-            TikTokHtmlMediaClient(
-                timeout_seconds=url_timeout_seconds,
-                max_filesize_mb=max_media_mb,
-                max_workers=4,
-            ),
+            tiktok_client,
             analyzer,
             platform="TikTok",
+            metadata_client=tiktok_client,
+            coverage_evaluator=coverage_evaluator,
         )
         instagram = YtDlpSocialSourceExtractor(
-            media_client, analyzer, platform="Instagram"
+            media_client,
+            analyzer,
+            platform="Instagram",
+            metadata_client=metadata_client,
+            coverage_evaluator=coverage_evaluator,
         )
         image_extractor = GeminiImageSourceExtractor(
             analyzer,
@@ -186,12 +221,15 @@ def create_explorer_service(
                 max_concurrency=youtube_audio_max_concurrency,
                 max_duration_seconds=youtube_max_duration_seconds,
             ),
+            coverage_evaluator=coverage_evaluator,
+            media_client=media_client,
+            analyzer=analyzer,
         )
     else:
         youtube = YtDlpMetadataSourceExtractor(metadata_client, platform="YouTube")
         tiktok = YtDlpMetadataSourceExtractor(metadata_client, platform="TikTok")
         instagram = YtDlpMetadataSourceExtractor(metadata_client, platform="Instagram")
-        image_extractor = InlineImageSourceExtractor(rules)
+        image_extractor = InlineImageSourceExtractor()
     url_cache = (
         PostgresUrlSourceCache(database_url, ttl_seconds=url_cache_ttl_seconds)
         if database_url
@@ -219,20 +257,25 @@ def create_explorer_service(
         url_cache=url_cache,
         draft_cache=draft_cache,
         draft_cache_namespace=draft_cache_namespace,
-        minimum_synthesis_coverage=minimum_synthesis_coverage,
         source_extraction_timeout_seconds=source_extraction_timeout_seconds,
         source_synthesis_timeout_seconds=source_synthesis_timeout_seconds,
-        fallback_drafts=rules,
+        fallback_drafts=safe_fallback,
+        tag_catalog=tag_catalog,
+        insight_catalog=insight_catalog,
     )
 
 
 def _create_development_explorer_service() -> ExplorerService:
-    drafts = RuleBasedExplorerDraftGenerator()
+    tag_catalog = YamlTagCatalog()
+    insight_catalog = YamlInsightCatalog(tag_catalog)
+    drafts = NonSemanticExplorerFallback()
     return ExplorerService(
         drafts=drafts,
         url_extractor=UnconfiguredUrlSourceExtractor(),
-        image_extractor=InlineImageSourceExtractor(drafts),
+        image_extractor=InlineImageSourceExtractor(),
         snapshots=InMemoryExplorerSnapshotRepository(),
+        tag_catalog=tag_catalog,
+        insight_catalog=insight_catalog,
     )
 
 
@@ -242,10 +285,39 @@ def build_explorer_graph(service: ExplorerService | None = None):
 
 
 __all__ = [
-    "ExplorerBudget", "ExplorerImageInput", "ExplorerInput", "ExplorerOutput",
-    "ExplorerPeople", "ExplorerPlace", "PlaceSource", "RequestedItem", "SourceNote",
-    "UserContextRequest",
-    "keep_unknown_context_requests",
+    "ExplorerApiOutput",
+    "BudgetPatch",
+    "CollectionOperation",
+    "ExplorerBudget",
+    "ExplorerImageInput",
+    "ExplorerInput",
+    "ExplorerOutput",
+    "ExplorerPeople",
+    "ExplorerPlace",
+    "ExplorerReview",
+    "ExplorerReviewBudget",
+    "ExplorerReviewContext",
+    "ExplorerReviewKind",
+    "PlaceSource",
+    "IntegerScalarPatch",
+    "ItemCollectionPatch",
+    "PeoplePatch",
+    "PlaceCollectionPatch",
+    "RequestedItem",
+    "SourceNote",
+    "ScalarOperation",
+    "StringCollectionPatch",
+    "StringScalarPatch",
+    "TripContextPatch",
+    "TagCatalog",
+    "YamlTagCatalog",
+    "YamlInsightCatalog",
     "build_explorer_graph",
+    "build_explorer_review",
     "create_explorer_service",
+    "to_explorer_api_output",
+    "apply_trip_context_patch",
+    "deduplicate_places",
+    "normalize_budget_per_person",
+    "place_name_key",
 ]

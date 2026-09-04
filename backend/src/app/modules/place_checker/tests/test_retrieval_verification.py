@@ -4,7 +4,7 @@ from app.modules.place_checker.adapters import (
     InMemoryPromotionOutbox,
     SearchPlacesGapSource,
 )
-from app.modules.place_checker.analysis_contract import AnalysisGap, GapAnalysis
+from app.modules.place_checker.analysis.contract import AnalysisGap, GapAnalysis
 from app.modules.place_checker.enums import (
     CostTier,
     GapType,
@@ -14,11 +14,11 @@ from app.modules.place_checker.enums import (
     VerificationStatus,
 )
 from app.modules.place_checker.errors import CandidateSourceTimeout
-from app.modules.place_checker.promotion import PromotionWorker
+from app.modules.place_checker.retrieval.promotion import PromotionWorker
 from app.modules.place_checker.ports import GapSourceBatchItem
-from app.modules.place_checker.resolution_contract import PlaceMetadata
-from app.modules.place_checker.retrieval import TargetedRetrievalService
-from app.modules.place_checker.retrieval_contract import (
+from app.modules.place_checker.resolution.contract import PlaceMetadata
+from app.modules.place_checker.retrieval.service import TargetedRetrievalService
+from app.modules.place_checker.retrieval.contract import (
     RetrievalEvidence,
     TargetedRetrievalQuery,
 )
@@ -95,10 +95,7 @@ class RecordingBatchMetadataRepository:
 
     async def get_many(self, place_ids):
         self.calls.append(place_ids)
-        return {
-            place_id: PlaceMetadata(place_id=place_id)
-            for place_id in place_ids
-        }
+        return {place_id: PlaceMetadata(place_id=place_id) for place_id in place_ids}
 
 
 class FakeBatchGapSource:
@@ -112,10 +109,12 @@ class FakeBatchGapSource:
         self.batch_sizes.append((len(queries), max_concurrency))
         return [
             GapSourceBatchItem(
-                evidence=[evidence(
-                    name=f"Place {index}",
-                    entity_id=f"kg:place-{index}",
-                )],
+                evidence=[
+                    evidence(
+                        name=f"Place {index}",
+                        entity_id=f"kg:place-{index}",
+                    )
+                ],
                 outcome="candidates",
             )
             for index, _ in enumerate(queries)
@@ -262,13 +261,16 @@ def test_external_source_budget_is_shared_across_gaps() -> None:
     result = asyncio.run(service.retrieve(gaps, analysis_context()))
 
     assert external.calls == 5
-    assert sum(
-        any(
-            attempt.source_kind == RetrievalSourceKind.external
-            for attempt in gap_result.attempts
+    assert (
+        sum(
+            any(
+                attempt.source_kind == RetrievalSourceKind.external
+                for attempt in gap_result.attempts
+            )
+            for gap_result in result.gaps
         )
-        for gap_result in result.gaps
-    ) == 5
+        == 5
+    )
 
 
 def test_unverified_draft_kg_entity_remains_provisional() -> None:
@@ -386,7 +388,9 @@ def test_promotion_failure_does_not_raise() -> None:
     )
     result = asyncio.run(service.retrieve(gap(), analysis_context()))
 
-    work = asyncio.run(PromotionWorker(outbox, FakePromotionCatalog(fail=True)).run_once())
+    work = asyncio.run(
+        PromotionWorker(outbox, FakePromotionCatalog(fail=True)).run_once()
+    )
 
     assert result.gaps[0].candidates[0].planner_eligible is True
     assert work[0].status == PromotionEventStatus.failed
@@ -450,7 +454,9 @@ def test_search_places_adapter_scopes_requirement_to_adm() -> None:
     assert result.gaps[0].candidates[0].metadata.typical_duration_minutes == 60
 
 
-def test_external_search_places_adapter_requests_external_scope_and_keeps_draft() -> None:
+def test_external_search_places_adapter_requests_external_scope_and_keeps_draft() -> (
+    None
+):
     tool = FakeSearchTool(
         PlaceSearchResult(
             status="resolved",
@@ -582,7 +588,7 @@ def test_relation_candidates_are_selected_before_keyword_fallbacks() -> None:
     result = asyncio.run(source.search(query))
 
     assert [item.entity_id for item in result] == ["kg:related"]
-    assert "retrieval:relation" in result[0].tags
+    assert result[0].relationship_score == 0.85
     assert tool.requests[0].top_k == 5
 
 
@@ -595,13 +601,15 @@ def test_thematic_query_rejects_unrelated_special_experience() -> None:
         tags=["style:Tham quan"],
         score=0.9,
         relationship_score=0.8,
-        relationship_evidence=[{
-            "relationshipType": "Special_Experience",
-            "direction": "area_to_place",
-            "scope": "destination",
-            "fromEntityId": "adm:hanoi",
-            "toEntityId": "kg:temple",
-        }],
+        relationship_evidence=[
+            {
+                "relationshipType": "Special_Experience",
+                "direction": "area_to_place",
+                "scope": "destination",
+                "fromEntityId": "adm:hanoi",
+                "toEntityId": "kg:temple",
+            }
+        ],
     )
     garden = PlaceSearchMatch(
         place_id="kg:garden",
@@ -611,13 +619,15 @@ def test_thematic_query_rejects_unrelated_special_experience() -> None:
         tags=["style:Ngoài trời", "nature", "garden"],
         score=0.85,
         relationship_score=0.8,
-        relationship_evidence=[{
-            "relationshipType": "Special_Experience",
-            "direction": "area_to_place",
-            "scope": "destination",
-            "fromEntityId": "adm:hanoi",
-            "toEntityId": "kg:garden",
-        }],
+        relationship_evidence=[
+            {
+                "relationshipType": "Special_Experience",
+                "direction": "area_to_place",
+                "scope": "destination",
+                "fromEntityId": "adm:hanoi",
+                "toEntityId": "kg:garden",
+            }
+        ],
     )
     tool = FakeSearchTool(
         PlaceSearchResult(
@@ -710,7 +720,7 @@ def test_external_call_budget_uses_at_most_two_sources() -> None:
     assert [source.calls for source in sources] == [1, 1, 0]
 
 
-def test_food_query_reserves_three_meal_candidates_per_day() -> None:
+def test_food_query_reserves_six_candidates_per_day() -> None:
     food_gap = gap().gaps[0]
 
     query = TargetedRetrievalService._query(
@@ -721,4 +731,4 @@ def test_food_query_reserves_three_meal_candidates_per_day() -> None:
         limit=3,
     )
 
-    assert query.limit == 6
+    assert query.limit == 12

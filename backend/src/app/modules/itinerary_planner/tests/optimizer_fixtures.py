@@ -12,6 +12,7 @@ from app.modules.itinerary_planner.tests.routing_fakes import GeneratedMatrixPro
 
 FAST_CONFIG = SolverConfig(
     priority_timeout_seconds=2,
+    activity_timeout_seconds=2,
     utility_timeout_seconds=4,
     utility_parallel_workers=1,
     max_utility_no_improvement_rounds=0,

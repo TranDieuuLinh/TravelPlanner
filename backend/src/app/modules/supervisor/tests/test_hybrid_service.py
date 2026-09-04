@@ -68,6 +68,35 @@ def test_plan_editor_requires_structured_state_after_llm_classification():
     assert decision.clarification_question
 
 
+def test_natural_plan_edit_is_validated_and_accepted_from_one_classifier_call():
+    classifier = FakeClassifier(
+        ClassifierResult(
+            route="plan_editor",
+            confidence=0.99,
+            reason="edit",
+            plan_edit={
+                "action": "update",
+                "confidence": 0.99,
+                "day": 1,
+                "itemId": "lake",
+                "item": {"durationMinutes": 90},
+                "response": "Đã đổi thành 90 phút.",
+            },
+        )
+    )
+    decision = decide(
+        SupervisorService(classifier),
+        "Cho Hồ Gươm 90 phút",
+        current_plan={
+            "days": [{"day": 1, "items": [{"itemId": "lake", "name": "Hồ Gươm"}]}]
+        },
+    )
+
+    assert decision.route == "plan_editor"
+    assert decision.plan_edit.item.duration_minutes == 90
+    assert classifier.calls == 1
+
+
 def test_llm_finish_response_is_preserved():
     response = "Xin chào, mình là Penguin."
     decision = decide(
@@ -116,11 +145,39 @@ def test_low_confidence_llm_result_asks_for_clarification():
     assert decision.clarification_question
 
 
-def test_short_trip_prompt_uses_explorer_when_llm_is_unavailable():
+def test_unconfigured_llm_never_guesses_trip_intent():
     decision = decide(
         SupervisorService(classifier=None),
         "đi Hà Nội 2 ngày",
     )
 
-    assert decision.route == "explorer"
+    assert decision.route == "finish"
+    assert decision.clarification_question
     assert decision.warnings == ["Supervisor LLM chưa được cấu hình."]
+
+
+def test_pending_review_patch_is_accepted_only_from_llm_output():
+    classifier = FakeClassifier(
+        ClassifierResult(
+            route="explorer",
+            confidence=0.99,
+            reason="User requested the most luxurious budget tier.",
+            tripContextPatch={
+                "budget": {
+                    "operation": "set",
+                    "value": {"level": "high", "currency": "VND"},
+                }
+            },
+        )
+    )
+
+    decision = decide(
+        SupervisorService(classifier),
+        "tui muốn đi giàu sang mắc nhất vô lên plan dì",
+        pending_review_kind="defaults_proposed",
+        pending_review_fields=["budget"],
+    )
+
+    assert decision.route == "explorer"
+    assert decision.trip_context_patch.budget.value.level == "high"
+    assert decision.trip_context_patch.input_adm is None

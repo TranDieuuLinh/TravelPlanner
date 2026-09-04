@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -69,7 +70,6 @@ SourceStatus = Literal[
     "failed_retryable",
     "failed_permanent",
 ]
-CacheStatus = Literal["hit", "miss", "bypassed"]
 CoverageStatus = Literal["complete", "partial", "unknown"]
 
 
@@ -96,10 +96,6 @@ class SourceExtractionResult(InternalModel):
     error: AgentError | None = None
     artifacts: list[SourceArtifact] = Field(default_factory=list)
     branch_failures: list[SourceBranchFailure] = Field(default_factory=list)
-    cache_status: CacheStatus | None = None
-    platform: str | None = Field(default=None, max_length=40)
-    extractor_version: str | None = Field(default=None, max_length=80)
-    model_version: str | None = Field(default=None, max_length=120)
     raw_mention_count: int = Field(default=0, ge=0)
     filtered_mention_count: int = Field(default=0, ge=0)
     deduplicated_place_count: int = Field(default=0, ge=0)
@@ -112,10 +108,15 @@ class ExplorerDraft(InternalModel):
     places: list[ExplorerPlace] = Field(default_factory=list)
     input_items: list[RequestedItem] = Field(default_factory=list)
     url_notes: list[SourceNote] = Field(default_factory=list)
+    days: int | None = Field(default=None, ge=1, le=30)
+    start_date: date | None = None
     budget: ExplorerBudget = Field(default_factory=ExplorerBudget)
     people: ExplorerPeople = Field(default_factory=ExplorerPeople)
+    people_explicit: bool = False
+    preferences_explicit: bool = False
     short_preferences: list[str] = Field(default_factory=list)
     short_avoids: list[str] = Field(default_factory=list)
+    special_notes: list[str] = Field(default_factory=list)
 
 
 BatchCoverage = Literal["usable", "partial", "fatal"]

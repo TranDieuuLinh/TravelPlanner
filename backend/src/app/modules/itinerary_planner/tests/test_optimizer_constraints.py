@@ -263,7 +263,11 @@ def test_lexicographic_passes_lock_user_then_url_count() -> None:
 
     assert result.user_input_count == 1
     assert result.url_count == 1
-    assert [item.name for item in result.passes] == ["priority", "utility"]
+    assert [item.name for item in result.passes] == [
+        "priority",
+        "activity_count",
+        "utility",
+    ]
     assert all(item.status in {"OPTIMAL", "FEASIBLE"} for item in result.passes)
 
 

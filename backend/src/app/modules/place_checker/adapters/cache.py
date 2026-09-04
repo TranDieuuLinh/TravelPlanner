@@ -6,7 +6,7 @@ from app.modules.place_checker.ports import (
     NamedPlaceSearchTool,
     PlaceMetadataRepository,
 )
-from app.modules.place_checker.resolution_contract import PlaceMetadata
+from app.modules.place_checker.resolution.contract import PlaceMetadata
 from app.shared.tools.search_places import PlaceSearchRequest, PlaceSearchResult
 
 

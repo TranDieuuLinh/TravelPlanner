@@ -7,10 +7,11 @@ from app.modules.itinerary_planner.policies import MAX_INTER_STOP_WAIT_MINUTES
 class SolverConfig:
     num_search_workers: int = 1
     priority_timeout_seconds: float | None = None
-    utility_timeout_seconds: float | None = None
-    utility_relative_gap_limit: float = 0.05
+    activity_timeout_seconds: float | None = 10
+    utility_timeout_seconds: float | None = 10
+    utility_relative_gap_limit: float = 0.02
     utility_parallel_workers: int = 3
-    max_utility_no_improvement_rounds: int = 1
+    max_utility_no_improvement_rounds: int = 2
     random_seed: int = 42
     log_search_progress: bool = False
     max_inter_stop_wait_minutes: int | None = MAX_INTER_STOP_WAIT_MINUTES
@@ -18,7 +19,7 @@ class SolverConfig:
 
 @dataclass(frozen=True, slots=True)
 class ObjectiveWeights:
-    policy_version: str = "itinerary-utility-v16-evening-special-first"
+    policy_version: str = "itinerary-utility-v17-dense-activities"
     activity_coverage: int = 350
     special_experience: int = 4_000
     preference_max: int = 600
@@ -40,8 +41,6 @@ class ObjectiveWeights:
     waiting_minute: int = 2
     meal_deviation_minute: int = 2
     late_minute: int = 4
-    excess_stop: int = 800
-    excess_active_minute: int = 1
     day_imbalance_minute: int = 1
     unknown_opening: int = 5
     source_mix_deviation: int = 2_000

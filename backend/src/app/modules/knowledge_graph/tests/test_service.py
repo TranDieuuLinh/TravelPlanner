@@ -1,9 +1,17 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from app.modules.knowledge_graph.contract import AutoAttachRule, EntityCreate, EntityUpdate, RelationshipUpsert
+from app.modules.knowledge_graph.contract import (
+    AutoAttachRule,
+    EntityCreate,
+    EntityUpdate,
+    RelationshipUpsert,
+)
 from app.modules.knowledge_graph.ontology import ontology_payload
-from app.modules.knowledge_graph.service import KnowledgeGraphError, KnowledgeGraphService
+from app.modules.knowledge_graph.service import (
+    KnowledgeGraphError,
+    KnowledgeGraphService,
+)
 
 
 class FakeStore:
@@ -15,8 +23,8 @@ class FakeStore:
             "entity_type": "City",
             "status": "active",
             "review_count": None,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC),
             "aliases": [],
             "properties": [],
             "relationships": [],
@@ -62,6 +70,20 @@ def test_update_entity_uses_public_contract() -> None:
     assert result["canonical_name"] == "Hà Nội"
 
 
+def test_update_entity_does_not_forward_body_entity_id() -> None:
+    store = FakeStore()
+    service = KnowledgeGraphService(store)  # type: ignore[arg-type]
+
+    result = asyncio.run(
+        service.update_entity(
+            "hanoi",
+            EntityUpdate(entity_id="hanoi", canonical_name="Hà Nội"),
+        )
+    )
+
+    assert result["canonical_name"] == "Hà Nội"
+
+
 def test_missing_entity_returns_domain_error() -> None:
     service = KnowledgeGraphService(FakeStore())  # type: ignore[arg-type]
 
@@ -96,8 +118,10 @@ def test_ontology_has_frontend_shape() -> None:
 
     assert "ADM1" in payload["nodeTypes"]
     assert "Entertainment" in payload["nodeTypes"]
+    assert "SubPlace" in payload["nodeTypes"]
     assert "time_windows" in payload["propertyKeys"]
     assert "Located_In" in payload["relationshipTypes"]
+    assert "Has_Subplace" in payload["relationshipTypes"]
     assert payload["nodeTypeProperties"]["Restaurant"]["requiredProperties"] == [
         "id",
         "name",
@@ -107,6 +131,18 @@ def test_ontology_has_frontend_shape() -> None:
     ]
     assert payload["nodeTypeProperties"]["Entertainment"] == payload["nodeTypeProperties"]["TravelPlace"]
     assert "time_windows" in payload["nodeTypeProperties"]["ActivityItem"]["optionalProperties"]
+    assert payload["nodeTypeProperties"]["SubPlace"] == payload["nodeTypeProperties"]["TravelPlace"]
+    assert payload["relationshipEndpointRules"]["Has_Subplace"] == {
+        "fromTypes": ["TravelPlace"],
+        "toTypes": ["SubPlace"],
+    }
+    assert "SubPlace" in payload["relationshipEndpointRules"]["Offer_Item"]["fromTypes"]
+    assert payload["relationshipEndpointRules"]["Offer_Item"]["toTypes"] == [
+        "ActivityItem",
+        "DrinkItem",
+        "FoodItem",
+        "ProductItem",
+    ]
 
 
 class RelationshipStore:

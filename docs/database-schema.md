@@ -1,18 +1,20 @@
 # Database schema thực tế
 
-Cập nhật lần cuối: 2026-08-19.
+Cập nhật lần cuối: 2026-08-21.
 
 ## Phạm vi và trạng thái
 
-Tài liệu này mô tả schema PostgreSQL local có pgvector được backend truy cập qua
-`DATABASE_URL` theo cấu hình mặc định. PostgreSQL local chạy trong service
-`postgres` của Compose duy nhất và dùng volume `travelplanner-postgres18`.
+Tài liệu này mô tả schema PostgreSQL có pgvector được backend truy cập qua
+`DATABASE_URL`. PostgreSQL là dependency bên ngoài Compose: có thể là database
+local đã chạy trên host hoặc database cloud. Compose không tải image, khởi tạo
+database hay sở hữu volume PostgreSQL; database được chọn hoàn toàn bằng
+`DATABASE_URL` trong `backend/.env`.
 
-Khởi tạo local database:
-
-```bash
-docker compose --env-file backend/.env up -d
-```
+Khi backend chạy trong Docker và PostgreSQL chạy trên máy host, hostname trong
+URL là `host.docker.internal`. Khi cả backend và PostgreSQL cùng chạy trực tiếp
+trên host, dùng `localhost`. Với cloud, dùng hostname và TLS options do provider
+cung cấp. Trong cả ba trường hợp, database phải được tạo sẵn và áp dụng các
+migration cần thiết trước khi khởi động backend.
 
 Database runtime hiện có 59 table trong schema `public`, gồm các bảng cache, planner,
 Knowledge Graph, profile, social và marketplace được
@@ -29,8 +31,8 @@ và migration 002/003. Vì vậy
 cần phân biệt:
 
 - **Database runtime:** các table được liệt kê bên dưới tồn tại trong database
-  PostgreSQL cloud sau khi migration tương ứng đã được áp dụng; local Docker
-  có thể được khởi tạo từ backup archive tương ứng.
+  PostgreSQL đã chọn sau khi migration tương ứng được áp dụng; database local có
+  thể được khôi phục từ backup archive tương ứng nhưng không do Compose quản lý.
 - **Backend mới:** không sử dụng các table legacy khác; khi có `DATABASE_URL`,
   root graph dùng PostgreSQL checkpointer và fail fast nếu runtime psycopg không
   khả dụng. Chỉ môi trường không cấu hình database mới dùng `InMemorySaver`.
@@ -45,7 +47,30 @@ dùng top-K cùng toán tử `pg_trgm` `%` trên `normalized_name`,
 `normalized_alias` và tên target relationship. Các GIN trigram index từ
 migration 006 phục vụ prefilter; `SearchPlacesTool` vẫn sở hữu score và
 acceptance policy cuối. Adapter không ghi Knowledge Graph và external live
-provider chưa được nối.
+provider chưa được nối. Migration 015 curates một tập ID Hà Nội đã review:
+venue nghệ thuật/trải nghiệm được đổi sang `Entertainment`, còn shop, showroom,
+trường/lớp và dịch vụ không phù hợp được gắn property
+`generic_discovery_excluded=true`. PlaceChecker chỉ áp cờ này cho generic
+discovery; named-place lookup vẫn resolve entity khi user gọi đúng tên, và night
+market vẫn là `TravelPlace`.
+Migration 016 áp batch review tiếp theo, sửa chiều type cho venue/landmark/quán
+ăn, gắn cờ loại generic cho tám dịch vụ thương mại và làm sạch identity Trung
+tâm Văn hóa Kim Đồng. Record Kim Đồng được chuyển về Hàng Bài/Hoàn Kiếm theo
+OpenStreetMap way `863234970`; alias, tọa độ và mô tả được thay bằng dữ liệu đã
+review, còn rating, ảnh, giờ mở cửa, Google metadata và `Special_Near` sinh từ
+record cửa hàng sai được xóa để chờ nguồn đúng.
+Migration 017 bổ sung 62 alias Việt/Anh/tên gọi phổ biến cho 20 địa điểm đứng
+đầu pool Hà Nội, đồng thời chỉ xóa 20 alias mojibake hoặc sai đã xác định. Ví dụ
+`36 phố phường` resolve về `Hanoi Old Quarter`; alias sai `Hồ Con Rùa` bị gỡ
+khỏi Hồ Hoàn Kiếm. Một record Hoàng thành pending trùng địa chỉ, tọa độ và
+rating với entity chính được giữ lại nhưng chuyển `status=rejected` để lookup
+không trả duplicate.
+Migration 018 mở rộng audit tới top 60 TravelPlace hiện tại: upsert 79 alias
+Việt/Anh đã review và xóa chọn lọc 40 alias mojibake của đúng các entity liên
+quan. Migration này chỉ sửa `knowledge_aliases`; không đổi entity type, status
+hoặc cờ generic discovery. Named lookup kiểm tra được 35/35 tên gọi về đúng địa
+điểm vật lý; 34/35 về đúng canonical ID do `Đền Bạch Mã` còn một pending entity
+trùng địa chỉ và tọa độ cần xử lý bằng quy trình dedupe riêng.
 
 FinalItineraryPlanner Phase 5 không thêm table hoặc migration. Global matrix,
 CP-SAT result, selected route detail và `ItineraryPlannerOutput` chỉ tồn tại
@@ -68,9 +93,17 @@ hay migration và không ghi raw prompt/raw third-party payload. Trước produc
 cần xác định database ownership rồi triển khai durable adapter cho port
 `ExplorerSnapshotRepository`; lỗi lưu snapshot không được phép đi tiếp sang
 PlaceChecker.
-YouTube/Instagram importer dùng `yt-dlp`; TikTok đọc HTML Safari và media CDN
-trực tiếp; website dùng `httpx`, `curl-cffi`, fallback Playwright và
-`trafilatura`; OCR/STT dùng Gemini. Migration
+`TripContextPatch` cho các operation set/add/remove chỉ tồn tại trong graph state
+của lượt hiện tại. `pending_explorer_review` và `pending_explorer_output` được
+root checkpointer giữ theo `threadId` giữa lượt hỏi mặc định và lượt user sửa;
+chúng không dùng bảng Conversation Memory và thay đổi handoff này không thêm
+table, column hoặc migration.
+Payload sang PlaceChecker không lưu place tags/confidence hay provenance nội bộ.
+YouTube/Instagram importer dùng `yt-dlp`; TikTok đọc HTML Safari. URL media đánh
+giá transcript/metadata/description trước và chỉ tải media CDN để chạy OCR/STT
+khi primary evidence chưa đủ; policy này không thêm bảng hoặc cột. Website dùng
+`httpx`, `curl-cffi`, fallback Playwright và `trafilatura`; OCR/STT dùng Gemini.
+Migration
 `002_explorer_source_document_cache.sql` nhận ownership bảng
 `source_documents`. Cache chỉ lưu `SourceArtifact` đã chuẩn hóa và lỗi nhánh
 gọn; media tạm và raw third-party payload không được lưu. Media tạm được xóa
@@ -79,7 +112,11 @@ provenance.
 
 Migration `003_explorer_draft_cache.sql` tạo `explorer_draft_cache`. Bảng lưu
 `ExplorerDraft` đã chuẩn hóa theo hash của prompt và evidence, namespace/model,
-TTL ứng dụng; không lưu media hoặc raw third-party payload.
+TTL ứng dụng; không lưu media hoặc raw third-party payload. Structured draft
+hiện có thêm tín hiệu `days`, `startDate`, `peopleExplicit` và
+`preferencesExplicit`; namespace cache được tăng lên `v4` để không tái dùng
+payload cũ thiếu các field này. Đây là thay đổi JSON payload/namespace, không
+thêm table, column hoặc migration.
 
 Timeout theo source/chunk, lịch round-robin và fallback tiêu đề Markdown chỉ là
 runtime policy. Thay đổi này không thêm bảng/cột và không thay đổi ownership của
@@ -199,9 +236,29 @@ Stop trong snapshot giữ hai vùng note độc lập: `notes` là object chỉ 
 Accommodation trong cùng JSONB snapshot cũng có thể giữ `personalNotes`. Các
 thao tác sửa/xóa accommodation dùng optimistic revision trên hàng
 `agent_trip_chats`; không cần thêm cột hoặc migration.
-URL note được chọn trước Google Maps/Knowledge Graph note. Thay đổi ghi chú cá
-nhân cập nhật nguyên tử chính JSONB này với optimistic revision; không có bảng
-note riêng và không lưu raw payload từ URL hoặc Google Maps.
+Thao tác thay một địa điểm chạy day repair trước khi ghi; sau khi route/timeline
+khả thi, backend thay toàn bộ `current_planner_output` bằng một câu UPDATE có
+điều kiện revision. Vì stop, giờ và leg vẫn nằm trong JSONB hiện hữu nên feature
+này không cần bảng, cột hoặc migration mới.
+Lệnh thêm/sửa/xóa/sắp xếp bằng ngôn ngữ tự nhiên không tạo persistence path
+mới. Supervisor trả structured `planEdit` trong cùng Gemini call dùng để route,
+sau đó Trip Chat gọi lại mutation hiện có trên `current_planner_output`. Adapter
+PostgreSQL khóa hàng theo optimistic revision rồi cập nhật JSONB và chèn cặp
+message user/assistant trong cùng transaction, vì vậy một lượt sửa chỉ tăng
+revision một lần. Structured interpretation không được lưu riêng và thay đổi
+này không cần bảng, cột hoặc migration mới.
+Note đã liên kết từ raw prompt được ghi vào `personalNotes`. Object `notes` chỉ
+chứa source note read-only và chọn URL trước Google Maps/Knowledge Graph; URL
+thật dùng `sourceType=url`. Cả hai field đều nằm trong JSONB hiện hữu nên không
+cần migration. Với Google Maps/Knowledge Graph note đã chọn, Place Checker tạo
+bản tiếng Việt trong execution trước khi Planner ghi snapshot; `sourceType` và
+`sourceUrl` được giữ nguyên. Cache bản dịch hiện nằm trong process và không ghi
+đè property `description` gốc của Knowledge Graph, nên thay đổi này cũng không
+thêm bảng hoặc cột.
+Thay đổi ghi chú cá nhân cập nhật nguyên tử chính JSONB này với optimistic
+revision; không có bảng note riêng và không lưu raw payload từ URL hoặc Google
+Maps. Source note không Việt hóa được sẽ bị bỏ khỏi snapshot thay vì lưu chuỗi
+tiếng Anh để frontend hiển thị.
 Lựa chọn phương tiện của user được lưu dưới
 `current_planner_output.days[].legs[].selectedTransport` trong cùng JSONB.
 Mutation khóa row, kiểm tra revision rồi tăng revision; không cần thêm table
@@ -405,6 +462,19 @@ Ngày sửa đổi cuối cùng: 2026-08-17.
 | `updated_at` | timestamptz | Không | Lần cập nhật gần nhất. |
 | `review_count` | integer | Có | Tổng số review theo dữ liệu nguồn; không thay thế các row trong `reviews`. |
 
+Ontology ứng dụng cho phép thêm `SubPlace` với cùng property contract như
+`TravelPlace`: `id`, `name`, `type`, `latitude`, `longitude` là required và
+toàn bộ metadata địa điểm còn lại là optional. SubPlace vẫn không phải itinerary
+stop độc lập. Đây là type trong contract ứng dụng, không thêm cột hoặc table
+mới. Batch curated v1 đã nạp năm node `pending` cho Hanoi
+Old Quarter: Hàng Gai, Hàng Bạc, Hàng Mã, Lãn Ông và góc bia Tạ Hiện–Lương
+Ngọc Quyến. Mỗi node giữ `latitude`, `longitude` và `address` là điểm đại diện
+cho phố/giao điểm, có provenance và vẫn chờ verification. Batch hiệu chỉnh
+`kg_curated_hanoi_old_quarter_subplace_activities_v2_20260821` giữ đúng một
+`ActivityItem` cho mỗi SubPlace và đánh dấu batch v1 là `superseded_by_v2`.
+Các batch giữ source trong property/relationship và staging import tương ứng;
+không tự chuyển entity sang `verified`.
+
 Migration `011_entertainment_node.sql` chỉ đổi `entity_type` từ `TravelPlace`
 sang `Entertainment` cho nhóm tên đã được rà soát (spa, massage, billiard/billard,
 bida, karaoke, gym, fitness hoặc nail). Migration không đổi `id`, không xoá
@@ -492,11 +562,60 @@ Runtime relationship semantics observed on 2026-08-13:
   derivation rule. PlaceChecker xử lý được cả hai hướng của cạnh;
 - `Offer_Item`: place → item; recommendations may be an evidence array or an
   object containing status/priority;
-- `Has_Style`: place/item → style. Runtime reads `time_windows` and `time_duration`
-  from the target `Style` node. Chỉ duration lớn nhất được dùng làm place-level
-  fallback; Style windows là preferred timing và không thay thế hard opening
-  hours trực tiếp của place. Generic TravelPlace retrieval không chia quota
-  theo Style; selector Style riêng mới sở hữu quota active Style.
+- `Has_Style`: place/item → style. Runtime chỉ đọc `time_windows` và
+  `time_duration` từ Style priority cao nhất có field tương ứng khi entity/item
+  thiếu field đó. Property trực tiếp luôn thắng. HasStyle không tạo public tag,
+  candidate, category, preference match hoặc quota.
+
+Ontology contract bổ sung ngày 2026-08-21 khai báo `Has_Subplace` theo hướng
+`TravelPlace` → `SubPlace`; đây là cạnh cấu trúc, không đánh dấu SubPlace là
+special experience. `SubPlace` có thể dùng `Offer_Item` tới `ActivityItem`,
+`FoodItem`, `DrinkItem` hoặc `ProductItem`. Pilot Hanoi Old Quarter hiện có năm
+cạnh `Has_Subplace` và năm cạnh `Offer_Item`; mỗi SubPlace có đúng một target
+`ActivityItem`. Mutation/importer runtime chưa dùng ma trận endpoint này để tự
+động apply batch mới.
+
+Batch `kg_curated_hoan_kiem_turtle_tower_subplace_v1_20260821` đã chuyển
+`Turtle Tower` từ `TravelPlace` thành `SubPlace` của `Hoàn Kiếm Lake`, giữ
+`latitude`/`longitude` hiện có và gắn một `ActivityItem` duy nhất.
+
+Các item của pilot được chuẩn hóa thành node tái sử dụng (`lụa`, `bạc`, `bia
+hơi`, `sightseeing`...). Quan hệ `Offer_Item.recommendations` giữ thêm
+`action`/`displayTemplate` để lớp LLM sinh câu hiển thị theo place và item,
+thay vì tạo một node dài cho từng câu.
+
+Batch `kg_curated_top_hanoi_subplaces_v1_20260821` bổ sung 13 SubPlace có
+tọa độ đại diện dưới Văn Miếu, Hoàng thành Thăng Long, Hỏa Lò, Trấn Quốc,
+quần thể Hồ Chí Minh và Bảo tàng Dân tộc học; mỗi node có đúng một
+`ActivityItem`.
+
+Migration `019_curate_hanoi_subplaces.sql` chuyển 16 provider-backed
+TravelPlace cấu thành thành SubPlace theo exact ID. Migration giữ properties,
+aliases, images và quan hệ không cấu trúc; thay hai synthetic duplicate bằng
+entity thật, tạo 14 item còn thiếu và reject hai provider duplicate chính xác.
+Sau migration 019 có 33 SubPlace active; 33/33 có một parent `Has_Subplace`, ít
+nhất một `Offer_Item` và tọa độ. Migration
+`020_reparent_ba_dinh_subplaces.sql` chuyển Lăng Chủ tịch Hồ Chí Minh thành
+SubPlace thứ 34, thêm `Offer_Item` cho Lăng và gom trực tiếp Lăng, Ao cá Bác Hồ,
+Nhà sàn Bác Hồ dưới Ba Đình Square. Mô hình được làm phẳng để không có
+`SubPlace -> SubPlace`.
+
+Migration `021_curate_nearby_travelplace_subplaces.sql` audit các TravelPlace
+gần nhau nhưng chỉ chuyển ba child có nguồn chính thức xác nhận containment:
+Đại Trung Môn, Cổng làng Mông Phụ và Chợ gốm Bát Tràng. Sau migration có 37
+SubPlace active, mỗi child mới có một `Has_Subplace`, một `Offer_Item`, tọa độ
+và description có provenance. Bán kính gần nhau không tự tạo quan hệ; các điểm
+độc lập và bản ghi nghi duplicate vẫn giữ nguyên để xử lý ở batch riêng.
+
+Migration `022_complete_subplace_activity_items.sql` bổ sung đúng một
+`ActivityItem` cho sáu SubPlace trước đó chỉ offer ProductItem, DrinkItem hoặc
+FoodItem. Migration giữ nguyên các item cũ, tái sử dụng provenance hiện có và
+đưa coverage nguồn note lên 37/37 SubPlace active có ít nhất một cạnh
+`Offer_Item -> ActivityItem`.
+
+Đợt chuẩn hóa dữ liệu cũng đã merge các bản ghi duplicate `Nhà Thờ Lớn Hà Nội`
+và `WinMart`, giữ entity có nhiều review hơn, chuyển alias/quan hệ không trùng
+sang entity giữ lại và loại quan hệ trùng.
 
 Generic TravelPlace retrieval không chỉ đọc `Special_Experience`: nó còn lấy
 `TravelPlace` nằm trong cây ADM qua `Located_In`, xen kẽ hai nhóm special và
@@ -509,14 +628,30 @@ không thêm cột, table hoặc ghi ngược dữ liệu Knowledge Graph.
 PlaceChecker nhận bốn place entity type từ catalog: `TravelPlace`, `Restaurant`,
 `DrinkDessert` và `Entertainment` (ngoài `Accommodation`). Compact boundary
 nhóm `DrinkDessert`/`Entertainment` vào pool optional `entertainment`; đây chỉ
-là thay đổi read/projection contract, không thêm bảng hoặc cột. Runtime compact
-pool dùng quota 22 TravelPlace và 6 DrinkDessert/Entertainment mỗi ngày; chỉ
-Entertainment tự gợi ý có Bayesian-adjusted rating từ 4,2/5 mới được giữ, đồng
+là thay đổi read/projection contract, không thêm bảng hoặc cột.
+PlaceChecker/Planner pipeline không duyệt `Has_Subplace`, không dùng child để
+ranking candidate và không gửi child properties/items trong relationship
+evidence. Vì vậy SubPlace không tham gia optimization hoặc routing. Read path riêng
+`GET /v1/plans/places/subplaces?parentPlaceIds=` query trực tiếp cạnh
+`Has_Subplace` và các property `address`, `latitude`, `longitude`, `image`,
+`time_duration`, `price_min`, `rating`, `review_count` sau khi itinerary đã
+render. Cùng query đó chỉ lấy `Offer_Item` có target active `ActivityItem` làm
+ngữ cảnh cho structured Gemini sinh ghi chú ngắn. Public response đánh dấu
+`noteSource="gemini"` và liệt kê `noteActivityItemIds`; context nội bộ
+Offer/Activity không được serialize. Property `description` không còn được dùng
+làm ghi chú. Thiếu ActivityItem hoặc Gemini lỗi thì note để trống, không dùng
+fallback. Toàn bộ dữ liệu này chỉ phục vụ card/pin frontend và không được lưu
+ngược vào planner output.
+Named-place SQL search chung cả năm type theo canonical name, alias, address và
+cây ADM, lấy top-1 trước khi cân nhắc Google Maps; query này không đọc
+SpecialExperience/OfferItem/HasStyle. Runtime compact
+pool dùng quota 12 TravelPlace, 6 Restaurant, 2 Entertainment và 3 DrinkDessert
+mỗi ngày, cùng tối đa 3 Accommodation/toàn chuyến; chỉ Entertainment tự gợi ý
+có Bayesian-adjusted rating từ 4,2/5 mới được giữ, đồng
 thời tourist-suitability gate loại category cửa hàng/dịch vụ thương mại khỏi
-optional pool. Runtime chỉ giới hạn reserve Entertainment chỉ mở buổi sáng ở tối đa một
-candidate/ngày; candidate có thể xếp chiều/tối vẫn được giữ. TravelPlace reserve
-dùng tỷ lệ tham chiếu 8/14 cho
-Special Experience có evidence/provenance đã duyệt. Chính sách này chỉ đọc các field
+optional pool. Entertainment phải có window giao từ 18:00; DrinkDessert dùng
+window 07:00–18:00. Mỗi deficient entity type có một query catalog, không có
+thematic fan-out hoặc external discovery. Chính sách này chỉ đọc các field
 `rating`, `review_count` và time window hiện có nên không cần migration.
 Runtime còn dùng canonical name/tag để sửa các leisure venue rõ ràng bị gắn
 `TravelPlace` sai sang `Entertainment`, và chỉ tính popular TravelPlace khi có
@@ -526,11 +661,13 @@ Provider note hiện có cũng được đọc làm semantic context để nhậ
 thương mại như art supply store, photo booth, garden center và plant service;
 không thêm cột và không ghi ngược category.
 
-PlaceChecker metadata read path truyền toàn bộ giá trị từ property `tags` cùng
-tag suy ra từ `Special_Experience`, `Offer_Item`, `Has_Style` và `Special_Near`.
-Planner normalize cả tag tiếng Việt (`Tâm linh`, `Văn hóa`, `kiến trúc`,
-`di tích`, ...) để preference và diversity objective dùng đúng dữ liệu cloud;
-thay đổi này không thêm bảng hoặc ghi ngược Knowledge Graph.
+PlaceChecker metadata read path resolve property `tags` qua
+`auto-attach/tags-auto.yml` tại runtime và chỉ chuyển canonical key hợp lệ.
+Relationship evidence từ `Special_Experience`, `Offer_Item`, `Has_Style` và
+`Special_Near` nằm ở field provenance riêng, không trở thành taxonomy group.
+Scoring dùng các canonical tag này cho preference ratio, hard avoid và độ mới
+`1 / (1 + số lần tag đã chọn)`; thay đổi là read-time policy, không thêm bảng
+hoặc ghi ngược Knowledge Graph.
 
 PlaceChecker food read path bắt đầu từ `FoodItem`/`DrinkItem` có
 `Has_Style`, rồi reverse `Offer_Item` sang `Restaurant`/`DrinkDessert` trong cây
@@ -566,7 +703,7 @@ Ngày sửa đổi cuối cùng: 2026-08-11.
 
 Ngày sửa đổi cuối cùng: 2026-08-12. Bảng cache này hiện do module Explorer sở
 hữu; migration là `backend/migrations/002_explorer_source_document_cache.sql`.
-Adapter đọc tương thích artifact version 6 của `old_one`, ghi version 8, dùng
+Adapter đọc tương thích artifact version 6/8, ghi version 9, dùng
 TTL mặc định 7 ngày và unique canonical URL. Đây không phải bảng của
 Information Finder.
 

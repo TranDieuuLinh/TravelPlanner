@@ -30,6 +30,14 @@ class CapturingClassifier:
         )
 
 
+class StaticClassifier:
+    def __init__(self, result: ClassifierResult):
+        self.result = result
+
+    async def classify(self, payload):
+        return self.result
+
+
 def test_supervisor_context_keeps_six_previous_role_tagged_messages():
     classifier = CapturingClassifier()
     context = [
@@ -55,7 +63,13 @@ def test_supervisor_context_keeps_six_previous_role_tagged_messages():
 
 def test_information_finder_route_completes_with_response():
     result = invoke(
-        create_root_graph(),
+        create_root_graph(supervisor_service=SupervisorService(
+            classifier=StaticClassifier(ClassifierResult(
+                route="information_finder",
+                confidence=1.0,
+                reason="Structured information request.",
+            ))
+        )),
         {"request_id": "info-1", "message": "Giá vé và giờ mở cửa bảo tàng?"},
     )
     assert result["decision"].route == "information_finder"
@@ -64,7 +78,15 @@ def test_information_finder_route_completes_with_response():
 
 def test_finish_route_completes_with_meaningful_response():
     result = invoke(
-        create_root_graph(), {"request_id": "finish-1", "message": "Xin chào"}
+        create_root_graph(supervisor_service=SupervisorService(
+            classifier=StaticClassifier(ClassifierResult(
+                route="finish",
+                confidence=1.0,
+                reason="Structured greeting.",
+                response="Xin chào, mình có thể hỗ trợ bạn về du lịch.",
+            ))
+        )),
+        {"request_id": "finish-1", "message": "Xin chào"},
     )
     assert result["decision"].route == "finish"
     assert "du lịch" in result["response"].casefold()

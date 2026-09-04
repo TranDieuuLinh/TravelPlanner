@@ -358,6 +358,10 @@ async def build_routing_problem(
             provider=matrix.provider,
             provider_version=matrix.provider_version,
             cache_key=cache_key,
+            logical_pair_count=matrix.logical_pair_count,
+            pair_cache_hit_count=matrix.pair_cache_hit_count,
+            provider_pair_count=matrix.provider_pair_count,
+            batch_count=matrix.batch_count,
         )
         if cache is not None and matrix.provider != STRAIGHT_LINE_PROVIDER:
             await cache.put(cache_key, matrix)

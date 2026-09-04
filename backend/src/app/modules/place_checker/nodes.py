@@ -21,6 +21,7 @@ def create_check_node(service: PlaceCheckerService):
                 people=state.get("people") or ExplorerPeople(),
                 short_preferences=state.get("short_preferences", []),
                 short_avoids=state.get("short_avoids", []),
+                special_notes=state.get("special_notes", []),
             )
         )
         return {"output": output}

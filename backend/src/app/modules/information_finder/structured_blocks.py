@@ -19,7 +19,13 @@ class EntitySpan(PublicModel):
 InlineSpan = Annotated[TextSpan | EntitySpan, Field(discriminator="type")]
 
 
-class ParagraphBlock(PublicModel):
+class AnswerBlockBase(PublicModel):
+    """Shared presentation metadata chosen by the answer LLM."""
+
+    bubble_id: str | None = Field(default=None, min_length=1, max_length=40)
+
+
+class ParagraphBlock(AnswerBlockBase):
     type: Literal["paragraph"] = "paragraph"
     text: str = Field(min_length=1)
     source_ids: list[str] = Field(min_length=1)
@@ -34,7 +40,7 @@ class FactItem(PublicModel):
     inline_spans: list[InlineSpan] = Field(default_factory=list)
 
 
-class FactListBlock(PublicModel):
+class FactListBlock(AnswerBlockBase):
     type: Literal["factList"] = "factList"
     title: str | None = Field(default=None, max_length=120)
     items: list[FactItem] = Field(min_length=1, max_length=5)
@@ -45,7 +51,7 @@ class VerseLine(PublicModel):
     inline_spans: list[InlineSpan] = Field(default_factory=list)
 
 
-class VerseBlock(PublicModel):
+class VerseBlock(AnswerBlockBase):
     type: Literal["verse"] = "verse"
     title: str | None = Field(default=None, max_length=160)
     author: str | None = Field(default=None, max_length=120)
@@ -54,7 +60,7 @@ class VerseBlock(PublicModel):
     inline_spans: list[InlineSpan] = Field(default_factory=list)
 
 
-class QuoteBlock(PublicModel):
+class QuoteBlock(AnswerBlockBase):
     type: Literal["quote"] = "quote"
     text: str = Field(min_length=1)
     attribution: str | None = Field(default=None, max_length=160)
@@ -69,7 +75,7 @@ class RecommendationItem(PublicModel):
     inline_spans: list[InlineSpan] = Field(default_factory=list)
 
 
-class RecommendationsBlock(PublicModel):
+class RecommendationsBlock(AnswerBlockBase):
     type: Literal["recommendations"] = "recommendations"
     title: str | None = Field(default=None, max_length=120)
     items: list[RecommendationItem] = Field(min_length=1, max_length=5)
@@ -81,7 +87,7 @@ class StepItem(PublicModel):
     inline_spans: list[InlineSpan] = Field(default_factory=list)
 
 
-class StepsBlock(PublicModel):
+class StepsBlock(AnswerBlockBase):
     type: Literal["steps"] = "steps"
     title: str | None = Field(default=None, max_length=120)
     items: list[StepItem] = Field(min_length=1, max_length=5)
@@ -95,13 +101,13 @@ class ComparisonOption(PublicModel):
     inline_spans: list[InlineSpan] = Field(default_factory=list)
 
 
-class ComparisonBlock(PublicModel):
+class ComparisonBlock(AnswerBlockBase):
     type: Literal["comparison"] = "comparison"
     title: str | None = Field(default=None, max_length=120)
     options: list[ComparisonOption] = Field(min_length=1, max_length=5)
 
 
-class NoticeBlock(PublicModel):
+class NoticeBlock(AnswerBlockBase):
     type: Literal["notice"] = "notice"
     text: str = Field(min_length=1)
     severity: Literal["info", "warning", "critical"] = "info"

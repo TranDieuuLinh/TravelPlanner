@@ -2934,6 +2934,12 @@ button.transportOptionCard:focus-visible { outline: 3px solid rgba(54, 95, 90, .
 .candidateMapMarker.is-selected > span { transform: rotate(-45deg) scale(1.18); box-shadow: -2px 3px 0 4px rgba(255, 255, 255, .88), -7px 10px 22px rgba(54, 95, 90, .36); }
 .candidateMapMarker--accommodation > span { --marker-color: #8a5a44; }
 .candidateMapMarker--accommodation > span b { font-size: .62rem; letter-spacing: -.02em; }
+.candidateMapMarker--subplace { width: 34px; height: 39px; }
+.candidateMapMarker--subplace > span { width: 30px; height: 30px; border-width: 2px; --marker-color: #4d827a; }
+.candidateMapMarker--subplace > span::after { inset: 4px; }
+.candidateMapMarker--subplace > span b { font-size: .56rem; }
+.candidateMapPopup--subplace .candidateMapPopupDestination { color: #53746e; }
+.candidateMapPopupCoordinates { display: block; width: fit-content; margin-top: 2px; padding: 4px 7px; border-radius: 7px; background: #edf5f3; color: #456d66; font-size: .6rem; }
 .currentLocationMarker { width: 36px; height: 36px; border: 0 !important; padding: 0; background: transparent !important; cursor: pointer; }
 .currentLocationMarker > span { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid rgba(54,95,90,.3); border-radius: 50%; background: rgba(54,95,90,.14); box-shadow: 0 0 0 5px rgba(255, 255, 255, .78), 0 8px 22px rgba(42,65,61,.22); }
 .currentLocationMarker > span i { width: 14px; height: 14px; border: 3px solid white; border-radius: 50%; background: #365f5a; box-shadow: 0 0 0 2px #365f5a; }

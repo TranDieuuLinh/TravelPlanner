@@ -33,10 +33,6 @@ from app.modules.itinerary_planner.optimizer.solver import (
 from app.modules.itinerary_planner.preprocessing import PreparedPlanningProblem
 from app.modules.itinerary_planner.routing_models import RoutingProblem
 
-ACTIVITY_FILL_TARGET_PER_DAY = 3
-REFILL_ACTIVITY_CANDIDATE_LIMIT = 4
-
-
 def optimize_hybrid_itinerary(
     problem: PreparedPlanningProblem,
     routing: RoutingProblem,
@@ -146,37 +142,6 @@ def optimize_hybrid_itinerary(
                         weights=selected_weights,
                         daily_anchor=daily_anchor,
                     )
-        selected_activity_count = _selected_activity_count(result, problem)
-        if selected_activity_count < ACTIVITY_FILL_TARGET_PER_DAY:
-            refill_candidates = _bounded_refill_candidate_ids(
-                problem,
-                routing,
-                day=day,
-                used_ids=frozenset(used_ids),
-                shortlist_ids=shortlist.candidate_ids,
-                selected_ids=frozenset(result.selected_ids),
-                trip_tag_counts=trip_tag_counts,
-            )
-            if refill_candidates != shortlist.candidate_ids:
-                try:
-                    refill = _solve_day(
-                        problem,
-                        routing,
-                        day=day,
-                        candidate_ids=refill_candidates,
-                        hint=None,
-                        config=selected_config,
-                        weights=selected_weights,
-                        daily_anchor=daily_anchor,
-                    )
-                except OptimizationError:
-                    refill = None
-                if (
-                    refill is not None
-                    and _selected_activity_count(refill, problem)
-                    > selected_activity_count
-                ):
-                    result = refill
         remapped = remap_day_result(result, day)
         results.append(remapped)
         if accommodation_id is not None and day < problem.trip.days:
@@ -191,63 +156,6 @@ def optimize_hybrid_itinerary(
         _update_trip_tag_counts(trip_tag_counts, remapped, problem, food_ids)
         used_ids.update(remapped.selected_ids)
     return assemble_hybrid_result(problem, routing, results)
-
-
-def _selected_activity_count(
-    result: OptimizationResult,
-    problem: PreparedPlanningProblem,
-) -> int:
-    place_ids = {item.place_id for item in problem.valid_places}
-    return sum(candidate_id in place_ids for candidate_id in result.selected_ids)
-
-
-def _bounded_refill_candidate_ids(
-    problem: PreparedPlanningProblem,
-    routing: RoutingProblem,
-    *,
-    day: int,
-    used_ids: frozenset[str],
-    shortlist_ids: frozenset[str],
-    selected_ids: frozenset[str],
-    trip_tag_counts: Counter[str],
-) -> frozenset[str]:
-    """Add a few flexible, nearby reserve activities without a full-pool solve."""
-    place_ids = {item.place_id for item in problem.valid_places}
-    reserve_ids = [
-        candidate_id
-        for candidate_id, feasible_days in problem.feasible_days.items()
-        if day in feasible_days
-        and candidate_id not in used_ids
-        and candidate_id not in shortlist_ids
-        and candidate_id in place_ids
-    ]
-
-    def rank(candidate_id: str) -> tuple[int, int, int, str]:
-        candidate = problem.candidate_by_id[candidate_id]
-        groups = meaningful_tags(candidate.tags)
-        repeated_groups = (
-            0
-            if groups and any(not trip_tag_counts.get(tag, 0) for tag in groups)
-            else max(1, sum(trip_tag_counts.get(tag, 0) for tag in groups))
-        )
-        flexibility = sum(
-            max(0, window.duration_minutes - candidate.duration_minutes)
-            for window in problem.feasible_windows[(candidate_id, day)]
-        )
-        nearby = min(
-            (
-                routing.travel_by_candidate_pair[
-                    (candidate_id, selected_id)
-                ].safe_minutes
-                for selected_id in selected_ids
-                if (candidate_id, selected_id) in routing.travel_by_candidate_pair
-            ),
-            default=10**6,
-        )
-        return (repeated_groups, nearby, -flexibility, candidate_id)
-
-    additions = sorted(reserve_ids, key=rank)[:REFILL_ACTIVITY_CANDIDATE_LIMIT]
-    return frozenset([*shortlist_ids, *additions])
 
 
 def _update_trip_tag_counts(

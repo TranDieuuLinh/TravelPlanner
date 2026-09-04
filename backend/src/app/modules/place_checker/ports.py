@@ -3,12 +3,15 @@ from typing import Literal, Protocol
 
 from app.modules.place_checker.contract import AdmResolution
 from app.modules.place_checker.enums import RetrievalSourceKind
-from app.modules.place_checker.food_selection_contract import FoodRestaurantCandidate
-from app.modules.place_checker.style_candidate_contract import (
+from app.modules.place_checker.localization.contract import (
+    SourceNoteTranslationRequest,
+)
+from app.modules.place_checker.selection.food.contract import FoodRestaurantCandidate
+from app.modules.place_checker.selection.style_contract import (
     StyleCandidateSourceBatch,
 )
-from app.modules.place_checker.resolution_contract import PlaceMetadata
-from app.modules.place_checker.retrieval_contract import (
+from app.modules.place_checker.resolution.contract import PlaceMetadata
+from app.modules.place_checker.retrieval.contract import (
     PromotionEvent,
     RetrievedCandidate,
     RetrievalEvidence,
@@ -29,6 +32,13 @@ class NamedPlaceSearchTool(Protocol):
 
 class PlaceMetadataRepository(Protocol):
     async def get_many(self, place_ids: list[str]) -> dict[str, PlaceMetadata]: ...
+
+
+class SourceNoteTranslator(Protocol):
+    async def translate_many(
+        self,
+        requests: list[SourceNoteTranslationRequest],
+    ) -> dict[str, str]: ...
 
 
 class SpecialFoodRestaurantSource(Protocol):

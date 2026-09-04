@@ -23,11 +23,29 @@ class SourceReference(PublicModel):
     published_at: datetime | None = None
 
 
+class AnswerMetadata(PublicModel):
+    generation_mode: Literal["structured", "extractive", "none"] = "none"
+    validation_status: Literal[
+        "citation_validated",
+        "no_sources",
+        "no_cited_content",
+    ] = "no_sources"
+    confidence: Literal["high", "medium", "low", "unavailable"] = "unavailable"
+    fallback_used: bool = False
+    claim_count: int = Field(default=0, ge=0)
+    cited_source_count: int = Field(default=0, ge=0)
+
+
 class InformationFinderOutput(PublicModel):
-    answer: str
+    answer: str = ""
+    facts: list["AnswerClaim"] = Field(default_factory=list)
     content_blocks: list["AnswerBlock"] = Field(default_factory=list)
+    entity_names: list[str] = Field(default_factory=list, max_length=30)
+    entity_candidates: list["EntityCandidate"] = Field(default_factory=list, max_length=30)
     sources: list[SourceReference] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    suggestions: list[dict[str, object]] = Field(default_factory=list)
+    metadata: AnswerMetadata = Field(default_factory=AnswerMetadata)
 
 
 class SearchQueryPlan(PublicModel):

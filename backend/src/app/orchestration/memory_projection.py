@@ -215,14 +215,14 @@ def merge_memory_places(
 def information_query(state) -> str:
     """Add compact memory context, never the full transcript or raw payload."""
     message = (state.get("message") or "").strip()
-    memory = state.get("conversation_memory")
+    explorer_output = state.get("explorer_output")
     context: list[str] = []
-    destination = memory_field(memory, "destination")
+    destination = memory_field(explorer_output, "input_ADM") or memory_field(
+        explorer_output, "input_adm"
+    )
     if destination and destination.casefold() not in message.casefold():
         context.append(f"điểm đến: {destination}")
-    references = state.get("resolved_references") or memory_field(
-        memory, "active_references", []
-    ) or []
+    references = state.get("resolved_references") or []
     entities: list[str] = []
     for reference in references:
         entity = memory_field(reference, "resolved_entity")
@@ -251,13 +251,12 @@ def build_blocked_clarification(output) -> tuple[str, str]:
         p
         for p in getattr(output, "checked_places", [])
         if getattr(p, "mandatory", False)
-        and getattr(getattr(p, "evaluation", None), "state", None)
-        in {
-            "blocked",
-            getattr(
-                getattr(getattr(p, "evaluation", None), "state", None), "value", None
-            ),
-        }
+        and getattr(
+            getattr(getattr(p, "evaluation", None), "state", None),
+            "value",
+            getattr(getattr(p, "evaluation", None), "state", None),
+        )
+        == "blocked"
     ]
     if blocked_mandatory:
         names = [

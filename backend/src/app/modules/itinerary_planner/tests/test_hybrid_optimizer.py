@@ -52,12 +52,14 @@ def test_hybrid_repairs_each_day_and_never_reuses_candidate() -> None:
 
     assert (
         result.objective_policy_version
-        == "hybrid-activity-corridor-v15-evening-special-first"
+        == "hybrid-activity-corridor-v16-dense-activities"
     )
     assert [item.name for item in result.passes] == [
         "day_1:priority",
+        "day_1:activity_count",
         "day_1:utility",
         "day_2:priority",
+        "day_2:activity_count",
         "day_2:utility",
     ]
     scheduled = [stop.place_id for stop in result.scheduled_stops]

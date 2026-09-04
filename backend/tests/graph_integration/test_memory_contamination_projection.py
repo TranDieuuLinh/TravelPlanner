@@ -19,10 +19,6 @@ from app.modules.conversation_memory.contract import (
     MemoryReference,
     WorkingMemoryState,
 )
-from app.modules.explorer.public import (
-    ExplorerPlace,
-    PlaceSource,
-)
 from app.modules.place_checker.contract import (
     AdmResolution,
     AdmResolutionStatus,
@@ -302,6 +298,14 @@ class TestMemoryContaminationProjection(unittest.TestCase):
         q_place, resp_place = build_blocked_clarification(place_output)
         self.assertIn("Bảo Tàng Không Tồn Tại", q_place)
         self.assertIn("Bảo Tàng Không Tồn Tại", resp_place)
+
+        # A mandatory place in a non-blocking lifecycle state is not the cause.
+        place_output.checked_places[0].evaluation.state = "conditional"
+        place_output.warnings = ["Planner hard meal coverage is incomplete."]
+        q_conditional, resp_conditional = build_blocked_clarification(place_output)
+        self.assertNotIn("Bảo Tàng Không Tồn Tại", q_conditional)
+        self.assertIn("Planner hard meal coverage is incomplete", q_conditional)
+        self.assertIn("Planner hard meal coverage is incomplete", resp_conditional)
 
         # Pool / candidate warning
         pool_output = SimpleNamespace(

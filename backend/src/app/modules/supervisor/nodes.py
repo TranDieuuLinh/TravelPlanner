@@ -12,14 +12,14 @@ def create_decide_node(service: SupervisorService):
                 has_source_input=state.get("has_source_input", False),
                 has_itinerary=state.get("has_itinerary", False),
                 has_edit_operation=state.get("has_edit_operation", False),
+                current_plan=state.get("current_plan"),
                 destination=state.get("destination"),
                 duration_days=state.get("duration_days"),
                 mentioned_places=state.get("mentioned_places", []),
                 selected_places=state.get("selected_places", []),
                 clarification_required=state.get("clarification_required", False),
-                user_context_requests=state.get("user_context_requests", []),
-                pending_user_context=state.get("pending_user_context", []),
                 conversation_summary=state.get("conversation_summary"),
+                explorer_output=state.get("explorer_output"),
             )
         )
         return {"decision": decision}

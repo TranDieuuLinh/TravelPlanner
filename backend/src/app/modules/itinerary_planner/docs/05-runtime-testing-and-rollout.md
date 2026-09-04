@@ -1,6 +1,6 @@
 # Phase 5: Runtime, route repair, testing và rollout
 
-Cập nhật lần cuối: 2026-08-18
+Cập nhật lần cuối: 2026-08-21
 
 Trạng thái: đã triển khai route-detail enrichment cho selected arcs và
 accommodation transfers, fallback có warning khi thiếu geometry, fallback đường
@@ -38,15 +38,21 @@ cho từng ngày; lỗi anchor công bố `placeId`, ngày và nhóm route/timel
 constraint liên quan. Runtime mặc định giữ một CP-SAT search worker cho mỗi daily repair và sparse graph `K=10` theo
 `safeTravelMinutes` từ matrix. Forced relationship, meal-access, priority và
 component-bridge arcs luôn được union lại sau nearest-neighbor pruning.
-Hai solver pass của mỗi ngày không có wall-clock timeout mặc định. Deployment
+Priority pass giữ exact search không có deadline; activity-count pass và mỗi
+utility attempt mặc định có 10 giây. Deployment
 cần SLA khác có thể inject `SolverConfig`. Pass priority `user_input > URL` vẫn
 exact trong daily subproblem. Mỗi utility round chạy ba solver instance một
-thread với seed khác nhau, giữ incumbent tốt nhất và dừng sau 10 round liên
+thread với seed khác nhau, giữ incumbent tốt nhất và dừng sau hai round liên
 tiếp không cải thiện. Greedy/local-search order được đưa vào CP-SAT bằng
 solution hint; CP-SAT vẫn có quyền sửa selection, time và route để thỏa hard
 constraint.
-Valhalla matrix và route-detail request cũng không có timeout mặc định; lỗi
-HTTP/provider thực sự vẫn đi qua approximate fallback và phát warning.
+Valhalla matrix và route-detail request có timeout mặc định 180 giây; có thể
+điều chỉnh qua `VALHALLA_TIMEOUT_SECONDS` khi deployment cần SLA. Ngoài cache
+batch tối đa 128 entry trong 10 phút, adapter giữ bounded pair cache theo graph
+version/profile/directed coordinates. Matrix trace công bố logical pair count,
+pair-cache hit, provider pair count và số batch thực sự gọi. Lỗi HTTP/provider
+không được cache thành unreachable và vẫn đi qua approximate fallback có
+warning.
 Greedy không dùng tổng activity duration làm điều kiện loại sớm. Nó tạo activity
 skeleton trước, giữ placeholder cho ba meal, rồi ưu tiên restaurant theo tổng
 travel từ activity trước qua restaurant đến activity sau. Daily CP-SAT vẫn sở
@@ -56,7 +62,7 @@ Mỗi meal shortlist giữ tối đa ba food option và bảo đảm có ít nh�
 giảm fallback full-day do constraint đồ uống/tráng miệng.
 
 Nếu shortlist heuristic vô nghiệm, runtime thử lại ngày đó với toàn bộ candidate
-còn khả dụng trong day-domain và hard wait cap 150 phút. Nếu full-day strict
+còn khả dụng trong day-domain và hard wait cap 90 phút. Nếu full-day strict
 solve vẫn `INFEASIBLE`, runtime retry đúng một lần không hard wait cap nhưng giữ
 progressive idle penalty. Nếu pool food unique vẫn làm ngày vô nghiệm, fallback
 cuối chỉ mở lại restaurant đã dùng; activity đã dùng vẫn bị loại. Timeout/
@@ -80,6 +86,17 @@ ID khác nhau dù cùng travel-place signature. Candidate `user_input` hoặc `u
 vào `unscheduled` với reason code `not_selected_by_optimizer`; candidate bị
 loại trước optimizer giữ reason code validation/feasibility ban đầu.
 
+FastAPI runtime dùng graph CP-SAT-first có prefix `prepare_problem` và
+`build_travel_matrix` chung. Hybrid CP-SAT chạy optimize và route enrichment
+trước. Solver error, output không khả thi hoặc route repair/enrichment failure
+mới chuyển sang Beam Search trên cùng `PreparedPlanningProblem` và
+`RoutingProblem`; fallback không gọi lại matrix. Beam dùng một global deadline
+cho toàn bộ ngày và nhánh backtracking, kiểm tra định kỳ ngay trong vòng
+candidate. Budget mặc định là 10 giây cho một ngày, 20 giây cho 2–3 ngày và 30
+giây cho chuyến dài hơn; giá trị explicit trong `BeamSearchConfig` ghi đè budget
+adaptive. Nếu cả CP-SAT và Beam đều thất bại, graph trả lỗi cuối thay vì xuất
+lịch một phần.
+
 ## State nội bộ
 
 `ItineraryPlannerState` nên có:
@@ -94,6 +111,9 @@ output
 warnings
 error
 phase_timings_ms
+beam_failure_reason
+selected_optimizer
+fallback_used
 ```
 
 Chỉ `input` bắt buộc khi invoke. Các field còn lại được từng node bổ sung.
@@ -218,9 +238,9 @@ quãng đường hoặc thời gian theo đường thật; output luôn có warn
 Mục tiêu ban đầu, chưa phải SLA cho tới khi benchmark:
 
 ```text
-3 ngày / 60-80 candidates:   5-12 giây
-5 ngày / 100-130 candidates: 8-20 giây
-7 ngày / 140-170 candidates: 15-30 giây
+3 ngày / 60-80 candidates:   10-30 giây
+5 ngày / 100-130 candidates: 20-45 giây
+7 ngày / 140-170 candidates: 30-60 giây
 ```
 
 Phase timing cần ghi riêng:

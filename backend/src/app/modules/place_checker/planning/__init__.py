@@ -1,0 +1,1 @@
+"""Compact planner-output projection."""

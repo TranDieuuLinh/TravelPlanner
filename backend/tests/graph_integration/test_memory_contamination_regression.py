@@ -16,7 +16,14 @@ from app.modules.conversation_memory.public import (
     InMemoryMemoryRepository,
     build_conversation_memory_service,
 )
-from app.modules.explorer.public import create_explorer_service
+from app.modules.explorer.adapters.auto_tags import YamlTagCatalog
+from app.modules.explorer.adapters.development import (
+    InMemoryExplorerSnapshotRepository,
+    InlineImageSourceExtractor,
+    UnconfiguredUrlSourceExtractor,
+)
+from app.modules.explorer.models import ExplorerDraft
+from app.modules.explorer.service import ExplorerService
 from app.modules.information_finder.contract import (
     InformationFinderOutput,
     SourceReference,
@@ -56,7 +63,7 @@ class EndToEndRegressionClassifier:
 
 
 class MockInformationFinderProvider:
-    async def find(self, query: str):
+    async def find(self, query: str, *, force_refresh: bool = False):
         return InformationFinderOutput(
             answer="Hà Nội có Hồ Gươm, Lăng Bác. Ngoài ra bạn có thể tham quan Vịnh Hạ Long nếu đi xa hơn.",
             sources=[
@@ -72,11 +79,24 @@ class MockInformationFinderProvider:
         )
 
 
+class HanoiDrafts:
+    async def from_prompt(self, raw_prompt):
+        return ExplorerDraft(inputAdm="Hà Nội", days=3)
+
+    async def from_sources(self, *, raw_prompt, sources):
+        return ExplorerDraft(inputAdm="Hà Nội", days=3)
+
+
 def build_end_to_end_env():
     supervisor = SupervisorService(classifier=EndToEndRegressionClassifier())
-    explorer = create_explorer_service(
-        draft_provider="rules",
-        source_draft_provider="rules",
+    drafts = HanoiDrafts()
+    explorer = ExplorerService(
+        drafts=drafts,
+        fallback_drafts=drafts,
+        url_extractor=UnconfiguredUrlSourceExtractor(),
+        image_extractor=InlineImageSourceExtractor(),
+        snapshots=InMemoryExplorerSnapshotRepository(),
+        tag_catalog=YamlTagCatalog(),
     )
     graph = create_root_graph(
         supervisor_service=supervisor,
@@ -102,7 +122,8 @@ class TestMemoryContaminationRegression(unittest.TestCase):
         """Concrete end-to-end failure reproduction and fix verification:
 
         Turn 1: User asks about Hanoi -> assistant mentions Vinh Ha Long in answer.
-        Turn 2: User says 'lên plan đi HN 3 ngày 2 đêm' -> plan succeeds, NOT blocked.
+        Turn 2: User says 'lên plan đi HN 3 ngày 2 đêm' -> Explorer reaches
+        the defaults review for Hanoi, not a contaminated destination blocker.
         """
         chat_service, memory_service, _graph, _repo = build_end_to_end_env()
         chat = asyncio.run(chat_service.create(self.user_id, "Hanoi Trip Chat"))
@@ -146,7 +167,8 @@ class TestMemoryContaminationRegression(unittest.TestCase):
             t2_last_msg.content,
             "PlaceChecker cần làm rõ dữ liệu trước khi lập lịch.",
         )
-        self.assertIsNone(t2_last_msg.clarification_question)
+        self.assertIsNotNone(t2_last_msg.clarification_question)
+        self.assertIn("giá trị mặc định", t2_last_msg.clarification_question)
 
         # Verify memory after turn 2 has updated destination and duration
         mem2 = asyncio.run(memory_service.load_context(chat_id, self.user_id))

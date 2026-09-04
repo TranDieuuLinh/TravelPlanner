@@ -1,7 +1,11 @@
+from math import ceil
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.modules.auth.public import AuthUser, require_current_user
 from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCatalog
+from app.modules.place_checker.subplaces.contract import SubplaceGroup
+from app.modules.place_checker.subplaces.service import SubplaceDisplayService
 from app.shared.tools.search_places import (
     AdministrativeArea,
     PlaceSearchRequest,
@@ -24,6 +28,19 @@ def _search_dependencies(request: Request) -> tuple[SearchPlacesTool, PostgresPl
             },
         )
     return tool, catalog
+
+
+def _subplace_service_dependency(request: Request) -> SubplaceDisplayService:
+    service = getattr(request.app.state, "subplace_display_service", None)
+    if service is None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "PLACE_SEARCH_UNAVAILABLE",
+                "message": "Dữ liệu địa điểm chưa được cấu hình.",
+            },
+        )
+    return service
 
 
 @router.get("/places/search")
@@ -51,9 +68,17 @@ async def search_places_for_manual_plan(
             allow_external_fallback=True,
         )
     )
+    metadata_by_id = await catalog.get_many(
+        list(
+            dict.fromkeys(
+                match.place_id for match in result.top_matches if match.place_id
+            )
+        )
+    )
     suggestions: list[dict[str, object | None]] = []
     for match in result.top_matches:
         coordinates = match.coordinates
+        metadata = metadata_by_id.get(match.place_id or "")
         suggestions.append(
             {
                 "name": match.name,
@@ -65,8 +90,32 @@ async def search_places_for_manual_plan(
                 "rating": match.rating,
                 "reviewCount": match.review_count,
                 "placeType": match.canonical_type,
+                "durationMinutes": (
+                    metadata.typical_duration_minutes if metadata else None
+                ),
+                "openingHours": metadata.opening_hours if metadata else None,
+                "costPerPerson": (
+                    ceil(metadata.typical_cost)
+                    if metadata and metadata.typical_cost is not None
+                    else None
+                ),
                 "isVerified": match.verification_status == "verified",
                 "source": match.provider,
             }
         )
     return suggestions
+
+
+@router.get("/places/subplaces", response_model=list[SubplaceGroup])
+async def list_subplaces_for_plan(
+    parent_place_ids: list[str] = Query(
+        ...,
+        min_length=1,
+        max_length=50,
+        alias="parentPlaceIds",
+    ),
+    _: AuthUser = Depends(require_current_user),
+    service: SubplaceDisplayService = Depends(_subplace_service_dependency),
+) -> list[SubplaceGroup]:
+    """Return frontend-only SubPlaces with ActivityItem-grounded Gemini notes."""
+    return await service.list_subplaces(parent_place_ids, per_parent_limit=50)

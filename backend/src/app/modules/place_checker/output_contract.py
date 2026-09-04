@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import Field, model_validator
 
-from app.modules.place_checker.analysis_contract import (
+from app.modules.place_checker.analysis.contract import (
     BudgetAnalysis,
     CapacityAnalysis,
     CoverageAnalysis,
@@ -28,21 +28,22 @@ from app.modules.place_checker.enums import (
     UnresolvedEntityType,
     VerificationStatus,
 )
-from app.modules.place_checker.evaluation_contract import PlannerConstraint
-from app.modules.place_checker.food_selection_contract import (
+from app.modules.place_checker.evaluation.contract import PlannerConstraint
+from app.modules.place_checker.selection.food.contract import (
     FoodMealCoverage,
     FoodStyleCoverage,
     SelectedFoodRestaurant,
 )
-from app.modules.place_checker.item_contract import ResolvedInputItem, SpecialExperience
-from app.modules.place_checker.retrieval_contract import RetrievalBatch
-from app.modules.place_checker.scoring_contract import (
+from app.modules.place_checker.resolution.item_contract import ResolvedInputItem, SpecialExperience
+from app.modules.place_checker.retrieval.contract import RetrievalBatch
+from app.modules.place_checker.scoring.contract import (
     CandidateRankingBatch,
 )
-from app.modules.place_checker.style_candidate_contract import (
+from app.modules.place_checker.selection.style_contract import (
     StyleCandidateCoverage,
     StyleCandidateSelection,
 )
+from app.shared.contracts.agent import AgentError
 from app.shared.contracts.place import Coordinates
 from app.shared.contracts.source_note import SourceNote
 
@@ -98,9 +99,7 @@ class PlaceCheckerResult(ContractModel):
     style_candidate_selections: list[StyleCandidateSelection] = Field(
         default_factory=list
     )
-    style_candidate_coverage: list[StyleCandidateCoverage] = Field(
-        default_factory=list
-    )
+    style_candidate_coverage: list[StyleCandidateCoverage] = Field(default_factory=list)
     unresolved_style_inputs: list[str] = Field(default_factory=list)
     unresolved_item_style_inputs: list[str] = Field(default_factory=list)
     budget_analysis: BudgetAnalysis
@@ -123,6 +122,13 @@ class PlaceCheckerResult(ContractModel):
             coverage=self.coverage_analysis,
             gaps=self.gap_analysis,
         )
+
+
+class PlaceCheckerFailure(ContractModel):
+    schema_version: str = "place_checker.v1"
+    status: Literal["blocked", "error"]
+    error: AgentError
+    warnings: list[str] = Field(default_factory=list)
 
 
 class PlannerPlaceContext(ContractModel):
@@ -244,6 +250,7 @@ class PlannerOutputPlace(ContractModel):
     address: str | None = None
     priority: Literal["user_input", "url", "special_experience", "special_near"]
     notes: SourceNote | None = None
+    personal_notes: str | None = Field(default=None, max_length=4000)
     tags: list[str] = Field(default_factory=list)
     styles: list[str] = Field(default_factory=list)
     audience: PlannerAudience = Field(default_factory=PlannerAudience)
@@ -290,6 +297,7 @@ class PlannerExcludedCandidate(ContractModel):
     reason_code: str
     message: str
     notes: SourceNote | None = None
+    personal_notes: str | None = Field(default=None, max_length=4000)
     source_refs: list[str] = Field(default_factory=list, max_length=20)
 
 

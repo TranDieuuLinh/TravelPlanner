@@ -3,16 +3,16 @@ import json
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
+from app.modules.explorer.adapters.postgres import asyncpg_dsn
 from app.modules.explorer.models import (
     SourceArtifact,
     SourceBranchFailure,
     SourceExtractionResult,
 )
-from app.modules.explorer.adapters.postgres import asyncpg_dsn
 
-
-EXPLORER_URL_CACHE_VERSION = "8"
-_LEGACY_CACHE_VERSIONS = {"6"}
+EXPLORER_URL_CACHE_VERSION = "9"
+_LEGACY_CACHE_VERSIONS = {"6", "8"}
+_NORMALIZED_CACHE_VERSIONS = {"8", EXPLORER_URL_CACHE_VERSION}
 _TRACKING_QUERY_PREFIXES = ("utm_",)
 _TRACKING_QUERY_KEYS = {"fbclid", "gclid", "igshid"}
 _QUERYLESS_SOCIAL_HOST_SUFFIXES = (
@@ -28,7 +28,9 @@ def canonicalize_source_url(url: str) -> str:
     host = (parsed.hostname or "").casefold().rstrip(".")
     port = parsed.port
     netloc = host
-    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+    if port and not (
+        (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    ):
         netloc = f"{host}:{port}"
     path = parsed.path or "/"
     if path != "/":
@@ -89,12 +91,14 @@ def _legacy_artifacts(value: dict, canonical_url: str) -> list[SourceArtifact]:
             text = item.get("text")
             if not isinstance(text, str) or not text.strip():
                 continue
-            artifacts.append(SourceArtifact(
-                artifactType=artifact_type,
-                text=text.strip()[:60_000],
-                sourceUrl=canonical_url,
-                language=None if language == "_" else str(language)[:20],
-            ))
+            artifacts.append(
+                SourceArtifact(
+                    artifactType=artifact_type,
+                    text=text.strip()[:60_000],
+                    sourceUrl=canonical_url,
+                    language=None if language == "_" else str(language)[:20],
+                )
+            )
     return artifacts
 
 
@@ -102,13 +106,13 @@ def _decode_artifacts(value, version: str, canonical_url: str) -> list[SourceArt
     data = _json_value(value)
     if version in _LEGACY_CACHE_VERSIONS and isinstance(data, dict):
         return _legacy_artifacts(data, canonical_url)
-    if version == EXPLORER_URL_CACHE_VERSION and isinstance(data, list):
+    if version in _NORMALIZED_CACHE_VERSIONS and isinstance(data, list):
         return [SourceArtifact.model_validate(item) for item in data]
     return []
 
 
 def _decode_failures(context, version: str) -> list[SourceBranchFailure]:
-    if version != EXPLORER_URL_CACHE_VERSION:
+    if version not in _NORMALIZED_CACHE_VERSIONS:
         return []
     data = _json_value(context)
     if not isinstance(data, dict):
@@ -120,7 +124,7 @@ def _decode_failures(context, version: str) -> list[SourceBranchFailure]:
 
 
 def _decode_coverage(context, version: str) -> dict:
-    if version != EXPLORER_URL_CACHE_VERSION:
+    if version not in _NORMALIZED_CACHE_VERSIONS:
         return {}
     data = _json_value(context)
     if not isinstance(data, dict):
@@ -147,11 +151,9 @@ class InMemoryUrlSourceCache:
         item = self._items.get(canonicalize_source_url(url))
         if item is None:
             return None
-        return item.model_copy(update={
-            "source_index": source_index,
-            "source_ref": url,
-            "cache_status": "hit",
-        }, deep=True)
+        return item.model_copy(
+            update={"source_index": source_index, "source_ref": url}, deep=True
+        )
 
     async def save(self, url: str, result: SourceExtractionResult) -> None:
         self._items[canonicalize_source_url(url)] = result.model_copy(deep=True)
@@ -216,7 +218,6 @@ class PostgresUrlSourceCache:
             status="partial" if failures else "succeeded",
             artifacts=artifacts,
             branchFailures=failures,
-            cacheStatus="hit",
             **coverage,
         )
 

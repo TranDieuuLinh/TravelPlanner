@@ -175,7 +175,12 @@ class GeminiMediaAnalyzer:
         self.ffmpeg = FfmpegMediaProcessor()
 
     async def analyze(
-        self, media_path: str, work_dir: str, source_url: str
+        self,
+        media_path: str,
+        work_dir: str,
+        source_url: str,
+        *,
+        branches: set[SourceBranch] | None = None,
     ) -> MediaAnalysisResult:
         duration_value, stream_types = await asyncio.gather(
             self.ffmpeg.duration_seconds(media_path),
@@ -185,23 +190,24 @@ class GeminiMediaAnalyzer:
         frames_dir = Path(work_dir) / "frames"
         audio_dir = Path(work_dir) / "audio"
         jobs = []
-        branches: list[SourceBranch] = []
-        if "video" in stream_types:
+        active_branches: list[SourceBranch] = []
+        requested = branches or {"frame_ocr", "stt"}
+        if "video" in stream_types and "frame_ocr" in requested:
             frames_dir.mkdir()
-            branches.append("frame_ocr")
+            active_branches.append("frame_ocr")
             jobs.append(self._analyze_frames(
                 media_path, str(frames_dir), source_url, duration
             ))
-        if "audio" in stream_types:
+        if "audio" in stream_types and "stt" in requested:
             audio_dir.mkdir()
-            branches.append("stt")
+            active_branches.append("stt")
             jobs.append(self._analyze_audio(
                 media_path, str(audio_dir), source_url, duration
             ))
         results = await asyncio.gather(*jobs, return_exceptions=True)
         artifacts: list[SourceArtifact] = []
         failures: list[SourceBranchFailure] = []
-        for branch, result in zip(branches, results):
+        for branch, result in zip(active_branches, results):
             if isinstance(result, list):
                 artifacts.extend(result)
                 continue

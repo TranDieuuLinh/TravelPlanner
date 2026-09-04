@@ -5,6 +5,7 @@ from app.orchestration.root_state import RootState
 from app.orchestration.routes import (
     route_after_explorer,
     route_after_place_checker,
+    route_after_plan_editor,
     route_supervisor,
 )
 from app.shared.persistence import create_checkpointer
@@ -26,6 +27,8 @@ def create_root_graph(
 
     builder.add_node("supervisor", nodes.run_supervisor)
     builder.add_node("explorer", nodes.run_explorer)
+    builder.add_node("supervisor_review", nodes.run_supervisor_review)
+    builder.add_node("supervisor_source_summary", nodes.run_supervisor_source_summary)
     builder.add_node("information_finder", nodes.run_information_finder)
     builder.add_node("place_checker", nodes.run_place_checker)
     builder.add_node("itinerary_planner", nodes.run_itinerary_planner)
@@ -46,8 +49,14 @@ def create_root_graph(
     builder.add_conditional_edges(
         "explorer",
         route_after_explorer,
-        {"place_checker": "place_checker", "finish": "finish"},
+        {
+            "supervisor_review": "supervisor_review",
+            "supervisor_source_summary": "supervisor_source_summary",
+            "place_checker": "place_checker",
+        },
     )
+    builder.add_edge("supervisor_review", "finish")
+    builder.add_edge("supervisor_source_summary", "finish")
     builder.add_conditional_edges(
         "place_checker",
         route_after_place_checker,
@@ -55,7 +64,11 @@ def create_root_graph(
     )
     builder.add_edge("itinerary_planner", "finish")
     builder.add_edge("information_finder", "finish")
-    builder.add_edge("plan_editor", "finish")
+    builder.add_conditional_edges(
+        "plan_editor",
+        route_after_plan_editor,
+        {"place_checker": "place_checker", "finish": "finish"},
+    )
     builder.add_edge("finish", END)
 
     compile_checkpointer = (

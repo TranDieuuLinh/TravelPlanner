@@ -10,22 +10,19 @@ from app.shared.tools.search_places.contract import (
     ProviderAttempt,
 )
 from app.shared.tools.search_places.external_search import search_external_only
-from app.shared.tools.search_places.normalization import lookup_names, normalize_text
+from app.shared.tools.search_places.normalization import lookup_names
 from app.shared.tools.search_places.policy import PlaceSearchPolicy
+from app.shared.tools.search_places.service_helpers import SearchPlacesHelpersMixin
 from app.shared.tools.search_places.ports import (
     ExternalPlaceSearch,
     KnowledgeGraphPlaceSearch,
     PlaceSearchProviderError,
     PlaceSearchProviderTimeout,
 )
-from app.shared.tools.search_places.scoring import (
-    distance_km,
-    rank_candidates,
-    text_similarity,
-)
+from app.shared.tools.search_places.scoring import rank_candidates
 
 
-class SearchPlacesTool(SearchPlacesBatchMixin):
+class SearchPlacesTool(SearchPlacesBatchMixin, SearchPlacesHelpersMixin):
     """Resolve or discover places through ranked, policy-checked providers."""
 
     def __init__(
@@ -93,6 +90,24 @@ class SearchPlacesTool(SearchPlacesBatchMixin):
                     attempts=attempts,
                     reason=reason,
                 )
+
+        if request.search_mode == "named_place" and request.top_k == 1 and kg_matches:
+            return self._result(
+                request,
+                status="unresolved",
+                matches=kg_matches,
+                attempts=attempts,
+                reason="catalog_top_1_not_eligible",
+            )
+        if request.search_mode == "named_place" and request.top_k == 1 and kg_failed:
+            return self._result(
+                request,
+                status="provider_error",
+                matches=[],
+                attempts=attempts,
+                reason="knowledge_graph_provider_error",
+                retryable=True,
+            )
 
         if (
             request.provider_scope == "knowledge_graph"
@@ -175,6 +190,10 @@ class SearchPlacesTool(SearchPlacesBatchMixin):
                 "place_type_hint": request.place_type_hint,
                 "limit": request.top_k,
             }
+            if getattr(provider, "supports_search_mode", False):
+                provider_kwargs["search_mode"] = request.search_mode
+            if getattr(provider, "supports_address_hint", False):
+                provider_kwargs["address_hint"] = request.address_hint
             if request.anchor_place_id is not None:
                 provider_kwargs["anchor_place_id"] = request.anchor_place_id
             candidates = await provider.search(names, **provider_kwargs)
@@ -216,6 +235,11 @@ class SearchPlacesTool(SearchPlacesBatchMixin):
         request: PlaceSearchRequest,
         matches: list[PlaceSearchMatch],
     ) -> tuple[str, PlaceSearchMatch | None, str] | None:
+        if request.search_mode == "named_place" and request.top_k == 1 and matches:
+            top = matches[0]
+            identity_rejections = set(top.rejection_reasons) - {"coordinates_missing"}
+            if not identity_rejections:
+                return "resolved", top, "unified_catalog_top_1"
         eligible = [match for match in matches if not match.rejection_reasons]
         if not eligible:
             return None
@@ -254,142 +278,6 @@ class SearchPlacesTool(SearchPlacesBatchMixin):
             if margin < self.policy.named_minimum_margin:
                 return "needs_review", None, "top_matches_too_close"
         return "resolved", top, "high_confidence_identity"
-
-    @staticmethod
-    def _deduplicate(
-        candidates: list[PlaceProviderCandidate],
-    ) -> list[PlaceProviderCandidate]:
-        selected: list[PlaceProviderCandidate] = []
-        for candidate in candidates:
-            duplicate_index = next(
-                (
-                    index
-                    for index, existing in enumerate(selected)
-                    if SearchPlacesTool._same_physical_place(existing, candidate)
-                ),
-                None,
-            )
-            if duplicate_index is None:
-                selected.append(candidate)
-                continue
-            if candidate.data_confidence > selected[duplicate_index].data_confidence:
-                selected[duplicate_index] = candidate
-        return selected
-
-    @staticmethod
-    def _same_physical_place(
-        left: PlaceProviderCandidate,
-        right: PlaceProviderCandidate,
-    ) -> bool:
-        if left.stable_id and left.stable_id == right.stable_id:
-            return True
-        if normalize_text(left.name) != normalize_text(right.name):
-            return False
-        if normalize_text(left.canonical_type) != normalize_text(right.canonical_type):
-            return False
-        if left.address and right.address and text_similarity(left.address, right.address) < 0.5:
-            return False
-        if left.coordinates is None or right.coordinates is None:
-            return False
-        return distance_km(left.coordinates, right.coordinates) <= 0.2
-
-    @staticmethod
-    def _distinctive_name_disambiguates(
-        top: PlaceSearchMatch,
-        second: PlaceSearchMatch,
-    ) -> bool:
-        top_name = top.score_components.get("nameSimilarity", 0)
-        second_name = second.score_components.get("nameSimilarity", 0)
-        return top_name >= 0.94 and top_name - second_name >= 0.07
-
-    @staticmethod
-    def _address_hint_disambiguates(
-        request: PlaceSearchRequest,
-        top: PlaceSearchMatch,
-        second: PlaceSearchMatch,
-    ) -> bool:
-        if not request.address_hint:
-            return False
-        top_address = top.score_components.get("addressCompatibility", 0)
-        second_address = second.score_components.get("addressCompatibility", 0)
-        return top_address >= 0.70 and top_address - second_address >= 0.15
-
-    @staticmethod
-    def _route_context_disambiguates(
-        top: PlaceSearchMatch,
-        second: PlaceSearchMatch,
-    ) -> bool:
-        top_distance = top.score_components.get("anchorDistanceKm")
-        second_distance = second.score_components.get("anchorDistanceKm")
-        if top_distance is None or second_distance is None:
-            return False
-        distance_advantage = second_distance - top_distance
-        ratio_advantage = (
-            top_distance <= second_distance * 0.70 if second_distance > 0 else False
-        )
-        return top_distance <= 15 and distance_advantage >= 0.75 and ratio_advantage
-
-    @staticmethod
-    def _merge_matches(
-        first: list[PlaceSearchMatch],
-        second: list[PlaceSearchMatch],
-        limit: int,
-    ) -> list[PlaceSearchMatch]:
-        matches: dict[str, PlaceSearchMatch] = {}
-        for match in [*first, *second]:
-            identity = match.place_id or (
-                f"{match.provider}:{normalize_text(match.name)}:"
-                f"{normalize_text(match.address)}"
-            )
-            current = matches.get(identity)
-            if current is None or match.score > current.score:
-                matches[identity] = match
-        return sorted(
-            matches.values(),
-            key=lambda match: (bool(match.rejection_reasons), -match.score),
-        )[:limit]
-
-    @staticmethod
-    def _attempt(
-        provider: str,
-        outcome: str,
-        queries: list[str],
-        started_at: float,
-        *,
-        candidate_count: int = 0,
-        error_code: str | None = None,
-    ) -> ProviderAttempt:
-        return ProviderAttempt(
-            provider=provider,
-            outcome=outcome,
-            queries=queries,
-            candidateCount=candidate_count,
-            durationMs=max(0, round((time.perf_counter() - started_at) * 1000)),
-            errorCode=error_code,
-        )
-
-    @staticmethod
-    def _result(
-        request: PlaceSearchRequest,
-        *,
-        status: str,
-        matches: list[PlaceSearchMatch],
-        attempts: list[ProviderAttempt],
-        reason: str,
-        selected: PlaceSearchMatch | None = None,
-        retryable: bool = False,
-    ) -> PlaceSearchResult:
-        return PlaceSearchResult(
-            status=status,
-            query=request.query,
-            normalizedQuery=normalize_text(request.query),
-            searchMode=request.search_mode,
-            selected=selected,
-            topMatches=matches,
-            providerAttempts=attempts,
-            resolutionReason=reason,
-            retryable=retryable,
-        )
 
 
 async def search_places(

@@ -1,7 +1,7 @@
 import pytest
 
 from app.modules.place_checker.enums import CostTier
-from app.modules.place_checker.price_policy import (
+from app.modules.place_checker.evaluation.price_policy import (
     has_planner_cost,
     has_usable_cost,
     planner_cost,

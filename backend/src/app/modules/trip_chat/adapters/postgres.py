@@ -1,9 +1,11 @@
 import json
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from app.modules.plan_editor.public import NaturalLanguagePlanEdit
 from app.modules.trip_chat.contract import (
     AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
@@ -13,10 +15,15 @@ from app.modules.trip_chat.contract import (
     TripChatMessage,
     TripChatSummary,
 )
+from app.modules.trip_chat.adapters.postgres_plan_edit import (
+    append_plan_edit_exchange as append_atomic_plan_edit_exchange,
+)
 from app.modules.trip_chat.plan_snapshot import (
+    delete_plan_item,
     delete_accommodation,
     select_transport_option,
     update_accommodation,
+    update_plan_item,
     update_stop_personal_notes,
     add_plan_item,
     confirm_unscheduled_place,
@@ -105,7 +112,7 @@ class PostgresTripChatRepository:
                 return None
             messages = await connection.fetch(
                     """SELECT id, role, content, route, clarification_question, warnings,
-                          content_blocks, sources, created_at
+                          content_blocks, sources, suggestions, created_at
                    FROM agent_trip_chat_messages WHERE chat_id=$1 ORDER BY sequence""",
                 chat_id,
             )
@@ -146,9 +153,9 @@ class PostgresTripChatRepository:
                 await connection.execute(
                     """INSERT INTO agent_trip_chat_messages
                        (id, chat_id, sequence, role, content, created_at,
-                        route, clarification_question, warnings, content_blocks, sources)
-                       VALUES ($1,$2,$3,'user',$4,$5,NULL,NULL,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb),
-                              ($6,$2,$3+1,'assistant',$7,$5,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb)""",
+                       route, clarification_question, warnings, content_blocks, sources, suggestions)
+                       VALUES ($1,$2,$3,'user',$4,$5,NULL,NULL,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb,'[]'::jsonb),
+                              ($6,$2,$3+1,'assistant',$7,$5,$8,$9,$10::jsonb,$11::jsonb,$12::jsonb,$13::jsonb)""",
                     str(uuid4()),
                     chat_id,
                     sequence + 1,
@@ -161,6 +168,7 @@ class PostgresTripChatRepository:
                     json.dumps(assistant.get("warnings", [])),
                     json.dumps(assistant.get("content_blocks", [])),
                     json.dumps(assistant.get("sources", [])),
+                    json.dumps(assistant.get("suggestions", [])),
                 )
                 await connection.execute(
                     """UPDATE agent_trip_chats SET revision=revision+1,
@@ -177,6 +185,27 @@ class PostgresTripChatRepository:
                     user_id,
                 )
         return await self.get_chat(user_id, chat_id)
+
+    async def append_plan_edit_exchange(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        user_content: str,
+        assistant: dict[str, Any],
+        edit: NaturalLanguagePlanEdit,
+    ) -> PlanItemMutationStatus:
+        pool = await self._get_pool()
+        return await append_atomic_plan_edit_exchange(
+            pool,
+            user_id,
+            chat_id,
+            expected_revision=expected_revision,
+            user_content=user_content,
+            assistant=assistant,
+            edit=edit,
+        )
 
     async def delete_chat(self, user_id: int, chat_id: str) -> bool:
         pool = await self._get_pool()
@@ -351,6 +380,85 @@ class PostgresTripChatRepository:
                 )
         return "updated"
 
+    async def update_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str, changes: dict[str, Any],
+    ) -> PlanItemMutationStatus:
+        return await self._mutate_plan_item(
+            user_id, chat_id, expected_revision=expected_revision,
+            mutation=lambda output: update_plan_item(
+                output, day=day, item_id=item_id, changes=changes,
+            ),
+        )
+
+    async def replace_plan_output(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        output: dict[str, Any],
+    ) -> PlanItemMutationStatus:
+        pool = await self._get_pool()
+        async with pool.acquire() as connection:
+            result = await connection.execute(
+                """UPDATE agent_trip_chats SET revision=revision+1,
+                   current_planner_output=$1::jsonb, updated_at=$2
+                   WHERE id=$3 AND user_id=$4 AND revision=$5""",
+                json.dumps(output),
+                datetime.now(timezone.utc),
+                chat_id,
+                user_id,
+                expected_revision,
+            )
+            if result == "UPDATE 1":
+                return "updated"
+            exists = await connection.fetchval(
+                "SELECT 1 FROM agent_trip_chats WHERE id=$1 AND user_id=$2",
+                chat_id,
+                user_id,
+            )
+        return "revision_conflict" if exists else "chat_not_found"
+
+    async def delete_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str,
+    ) -> PlanItemMutationStatus:
+        return await self._mutate_plan_item(
+            user_id, chat_id, expected_revision=expected_revision,
+            mutation=lambda output: delete_plan_item(
+                output, day=day, item_id=item_id,
+            ),
+        )
+
+    async def _mutate_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        mutation: Callable[[dict[str, Any]], PlanItemMutationStatus],
+    ) -> PlanItemMutationStatus:
+        pool = await self._get_pool()
+        async with pool.acquire() as connection:
+            async with connection.transaction():
+                row = await connection.fetchrow(
+                    """SELECT revision, current_planner_output
+                       FROM agent_trip_chats WHERE id=$1 AND user_id=$2 FOR UPDATE""",
+                    chat_id, user_id,
+                )
+                if row is None:
+                    return "chat_not_found"
+                if row["revision"] != expected_revision:
+                    return "revision_conflict"
+                output = deepcopy(_json(row["current_planner_output"]))
+                status = mutation(output)
+                if status != "updated":
+                    return status
+                await connection.execute(
+                    """UPDATE agent_trip_chats SET revision=revision+1,
+                       current_planner_output=$1::jsonb, updated_at=$2
+                       WHERE id=$3 AND user_id=$4""",
+                    json.dumps(output), datetime.now(timezone.utc), chat_id, user_id,
+                )
+        return "updated"
+
     async def confirm_unscheduled_place(
         self, user_id: int, chat_id: str, *, expected_revision: int,
         name: str, place_id: str | None, candidate_id: str | None,
@@ -492,5 +600,10 @@ class PostgresTripChatRepository:
                 else []
             ) or [],
             sources=_json(row["sources"]) or [],
+            suggestions=(
+                _json(row["suggestions"])
+                if "suggestions" in row.keys()
+                else []
+            ) or [],
             created_at=row["created_at"],
         )

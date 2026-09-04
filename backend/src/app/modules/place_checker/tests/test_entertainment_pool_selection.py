@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from app.modules.place_checker.entertainment_pool_selection import (
+from app.modules.place_checker.selection.entertainment import (
     select_entertainment_pool,
 )
 
@@ -46,7 +46,7 @@ def test_keeps_only_high_bayesian_optional_entertainment() -> None:
     assert [candidate.place_id for candidate in selected] == ["high"]
 
 
-def test_keeps_evening_capable_options_and_caps_morning_only_per_day() -> None:
+def test_entertainment_pool_requires_an_evening_window() -> None:
     selected = select_entertainment_pool(
         [
             _candidate("morning-best", rating=4.9, reviews=2_000),
@@ -57,10 +57,7 @@ def test_keeps_evening_capable_options_and_caps_morning_only_per_day() -> None:
         limit=4,
     )
 
-    assert [candidate.place_id for candidate in selected] == [
-        "afternoon",
-        "morning-best",
-    ]
+    assert [candidate.place_id for candidate in selected] == ["afternoon"]
 
 
 def test_required_entertainment_bypasses_quality_and_morning_caps() -> None:

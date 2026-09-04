@@ -7,13 +7,76 @@ import asyncpg
 from app.modules.place_checker.adapters.postgres_catalog import PostgresPlaceCatalog
 from app.modules.place_checker.adapters.postgres_catalog_mapping import (
     PostgresCatalogMappingMixin,
-    TYPE_BY_HINT,
 )
-from app.modules.place_checker.adapters.postgres_food_query import (
-    SPECIAL_FOOD_RESTAURANT_SQL,
-)
-from app.modules.place_checker.adapters.postgres_search_query import PLACE_SEARCH_SQL
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
+from app.shared.tools.search_places import AdministrativeArea
+
+
+def test_named_search_passes_contiguous_postgres_parameters(monkeypatch) -> None:
+    catalog = PostgresPlaceCatalog("postgresql://example")
+    captured = {}
+
+    async def fetch(sql, *arguments):
+        captured["sql"] = sql
+        captured["arguments"] = arguments
+        return []
+
+    monkeypatch.setattr(catalog, "_fetch", fetch)
+    asyncio.run(
+        catalog.search(
+            ["Văn Miếu"],
+            input_adm=AdministrativeArea(
+                admId="adm:hanoi",
+                name="Hà Nội",
+                countryCode="VN",
+            ),
+            place_type_hint=None,
+            limit=1,
+            search_mode="named_place",
+            address_hint=None,
+        )
+    )
+
+    assert len(captured["arguments"]) == 6
+    assert captured["arguments"][0] == "van mieu"
+    assert captured["arguments"][1] == "adm:hanoi"
+    assert captured["arguments"][3:] == (1, 0.30, None)
+
+
+def test_get_many_skips_invalid_relationship_evidence(monkeypatch) -> None:
+    catalog = PostgresPlaceCatalog("postgresql://example")
+    responses = iter(
+        [
+            [{"id": "restaurant:1", "entity_type": "Restaurant"}],
+            [],
+            [
+                {
+                    "entity_id": "restaurant:1",
+                    "relationship_type": "Has_Style",
+                    "direction": "place_to_attribute",
+                    "scope": "place",
+                    "from_entity_id": "restaurant:1",
+                    "to_entity_id": "style:invalid",
+                    "related_entity_id": "style:invalid",
+                    "related_name": "Invalid style",
+                    "related_entity_type": "Style",
+                    "recommendations": "{}",
+                    "source": "x" * 2001,
+                    "source_note": None,
+                }
+            ],
+            [],
+        ]
+    )
+
+    async def fetch(sql, *arguments):
+        return next(responses)
+
+    monkeypatch.setattr(catalog, "_fetch", fetch)
+
+    metadata = asyncio.run(catalog.get_many(["restaurant:1"]))
+
+    assert metadata["restaurant:1"].relationships == []
 
 
 def test_catalog_recycles_dropped_connection_before_retrying_read(monkeypatch) -> None:
@@ -53,92 +116,7 @@ def test_catalog_recycles_dropped_connection_before_retrying_read(monkeypatch) -
     assert healthy.calls == 1
 
 
-def test_generic_travel_pool_uses_adm_candidates_without_experience_bucket_cap() -> (
-    None
-):
-    assert "generic_travel_ranked" in PLACE_SEARCH_SQL
-    assert "ranked.discovery_rank" in PLACE_SEARCH_SQL
-    assert "$1 = 'travel place'" in PLACE_SEARCH_SQL
-    assert "$1 <> 'travel place'" in PLACE_SEARCH_SQL
-    assert "style_property.key = 'time_duration'" in PLACE_SEARCH_SQL
-    assert "AND (props.price_min IS NOT NULL OR props.price_max IS NOT NULL)" not in (
-        PLACE_SEARCH_SQL
-    )
-    assert "activity.entity_type = 'ActivityItem'" in PLACE_SEARCH_SQL
-    assert "'entityType', target.entity_type" in PLACE_SEARCH_SQL
-    assert "key = 'time_windows'" in PLACE_SEARCH_SQL
-
-
-def test_entertainment_type_has_dedicated_hint_without_polluting_travel_place() -> None:
-    assert TYPE_BY_HINT["entertainment"] == {"Entertainment"}
-    assert "Entertainment" not in TYPE_BY_HINT["travel place"]
-
-
-def test_postgres_search_uses_trigram_prefilter_and_bounded_top_k() -> None:
-    assert "entity.normalized_name % $1" in PLACE_SEARCH_SQL
-    assert "alias.normalized_alias % $1" in PLACE_SEARCH_SQL
-    assert "target.normalized_name % $1" in PLACE_SEARCH_SQL
-    assert "LIMIT $4" in PLACE_SEARCH_SQL
-
-
-def test_postgres_search_supports_cloud_relationship_shape() -> None:
-    assert "WITH RECURSIVE adm_descendants" in PLACE_SEARCH_SQL
-    assert "adm_ancestors" in PLACE_SEARCH_SQL
-    assert "relationship_type = 'Special_Near'" in PLACE_SEARCH_SQL
-    assert "'Near'" not in PLACE_SEARCH_SQL
-    assert "'Must_Visit'" not in PLACE_SEARCH_SQL
-    assert "special.to_entity_id" in PLACE_SEARCH_SQL
-    assert "special.from_entity_id IN (SELECT id FROM adm_scope)" in PLACE_SEARCH_SQL
-    assert "relationship_evidence" in PLACE_SEARCH_SQL
-    assert "PARTITION BY relation.to_entity_id" in PLACE_SEARCH_SQL
-    assert "'style_breakfast', 'style_lunch', 'style_dinner'" in PLACE_SEARCH_SQL
-
-
-def test_special_food_query_traverses_adm_food_restaurant_and_anchor() -> None:
-    assert "special.from_entity_id = $1" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert (
-        "special.relationship_type = 'Special_Experience'"
-        in SPECIAL_FOOD_RESTAURANT_SQL
-    )
-    assert "food.entity_type IN ('FoodItem', 'DrinkItem')" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "relation.relationship_type = 'Special_Near'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "relation.relationship_type = 'Special_Experience'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert (
-        "special_food.food_item_id = relation.to_entity_id"
-        in SPECIAL_FOOD_RESTAURANT_SQL
-    )
-    assert "offer.relationship_type = 'Offer_Item'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert (
-        "restaurant.entity_type IN ('Restaurant', 'DrinkDessert')"
-        in SPECIAL_FOOD_RESTAURANT_SQL
-    )
-    assert "styled.relationship_type = 'Has_Style'" in SPECIAL_FOOD_RESTAURANT_SQL
-
-
-def test_special_food_query_does_not_match_food_by_name() -> None:
-    assert "normalized_name" not in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "similarity(" not in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "food_item_tokens" not in SPECIAL_FOOD_RESTAURANT_SQL
-
-
-def test_special_food_query_reads_offer_and_special_evidence_independently() -> None:
-    assert "), food_evidence AS (" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert (
-        "'offer_item_fallback'::text" in SPECIAL_FOOD_RESTAURANT_SQL
-    )
-    assert "relation.relationship_type = 'Special_Experience'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "offer.relationship_type = 'Offer_Item'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "FROM special_pairs special" not in SPECIAL_FOOD_RESTAURANT_SQL
-
-
-def test_food_query_uses_computed_five_km_radius_and_general_mode() -> None:
-    assert "pair.distance_km <= $3" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "WHEN $3::double precision IS NULL THEN 'general_adm'" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "PARTITION BY nearby.anchor_place_id" in SPECIAL_FOOD_RESTAURANT_SQL
-    assert "style_rank <= LEAST($4, 4)" in SPECIAL_FOOD_RESTAURANT_SQL
-
-
-def test_style_duration_fills_metadata_but_style_window_stays_soft() -> None:
+def test_style_fills_only_missing_duration_and_time_window() -> None:
     relationship = PlaceRelationshipEvidence(
         relationship_type="Has_Style",
         direction="place_to_attribute",
@@ -166,17 +144,17 @@ def test_style_duration_fills_metadata_but_style_window_stays_soft() -> None:
     )
 
     assert fallback.typical_duration_minutes == 120
-    assert fallback.opening_hours is None
+    assert fallback.opening_hours == ["18:00-23:59"]
     assert direct.typical_duration_minutes == 45
     assert direct.opening_hours == ["09:00-10:00"]
 
 
-def test_metadata_includes_all_property_and_relationship_tags() -> None:
+def test_metadata_does_not_need_has_style_tags_for_semantics() -> None:
     metadata = PostgresCatalogMappingMixin._metadata(
         "place:tagged",
         "TravelPlace",
         {"tags": '["Tâm linh", "kiến trúc", "Văn hóa"]'},
-        ["style:Tham quan", "item:Đi dạo"],
+        [],
         None,
     )
 
@@ -185,8 +163,6 @@ def test_metadata_includes_all_property_and_relationship_tags() -> None:
         "Tâm linh",
         "kiến trúc",
         "Văn hóa",
-        "style:Tham quan",
-        "item:Đi dạo",
     ]
 
 
@@ -236,7 +212,7 @@ def test_style_node_properties_are_projected_onto_has_style_evidence() -> None:
     )
 
     assert metadata.typical_duration_minutes == 45
-    assert metadata.opening_hours is None
+    assert metadata.opening_hours == ["11:00-13:00"]
     assert relationship.properties["time_windows"] == (
         '[{"start":"11:00","end":"13:00"}]'
     )
@@ -299,7 +275,7 @@ def test_has_style_edge_properties_override_style_node_defaults() -> None:
     }
 
 
-def test_multiple_style_windows_do_not_become_hard_opening_hours() -> None:
+def test_highest_priority_style_supplies_missing_time_fields() -> None:
     relationships = [
         PlaceRelationshipEvidence(
             relationship_type="Has_Style",
@@ -324,8 +300,8 @@ def test_multiple_style_windows_do_not_become_hard_opening_hours() -> None:
         "restaurant:1", "Restaurant", {}, [], None, relationships
     )
 
-    assert metadata.typical_duration_minutes == 60
-    assert metadata.opening_hours is None
+    assert metadata.typical_duration_minutes == 45
+    assert metadata.opening_hours == ["06:00-10:00"]
 
 
 def test_special_near_score_decreases_with_distance() -> None:

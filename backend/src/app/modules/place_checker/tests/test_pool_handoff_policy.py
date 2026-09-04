@@ -1,22 +1,53 @@
 import asyncio
-from unittest.mock import patch
 
-from app.modules.place_checker.planning_output import PlaceCheckerPlannerOutputBuilder
+from app.modules.place_checker.planning.builder import PlaceCheckerPlannerOutputBuilder
+from app.modules.place_checker.enums import PlaceCheckerStatus
+from app.modules.place_checker.pipeline import PlaceCheckerPipeline
+from app.modules.place_checker.selection.food.contract import FoodMealCoverage
 from app.modules.place_checker.tests.test_pipeline_output import payload, pipeline
 
 
 def test_pipeline_does_not_block_on_travel_reserve_shortfall() -> None:
-    with patch.object(
-        PlaceCheckerPlannerOutputBuilder,
-        "pool_shortfall",
-        return_value=(24, 9, 100, 0),
-    ):
-        result = asyncio.run(
-            pipeline().check(payload(), request_id="request-travel-reserve")
-        )
+    base = asyncio.run(pipeline().check(payload(), request_id="request-travel-reserve"))
+    ready = base.model_copy(
+        update={
+            "status": PlaceCheckerStatus.conditional,
+            "food_meal_coverage": FoodMealCoverage(days=1, hardComplete=True),
+        }
+    )
+    result = PlaceCheckerPipeline._apply_food_pool_policy(
+        ready,
+        pool_warnings=["Planner travel reserve is partial: missing 100."],
+        food_target=6,
+        missing_food=0,
+    )
 
     assert result.status.value != "blocked"
     assert any("Planner travel reserve is partial" in item for item in result.warnings)
+
+
+def test_pipeline_does_not_block_on_food_reserve_when_hard_meals_are_complete() -> None:
+    base = asyncio.run(pipeline().check(payload(), request_id="request-food-reserve"))
+    ready = base.model_copy(
+        update={
+            "status": PlaceCheckerStatus.conditional,
+            "food_meal_coverage": FoodMealCoverage(
+                days=1,
+                hardComplete=True,
+                reserveComplete=False,
+            ),
+        }
+    )
+
+    result = PlaceCheckerPipeline._apply_food_pool_policy(
+        ready,
+        pool_warnings=[],
+        food_target=6,
+        missing_food=2,
+    )
+
+    assert result.status == PlaceCheckerStatus.conditional
+    assert any("Planner meal reserve is partial" in item for item in result.warnings)
 
 
 def test_food_pool_cap_never_drops_required_inputs_above_reserve_limit() -> None:

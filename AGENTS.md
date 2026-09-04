@@ -3,7 +3,7 @@
 Đây là điểm bắt đầu dành cho coding agent làm việc với TravelPlanner. Phải đọc
 file này trước khi thay đổi code.
 
-Ngày cập nhật: 2026-08-11.
+Ngày cập nhật: 2026-08-20.
 
 ## Trạng thái backend hiện tại
 
@@ -65,6 +65,16 @@ README hoặc log.
 - Importer không được truyền raw payload của nguồn vào Planner. Dữ liệu phải
   được chuẩn hóa thành contract có provenance trước khi vào module tiếp theo.
 
+## Quy tắc tag JSON
+
+- Trước khi thay đổi, kiểm tra hoặc đưa ví dụ JSON có field `tags`, phải đọc
+  lại `auto-attach/tags-auto.yml` trong chính worktree hiện tại.
+- Mọi giá trị xuất hiện trong `tags` của JSON public phải là key hiện có trong
+  `tags-auto.yml`; không tự tạo tag mới hoặc hard-code bản sao của từ điển vào
+  source code.
+- Runtime phải dùng `tags-auto.yml` làm source of truth và nhận thay đổi của
+  file mà không cần restart backend.
+
 ## Kiến trúc backend
 
 - Backend dùng FastAPI và LangGraph, package root là `backend/src`.
@@ -94,6 +104,30 @@ README hoặc log.
   ├── tools/            # tool riêng của module nếu cần
   └── tests/             # test riêng của module
   ```
+
+### Quy tắc tổ chức file bên trong module
+
+- Trước khi tạo file mới, phải xem toàn bộ file và thư mục cùng cấp trong
+  module để xác định capability sở hữu file đó; không mặc định đặt mọi file
+  implementation trực tiếp tại root của module.
+- Root module ưu tiên giữ public boundary và entry point dễ nhận biết như
+  `public.py`, `contract.py`, `state.py`, `graph.py`, `nodes.py`, `service.py`,
+  `ports.py`, `factory.py`, `errors.py` và output contract chính.
+- Khi implementation bắt đầu tạo thành nhóm trách nhiệm rõ ràng, phải gom vào
+  package theo capability, ví dụ `resolution/`, `retrieval/`, `scoring/`,
+  `selection/`, `planning/`, `adapters/` hoặc `tools/`. Package con vẫn là
+  implementation detail và module khác không được import trực tiếp.
+- Khoảng 20 file Python nằm trực tiếp tại root là tín hiệu bắt buộc đánh giá
+  lại cấu trúc trước khi thêm file mới. Đây là ngưỡng review, không phải lý do
+  để tách hoặc di chuyển máy móc nếu các file thực sự là boundary độc lập.
+- Không tạo package chỉ để chứa một file hoặc tạo nhiều file helper rất nhỏ mà
+  không có ranh giới trách nhiệm. Nếu các helper cùng thay đổi, cùng test và
+  tổng kích thước vẫn hợp lý, ưu tiên gom vào một file/package có tên theo
+  capability.
+- Khi gom file, phải giữ `public.py` ổn định, cập nhật toàn bộ import, test và
+  tài liệu đường dẫn trong cùng thay đổi. Không để compatibility shim ở đường
+  dẫn cũ trừ khi đó là public import path đã được hỗ trợ hoặc cần cho dữ liệu
+  serialize/checkpoint hiện hữu.
 
 - Business rule phải nằm trong module hoặc service của module, không đặt trong
   FastAPI router hay root orchestration.
@@ -147,6 +181,8 @@ README hoặc log.
 3. Kiểm tra API/orchestration/shared contract có thật sự cần sửa không.
 4. Đọc tài liệu backend và schema liên quan.
 5. Kiểm tra kích thước các file dự kiến sửa.
+6. Trước khi tạo file mới, kiểm tra file đó thuộc root boundary hay một package
+   capability; nếu root đã gần 20 file Python, phải đánh giá việc gom nhóm.
 
 ## Checklist trước khi hoàn thành
 
@@ -158,6 +194,8 @@ README hoặc log.
 6. Kiểm tra không có file source, test hoặc tài liệu vượt 400 dòng nếu có thể
    tách nhỏ.
 7. Thêm ADR khi chọn provider hoặc quyết định kiến trúc khó đảo ngược.
+8. Kiểm tra module không bị trải phẳng bởi quá nhiều implementation file ở
+   root; nếu có nhóm capability rõ ràng thì gom nhóm trước khi hoàn thành.
 
 ## Lệnh backend thường dùng
 

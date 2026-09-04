@@ -4,6 +4,8 @@ import {
   type ItineraryPlannerOutput,
 } from "@/features/planner/lib/planner-output";
 import type { TravelPlan } from "@/features/planner/api/plans";
+import type { TripChatSource } from "@/features/planner/api/plans";
+import type { AnswerBlock } from "@/features/planner/lib/answer-blocks";
 
 export type AgentImageInput = {
   fileName: string;
@@ -31,7 +33,14 @@ export type AgentInvokeResponse = {
   plannerOutput: ItineraryPlannerOutput | null;
   clarificationQuestion: string | null;
   warnings: string[];
-  sources: Array<Record<string, unknown>>;
+  contentBlocks: AnswerBlock[];
+  sources: TripChatSource[];
+  suggestions: Array<{
+    field: string;
+    label: string;
+    value: string | number;
+    currency?: string;
+  }>;
 };
 
 /** Adapter for the current modular backend contract. */

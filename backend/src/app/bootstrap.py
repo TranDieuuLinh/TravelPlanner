@@ -25,6 +25,7 @@ from app.modules.information_finder.adapters.postgres_source_repository import (
 )
 from app.modules.information_finder.adapters.tavily_search import TavilySearchProvider
 from app.modules.information_finder.entity_linking import KnowledgeGraphEntityResolver
+from app.modules.information_finder.tools.budget_ranges import BudgetRangeTool
 from app.modules.information_finder.ports import (
     AnswerGenerator,
     EmbeddingProvider,
@@ -35,7 +36,7 @@ from app.modules.information_finder.service import (
     InformationFinderService,
 )
 from app.modules.itinerary_planner.public import (
-    build_valhalla_beam_first_itinerary_planner_graph,
+    build_valhalla_cp_sat_first_itinerary_planner_graph,
 )
 from app.modules.knowledge_graph.public import (
     build_draft_place_store,
@@ -146,6 +147,7 @@ def get_information_finder_service() -> InformationFinderService:
         search_provider=search_provider,
         search_query_planner=search_query_planner,
         entity_resolver=entity_resolver,
+        budget_ranges=(BudgetRangeTool(knowledge_graph) if knowledge_graph is not None else None),
         options=InformationFinderOptions(
             provider_relevance_threshold=settings.information_finder_relevance_threshold,
             blocked_domains=blocked_domains,
@@ -253,7 +255,6 @@ def compose_explorer_service(
         source_max_concurrency=settings.explorer_source_max_concurrency,
         synthesis_max_concurrency=settings.explorer_synthesis_max_concurrency,
         synthesis_limiter=synthesis_limiter,
-        minimum_synthesis_coverage=settings.explorer_minimum_synthesis_coverage,
         dedupe_provider=settings.explorer_dedupe_provider,
         note_provider=settings.explorer_note_provider,
         url_timeout_seconds=settings.explorer_url_timeout_seconds,
@@ -285,7 +286,7 @@ def compose_explorer_service(
         url_cache_ttl_seconds=settings.explorer_url_cache_ttl_seconds,
         draft_cache_ttl_seconds=settings.explorer_draft_cache_ttl_seconds,
         draft_cache_namespace=(
-            f"v3:{settings.explorer_draft_provider}:"
+            f"v4:{settings.explorer_draft_provider}:"
             f"{settings.explorer_source_draft_provider}:{settings.gemini_model}:"
             f"c{settings.explorer_source_chunk_characters}:"
             f"o{settings.explorer_source_max_output_tokens}"
@@ -336,12 +337,16 @@ def get_graph():
             build_postgres_place_checker_pipeline(
                 settings.database_url,
                 external_place_search=external_place_search,
+                llm_client=(shared_llm_client if settings.gemini_api_key else None),
+                note_localization_max_output_tokens=(
+                    settings.place_checker_note_localization_max_output_tokens
+                ),
             )
             if settings.database_url
             else None
         ),
         itinerary_planner_graph=(
-            build_valhalla_beam_first_itinerary_planner_graph(
+            build_valhalla_cp_sat_first_itinerary_planner_graph(
                 settings.valhalla_base_url,
                 timeout_seconds=settings.valhalla_timeout_seconds,
                 provider_version=settings.valhalla_graph_version,

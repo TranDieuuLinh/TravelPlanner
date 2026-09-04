@@ -1,6 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock
 from fastapi.testclient import TestClient
-import pytest
 
 from app.core.config import Settings
 from app.api.dependencies import get_explorer_graph
@@ -71,7 +70,7 @@ def test_api_with_langfuse_enabled_traces_request_correlation() -> None:
 
     response = client.post("/v1/explorer/invoke", json=payload, headers=headers)
     assert response.status_code == 200
-    assert response.json()["status"] == "ready"
+    assert "status" not in response.json()
 
     # Verify trace created with correlation ID
     mock_lf_client.trace.assert_called_once()

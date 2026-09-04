@@ -11,7 +11,7 @@ def build_activity_coverage_value(
     variables: PlannerVariables,
     weights: ObjectiveWeights,
 ) -> cp_model.LinearExpr:
-    """Reward up to three real activities per day so usable gaps are filled."""
+    """Reward every feasible real activity; do not impose a daily target."""
     values = []
     for day in range(1, problem.trip.days + 1):
         assignments = [
@@ -21,13 +21,5 @@ def build_activity_coverage_value(
         ]
         if not assignments:
             continue
-        count = variables.remember(
-            model.NewIntVar(0, len(assignments), f"activity_count:{day}")
-        )
-        covered = variables.remember(
-            model.NewIntVar(0, min(3, len(assignments)), f"activity_covered:{day}")
-        )
-        model.Add(count == sum(assignments))
-        model.AddMinEquality(covered, [count, 3])
-        values.append(covered * weights.activity_coverage)
+        values.append(sum(assignments) * weights.activity_coverage)
     return sum(values)

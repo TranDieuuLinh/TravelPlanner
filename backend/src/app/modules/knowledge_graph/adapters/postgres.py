@@ -15,6 +15,23 @@ def _json_value(value):
     return json.loads(value) if isinstance(value, str) else value
 
 
+def _parse_price(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    import re
+    match = re.search(r"(\d+(?:[.,]\d+)?)\s*(k|nghìn|tr|triệu)?", value.lower())
+    if not match:
+        return None
+    number = float(match.group(1).replace(",", "."))
+    if match.group(2) in {"k", "nghìn"}:
+        number *= 1_000
+    elif match.group(2) in {"tr", "triệu"}:
+        number *= 1_000_000
+    return number
+
+
 class PostgresKnowledgeGraphStore(AutoAttachStoreMixin):
     """Owns the knowledge_* tables used by the admin graph UI."""
 
@@ -72,6 +89,40 @@ class PostgresKnowledgeGraphStore(AutoAttachStoreMixin):
             for key in ("entity_count", "alias_count", "property_count", "relationship_count")
         )
         return result
+
+    async def get_price_observations(
+        self, region: str, category: str | None = None, currency: str = "VND"
+    ) -> list[dict]:
+        """Read normalized price observations behind a public KG capability."""
+        pool = await self._get_pool()
+        async with pool.acquire() as connection:
+            rows = await connection.fetch(
+                """SELECT e.id AS entity_id, e.canonical_name AS entity_name,
+                          p.key AS property_key, p.value
+                   FROM knowledge_entities e
+                   JOIN knowledge_properties p ON p.entity_id = e.id
+                   WHERE (e.canonical_name ILIKE $1 OR EXISTS (
+                       SELECT 1 FROM knowledge_properties rp
+                       WHERE rp.entity_id = e.id
+                         AND rp.key IN ('region', 'search_region', 'location')
+                         AND rp.value ILIKE $1))
+                     AND ($2::text IS NULL OR e.entity_type = $2)
+                     AND p.key IN ('price_min', 'price_max', 'price_amount')""",
+                f"%{region.strip()}%",
+                category,
+            )
+        observations = []
+        for row in rows:
+            value = _parse_price(row["value"])
+            if value is not None:
+                observations.append({
+                    "entity_id": row["entity_id"],
+                    "entity_name": row["entity_name"],
+                    "value": value,
+                    "currency": currency.upper(),
+                    "property_key": row["property_key"],
+                })
+        return observations
 
     async def list_entities(self, **filters) -> tuple[list[dict], int]:
         limit = filters["limit"]

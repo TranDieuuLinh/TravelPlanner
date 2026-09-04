@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseUrlOnlyInput } from "./url-only-input.ts";
+import {
+  URL_SOURCE_ACTION_PROMPTS,
+  canSubmitPlannerSource,
+  parseUrlOnlyInput,
+} from "./url-only-input.ts";
 
 test("accepts and deduplicates http URLs separated by whitespace", () => {
   assert.deepEqual(
@@ -37,4 +41,23 @@ test("requires at least one URL and limits each import batch", () => {
     ok: false,
     message: "Mỗi lần chỉ có thể nhập tối đa 20 URL."
   });
+});
+
+test("URL actions fill the composer but a source still needs a non-empty prompt", () => {
+  assert.deepEqual(
+    URL_SOURCE_ACTION_PROMPTS.map((item) => item.value),
+    [
+      "Tạo lịch trình chuyến đi từ liên kết này",
+      "Tóm tắt nội dung liên kết này",
+    ],
+  );
+  assert.equal(canSubmitPlannerSource("", ["https://example.com"]), false);
+  assert.equal(canSubmitPlannerSource("   ", ["https://example.com"]), false);
+  assert.equal(
+    canSubmitPlannerSource(
+      "Tạo lịch trình chuyến đi từ liên kết này",
+      ["https://example.com"],
+    ),
+    true,
+  );
 });

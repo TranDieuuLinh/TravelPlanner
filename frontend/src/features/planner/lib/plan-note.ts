@@ -118,7 +118,7 @@ export function formatPlanNote(value: unknown): string | null {
  * Formats generated source context for the Vietnamese UI.
  *
  * Known legacy English values are translated above. Unknown non-Vietnamese
- * model output remains visible until a translation is available.
+ * source text is hidden as a defense in depth; PlaceChecker owns localization.
  */
 export function formatSourceNoteForDisplay(value: unknown): string | null {
   const note = formatPlanNote(value);
@@ -130,7 +130,9 @@ export function formatSourceNoteForDisplay(value: unknown): string | null {
   const withoutInternalRating = describedNote
     .replace(/\s*Bayesian rating\s+\d+(?:\.\d+)?\s*\/\s*5\.?/giu, "")
     .trim();
-  return withoutInternalRating || null;
+  return withoutInternalRating && looksVietnamese(withoutInternalRating)
+    ? withoutInternalRating
+    : null;
 }
 
 const NOTE_SOURCE_LABELS: Record<string, string> = {

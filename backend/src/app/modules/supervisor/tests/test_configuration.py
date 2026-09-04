@@ -1,10 +1,7 @@
-import asyncio
-
 import pytest
 
 from app.bootstrap import create_supervisor_service
 from app.core.config import Settings
-from app.modules.supervisor.contract import SupervisorInput
 from app.shared.llm import LlmConfigurationError
 
 

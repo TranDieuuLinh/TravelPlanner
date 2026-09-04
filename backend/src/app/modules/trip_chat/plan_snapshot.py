@@ -1,5 +1,48 @@
 from typing import Any
 from uuid import uuid4
+from app.modules.trip_chat.plan_edit_context import compatible_plan_item_id
+
+
+def _find_plan_item(
+    output: dict[str, Any] | None, *, day: int, item_id: str,
+) -> tuple[dict[str, Any], list[Any], dict[str, Any]] | str:
+    if not isinstance(output, dict):
+        return "day_not_found"
+    raw_day = next(
+        (
+            candidate
+            for candidate in output.get("days", [])
+            if isinstance(candidate, dict) and candidate.get("day") == day
+        ),
+        None,
+    )
+    if raw_day is None or not isinstance(raw_day.get("stops"), list):
+        return "day_not_found"
+    stops = raw_day["stops"]
+    for index, stop in enumerate(stops):
+        if not isinstance(stop, dict):
+            continue
+        legacy_id = compatible_plan_item_id(day, index, stop)
+        if stop.get("itemId") == item_id or legacy_id == item_id:
+            return raw_day, stops, stop
+    return "item_not_found"
+
+
+def _remove_item_legs(raw_day: dict[str, Any], stop: dict[str, Any]) -> None:
+    identifiers = {stop.get("itemId"), stop.get("placeId")}
+    identifiers.discard(None)
+    legs = raw_day.get("legs")
+    if not isinstance(legs, list):
+        return
+    raw_day["legs"] = [
+        leg
+        for leg in legs
+        if not isinstance(leg, dict)
+        or (
+            leg.get("fromPlaceId") not in identifiers
+            and leg.get("toPlaceId") not in identifiers
+        )
+    ]
 
 
 def _find_unscheduled_place(
@@ -129,6 +172,63 @@ def add_plan_item(
     return "updated"
 
 
+def update_plan_item(
+    output: dict[str, Any] | None,
+    *,
+    day: int,
+    item_id: str,
+    changes: dict[str, Any],
+) -> str:
+    """Update user-editable stop fields without invoking the planner graph."""
+    found = _find_plan_item(output, day=day, item_id=item_id)
+    if isinstance(found, str):
+        return found
+    raw_day, _stops, stop = found
+    if {"placeId", "latitude", "longitude"}.intersection(changes):
+        _remove_item_legs(raw_day, stop)
+    for key in ("placeId", "name", "address", "personalNotes"):
+        if key in changes:
+            stop[key] = changes[key]
+    if "placeType" in changes:
+        stop["kind"] = (
+            "food"
+            if str(changes["placeType"]).lower() in {"food", "restaurant"}
+            else "place"
+        )
+    if "durationMinutes" in changes:
+        duration = int(changes["durationMinutes"] or 0)
+        stop["durationMinutes"] = duration
+        if isinstance(stop.get("startMinute"), int):
+            stop["endMinute"] = stop["startMinute"] + duration
+    if "latitude" in changes or "longitude" in changes:
+        coordinates = stop.setdefault("coordinates", {})
+        if isinstance(coordinates, dict):
+            for key in ("latitude", "longitude"):
+                if key in changes:
+                    coordinates[key] = changes[key]
+    return "updated"
+
+
+def delete_plan_item(
+    output: dict[str, Any] | None,
+    *,
+    day: int,
+    item_id: str,
+) -> str:
+    """Delete one stop and only the transport legs directly touching it."""
+
+    found = _find_plan_item(output, day=day, item_id=item_id)
+    if isinstance(found, str):
+        return found
+    raw_day, stops, stop = found
+    _remove_item_legs(raw_day, stop)
+    stops.remove(stop)
+    for index, candidate in enumerate(stops):
+        if isinstance(candidate, dict):
+            candidate["position"] = index
+    return "updated"
+
+
 def reorder_plan_items(
     output: dict[str, Any] | None,
     *,
@@ -153,7 +253,7 @@ def reorder_plan_items(
     stops = [stop for stop in raw_day["stops"] if isinstance(stop, dict)]
     by_id: dict[str, dict[str, Any]] = {}
     for index, stop in enumerate(stops):
-        stop_id = stop.get("itemId") or f"planner-{day}-{index + 1}-{stop.get('placeId', '')}"
+        stop_id = compatible_plan_item_id(day, index, stop)
         by_id.setdefault(str(stop_id), stop)
     reordered: list[dict[str, Any]] = []
     seen: set[int] = set()
@@ -293,16 +393,8 @@ def update_stop_personal_notes(
 ) -> bool:
     """Update only the user-owned note in a planner JSON snapshot."""
 
-    if not isinstance(output, dict):
+    found = _find_plan_item(output, day=day, item_id=item_id)
+    if isinstance(found, str):
         return False
-    for raw_day in output.get("days", []):
-        if not isinstance(raw_day, dict) or raw_day.get("day") != day:
-            continue
-        for index, stop in enumerate(raw_day.get("stops", [])):
-            if not isinstance(stop, dict):
-                continue
-            legacy_id = f"planner-{day}-{index + 1}-{stop.get('placeId', '')}"
-            if stop.get("itemId") == item_id or legacy_id == item_id:
-                stop["personalNotes"] = personal_notes
-                return True
-    return False
+    found[2]["personalNotes"] = personal_notes
+    return True

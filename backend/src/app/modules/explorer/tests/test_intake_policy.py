@@ -14,7 +14,7 @@ def item(name: str, evidence: str, *, related_place_name: str | None = None):
     )
 
 
-def test_general_tastes_become_preferences_but_concrete_request_stays() -> None:
+def test_semantic_item_categories_are_preserved_from_llm_output() -> None:
     prompt = "Thích văn hóa và ẩm thực, buổi tối đi dạo; muốn ăn phở"
 
     items, preferences = normalize_intake_items(
@@ -24,12 +24,12 @@ def test_general_tastes_become_preferences_but_concrete_request_stays() -> None:
             item("đi dạo", "buổi tối đi dạo"),
             item("phở", "muốn ăn phở"),
         ],
-        [],
+        ["culture", "local_food", "walking"],
         prompt,
         normalize=ExplorerService._key,
     )
 
-    assert [value.name for value in items] == ["phở"]
+    assert [value.name for value in items] == ["văn hóa", "ẩm thực", "đi dạo", "phở"]
     assert preferences == ["culture", "local_food", "walking"]
 
 

@@ -1,19 +1,26 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.router import router
 from app.core.config import Settings, get_settings
 from app.modules.auth.public import build_auth_service
 from app.modules.conversation_memory.public import build_conversation_memory_service
 from app.modules.knowledge_graph.public import build_knowledge_graph_service
-from app.modules.itinerary_planner.public import build_valhalla_directions_service
+from app.modules.itinerary_planner.public import (
+    build_valhalla_day_repair_service,
+    build_valhalla_directions_service,
+)
 from app.modules.observability.public import build_observability_service
-from app.modules.place_checker.public import build_postgres_place_search_tool
+from app.modules.place_checker.public import (
+    build_postgres_place_search_tool,
+    build_subplace_display_service,
+)
 from app.modules.trip_chat.public import build_trip_chat_repository
-from app.bootstrap import get_graph
+from app.bootstrap import get_graph, get_llm_client
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -67,6 +74,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    @application.exception_handler(Exception)
+    async def handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        # Return a normal response so CORSMiddleware can attach its headers.
+        # Without this, an unhandled PATCH error is surfaced by browsers as a
+        # misleading CORS failure and hides the actual backend failure.
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": {
+                    "code": "INTERNAL_SERVER_ERROR",
+                    "message": "Backend không thể hoàn thành yêu cầu.",
+                }
+            },
+        )
+
     @application.middleware("http")
     async def add_trace_id_header(request, call_next):
         response = await call_next(request)
@@ -84,15 +106,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             application.state.manual_place_search_tool,
             application.state.manual_place_search_catalog,
         ) = build_postgres_place_search_tool(settings.database_url)
+        application.state.subplace_display_service = build_subplace_display_service(
+            application.state.manual_place_search_catalog,
+            llm_client=(get_llm_client() if settings.gemini_api_key else None),
+            max_output_tokens=settings.place_checker_subplace_note_max_output_tokens,
+        )
     else:
         application.state.manual_place_search_tool = None
         application.state.manual_place_search_catalog = None
+        application.state.subplace_display_service = None
     application.state.conversation_memory_service = (
         build_conversation_memory_service(settings)
         if settings.conversation_memory_enabled
         else None
     )
     application.state.directions_service = build_valhalla_directions_service(
+        settings.valhalla_base_url,
+        timeout_seconds=settings.valhalla_timeout_seconds,
+        provider_version=settings.valhalla_graph_version,
+    )
+    application.state.day_repair_service = build_valhalla_day_repair_service(
         settings.valhalla_base_url,
         timeout_seconds=settings.valhalla_timeout_seconds,
         provider_version=settings.valhalla_graph_version,

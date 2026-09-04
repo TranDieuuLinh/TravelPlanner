@@ -1,15 +1,15 @@
 # Schema module, agent và tool
 
-Cập nhật lần cuối: 2026-08-19.
+Cập nhật lần cuối: 2026-08-21.
 
 Backend dùng kiến trúc module hóa với LangGraph. Mỗi module expose public
 contract qua `public.py`; state và node nội bộ không được module khác truy cập
 trực tiếp.
 
-Place Checker phân biệt identity `provisional` có nguồn URL/direct input với
-retrieval provisional. Loại đầu chỉ được giữ khi có canonical ID, tọa độ, đúng
-ADM, đạt ngưỡng score và có exact/alias, address hoặc semantic evidence mạnh;
-output là `conditional` và có constraint xác minh trước khi chốt lịch.
+Place Checker giữ provenance URL/direct input nhưng search identity thống nhất
+trên cả năm entity type theo name/alias/address/ADM và lấy catalog top-1. Chỉ
+catalog zero-result mới gọi Google Maps; Google draft được giữ `provisional`/
+conditional với warning/constraint xác minh trước khi chốt lịch.
 Retrieval/system provisional vẫn không planner-eligible.
 
 Ontology có node place-like `Entertainment`, dùng cùng required/optional
@@ -17,18 +17,76 @@ properties với `TravelPlace` gồm tọa độ, địa chỉ, giờ mở cửa
 quan hệ graph. Hint `entertainment` hoặc `wellness` chỉ truy vấn
 `Entertainment`; hint `travel place` vẫn chỉ truy vấn `TravelPlace`.
 
+Ontology admin có thêm node `SubPlace` để biểu diễn một khu/điểm con không trở
+thành itinerary stop độc lập. `SubPlace` dùng cùng required/optional property
+contract với `TravelPlace`, gồm tọa độ bắt buộc và toàn bộ metadata địa điểm.
+Cạnh `Has_Subplace` chỉ cho phép `TravelPlace -> SubPlace`; `Offer_Item` từ
+`SubPlace` chỉ trỏ tới `ActivityItem`, `FoodItem`, `DrinkItem` hoặc
+`ProductItem`. Endpoint ontology trả thêm `relationshipEndpointRules` để
+importer/admin biết ma trận endpoint. Endpoint read-only
+`GET /v1/plans/places/subplaces?parentPlaceIds=` đọc trực tiếp
+`Has_Subplace` sau khi itinerary đã có để frontend render; response này không
+được ghi vào `PlanItem`, không qua optimizer và không tạo route. Batch curated v1 đã nạp năm
+`SubPlace` `pending` cho Hanoi Old Quarter; mỗi node hiện có `latitude`,
+`longitude` và `address` đại diện để frontend có thể đặt pin. Batch hiệu chỉnh
+`kg_curated_hanoi_old_quarter_subplace_activities_v2_20260821` thay các item
+trùng ý nghĩa bằng đúng một `ActivityItem` có provenance cho mỗi `SubPlace`;
+batch v1 được đánh dấu `superseded_by_v2`. Dữ liệu chưa tự động tham gia output
+runtime.
+
+Batch `kg_curated_hoan_kiem_turtle_tower_subplace_v1_20260821` đã chuyển
+`Turtle Tower` từ `TravelPlace` thành `SubPlace` của `Hoàn Kiếm Lake`, giữ tọa
+độ hiện có và gắn một `ActivityItem` duy nhất.
+
+`Offer_Item.recommendations` có thể giữ `action` và `displayTemplate` để LLM
+sinh nhãn theo ngữ cảnh từ tên SubPlace và item chuẩn hóa; ví dụ `lụa` +
+`buy` → “Mua lụa tại Phố Hàng Gai”.
+
+Batch `kg_curated_top_hanoi_subplaces_v1_20260821` bổ sung 13 SubPlace có
+tọa độ đại diện dưới Văn Miếu, Hoàng thành Thăng Long, Hỏa Lò, Trấn Quốc,
+quần thể Hồ Chí Minh và Bảo tàng Dân tộc học; mỗi node có đúng một
+`ActivityItem`.
+
+Migration 019 chuyển 16 TravelPlace cấu thành đã review thành SubPlace, giữ
+nguyên ID/property/alias/provenance, nối đúng một parent và bảo đảm có
+`Offer_Item`. Hai synthetic duplicate được thay bằng entity provider-backed.
+Migration 020 tiếp tục chuyển Lăng Chủ tịch Hồ Chí Minh thành SubPlace và gom
+trực tiếp Lăng, Ao cá Bác Hồ, Nhà sàn Bác Hồ dưới TravelPlace Ba Đình Square;
+không tạo tầng SubPlace lồng nhau. Migration 021 chỉ chuyển ba cặp gần nhau đã
+có nguồn xác nhận quan hệ thành phần: Đại Trung Môn dưới Văn Miếu, Cổng làng
+Mông Phụ dưới Làng cổ Đường Lâm và Chợ gốm dưới Làng gốm Bát Tràng. Các cặp
+chỉ gần về tọa độ không bị chuyển. PlaceChecker/Planner không đọc
+`Has_Subplace`; chỉ endpoint trình bày của frontend đọc child sau khi plan đã
+được tạo. Migration 022 bổ sung ActivityItem cho sáu SubPlace trước đó chỉ có
+ProductItem/DrinkItem/FoodItem; các item cũ vẫn được giữ. Sau migration, 37/37
+SubPlace active có ít nhất một `Offer_Item -> ActivityItem` để làm nguồn note.
+
+Ghi chú trên card SubPlace không dùng property `description`. Read path chỉ tạo
+request khi child có chuỗi `SubPlace -> Offer_Item -> ActivityItem`, gửi tên
+SubPlace cùng `action`, `displayTemplate` và identity ActivityItem vào structured
+Gemini, rồi trả `note`, `noteSource="gemini"` và `noteActivityItemIds` cho
+frontend. Kết quả được cache có giới hạn trong memory theo đúng input. Nếu thiếu
+ActivityItem, thiếu Gemini key hoặc provider lỗi thì API không trả note và UI
+không hiện nút ghi chú; không có fallback tự suy diễn.
+
 ## Ranh giới API
 
 | Endpoint | Input | Output |
 |---|---|---|
 | `GET /health` | Không có | `{ "status": "ok" }` |
+| `POST /v1/explorer/invoke` | `ExplorerInput` | `ExplorerApiOutput` rút gọn |
 | `POST /v1/plans/current-location-route` | `CurrentLocationRouteRequest` | Một `TransportLeg` có geometry Valhalla/fallback |
 | `POST /v1/plans/day-directions` | `DayDirectionsRequest` | Danh sách `TransportLeg` nối origin với các điểm theo thứ tự |
 | `POST /v1/agent/invoke` | `InvokeRequest` | `InvokeResponse` |
-| `GET /v1/plans/places/search?query=&destination=&topK=` | `Authorization: Bearer <accessToken>`, query text and optional destination | Danh sách địa điểm chuẩn hóa để thêm thủ công vào lịch trình |
+| `POST /v1/trip-chats/{chatId}/messages` | `SendTripChatMessageInput`; khi chat có `currentPlannerOutput`, Gemini nhận compact plan context để trả structured edit intent | `TripChatMessageResponse`; edit hợp lệ dùng cùng optimistic-revision mutation với UI thủ công |
+| `GET /v1/plans/places/search?query=&destination=&topK=` | `Authorization: Bearer <accessToken>`, query text and optional destination; `topK` defaults to `5` | Tối đa năm địa điểm chuẩn hóa; name/alias tham gia xếp hạng, catalog match trả thêm opening hours, duration và estimated cost khi có |
+| `GET /v1/plans/places/subplaces?parentPlaceIds=` | `Authorization: Bearer <accessToken>`; lặp `parentPlaceIds` tối đa 50 TravelPlace | Nhóm SubPlace trực tiếp theo parent, tối đa 50 child/parent; note chỉ có khi structured Gemini sinh từ `Offer_Item -> ActivityItem`; dùng riêng cho UI, không thay đổi planner output hoặc route |
 | `POST /v1/trip-chats/{chatId}/plan/unscheduled-places/confirm` | Multipart địa điểm gốc, match đã chọn, ngày đích và `expectedRevision` | `TripChat` sau khi thêm stop và xóa entry chưa xếp nguyên tử |
 | `DELETE /v1/trip-chats/{chatId}/plan/unscheduled-places` | Multipart địa điểm gốc và `expectedRevision` | `TripChat` sau khi xóa entry chưa xếp |
 | `POST /v1/trip-chats/{chatId}/plan/items` | Multipart item fields và `expectedRevision` | `TripChat` sau khi thêm địa điểm vào ngày đã chọn |
+| `PATCH /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}` | Multipart các trường địa điểm cần sửa và `expectedRevision` | `TripChat` sau khi cập nhật item; route leg chạm vào vị trí đã đổi được bỏ để frontend tính lại |
+| `POST /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/replace` | `ReplacePlanItemInput` gồm identity, tọa độ, opening hours, duration, cost và `expectedRevision` | `TripChat` sau fixed-order reflow hoặc CP-SAT repair đúng ngày; snapshot chỉ được ghi khi route/timeline khả thi |
+| `DELETE /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}` | Multipart `expectedRevision` | `TripChat` sau khi xóa item và các route leg trực tiếp liên quan |
 | `PUT /v1/trip-chats/{chatId}/plan/days/{day}/items/reorder` | Multipart `itemIds` (lặp lại) và `expectedRevision` | `TripChat` với thứ tự địa điểm đã cập nhật; các item không có trong payload vẫn được giữ lại |
 | `PATCH /v1/trip-chats/{chatId}/plan/days/{day}/items/{itemId}/personal-notes` | `expectedRevision`, `personalNotes` | `TripChat` với planner snapshot đã cập nhật |
 | `PATCH /v1/trip-chats/{chatId}/plan/accommodation` | `expectedRevision` và các trường nơi lưu trú cần sửa, gồm `personalNotes` | `TripChat` với accommodation và route reference đã cập nhật |
@@ -59,9 +117,13 @@ Planner validation/preflight failure trả `422`; provider, matrix hoặc solver
 `detail.retryable`. Observability ghi các response này là failure thay vì
 `success=true` với `plannerOutput=null`.
 
-Explorer output `partial` vẫn được phép đi tiếp sang Place Checker khi có
-`input_ADM`; các nguồn lỗi/timeout được giữ trong `warnings` và
-`completeness.sources`. Place Checker `food[].venueType` luôn là `restaurant`
+Chỉ Explorer result có review `ready_for_execution` mới đi qua
+`ExplorerHandoffProjector`. Thiếu `inputADM` hoặc còn field mặc định sẽ quay về
+Supervisor review, chưa gọi PlaceChecker. Projector chuẩn hóa tag và validate;
+Explorer/provider failure trở thành `error` có cấu trúc. Các nguồn lỗi/timeout
+được giữ trong `warnings`; `ExplorerOutput` không còn phát aggregate
+`completeness`/coverage diagnostic. Place Checker
+`food[].venueType` luôn là `restaurant`
 ngay cả khi category thô từ provider là `travel_place` nhưng policy theo tên,
 tag, pool và provider note đã phân loại candidate đó là nhà hàng.
 
@@ -69,12 +131,12 @@ tag, pool và provider note đã phân loại candidate đó là nhà hàng.
 
 | Module | Input | Output |
 |---|---|---|
-| `supervisor` | `SupervisorInput` | `SupervisorDecision` (`route`, `confidence`, `reason`, tùy chọn `response`, `clarificationQuestion`, `warnings`) |
+| `supervisor` | `SupervisorInput`, gồm compact `currentPlan` khi Trip Chat đã có lịch | `SupervisorDecision` (`route`, `confidence`, `reason`, tùy chọn `response`, `clarificationQuestion`, `warnings`, `planEdit`, `tripContextPatch`, `sourceAction`) |
 | `explorer` | `ExplorerInput` | `ExplorerOutput` |
-| `information_finder` | `InformationFinderInput` | `InformationFinderOutput` (`answer`, `sources`, `warnings`) |
+| `information_finder` | `InformationFinderInput` | `InformationFinderOutput` (`answer`, structured `facts`/`contentBlocks`, `sources`, `warnings`, `suggestions`, `metadata`) |
 | `place_checker` | `PlaceCheckerInput` | `PlaceCheckerOutput` |
 | `itinerary_planner` | `ItineraryPlannerInput` | `ItineraryPlannerOutput` |
-| `plan_editor` | `PlanEditorInput` | `PlanEditorOutput` |
+| `plan_editor` | Legacy `PlanEditorInput`; contract `NaturalLanguagePlanEdit` dùng chung cho lệnh chat | Legacy `PlanEditorOutput`; helper kiểm tra reference của `NaturalLanguagePlanEdit` |
 | `conversation_memory` | `WorkingMemoryState` | `WorkingMemoryState`, `MemoryFact`, `MemoryReference`, `UserPreferenceMemory`, `RootStateMemoryMapping` |
 
 ## Các agent hiện có
@@ -92,10 +154,21 @@ Root orchestration graph gọi các agent theo flow:
 
 ```text
 supervisor
-├── information_finder
+├── information_finder -> END (final response của Finder)
 ├── plan_editor
-└── explorer -> place_checker -> itinerary_planner
+└── explorer
+    ├── thiếu destination -> supervisor review -> chờ user
+    ├── có field mặc định -> supervisor review -> chờ TripContextPatch
+    └── ready_for_execution -> place_checker -> itinerary_planner
 ```
+
+Explorer không gọi PlaceChecker khi còn thiếu `inputADM` hoặc khi vừa áp dụng
+`days`, `budget`, `people`, `shortPreferences` mặc định. Nó tạo
+`ExplorerReview` dạng `missing_fields` hoặc `defaults_proposed`; Supervisor chỉ
+dùng contract này để hỏi user. Reply tiếp theo được Supervisor chuyển thành
+`TripContextPatch`, Explorer áp patch và chỉ đi PlaceChecker sau khi review đã
+được chấp nhận hoặc sửa. Pending draft nằm trong root graph state theo
+`threadId`, không phụ thuộc Conversation Memory.
 
 ## Observability contract
 
@@ -117,12 +190,26 @@ kết thúc và `agent_request_timing` khi toàn request kết thúc. Log chỉ 
 provider payload. Có thể ghép các dòng theo `request_id` để tìm stage chậm ngay
 trên terminal chạy Uvicorn.
 
-Khi provider là `gemini`, Supervisor dùng structured LLM classification trước
-cho mọi message; deterministic rules chỉ được dùng khi chọn provider `rules`
-hoặc làm runtime fallback. Route `plan_editor` chỉ hợp lệ khi request có cả
-itinerary hiện tại và structured edit operation. Route `finish` có thể mang
-response ngắn cùng ngôn ngữ cho greeting, câu hỏi về trợ lý hoặc yêu cầu ngoài
-phạm vi.
+Khi provider là `gemini`, Supervisor dùng đúng một structured LLM call cho mỗi
+message. Nếu Trip Chat đã có lịch, input call này mang compact `currentPlan`;
+output vừa chọn route vừa có thể trả `planEdit` (`add`, `update`, `delete`,
+`reorder` hoặc `clarify`). Backend không dùng keyword/if-else để đoán lệnh sửa.
+Reference ngày/item do model trả về phải khớp snapshot; provider lỗi không chạy
+deterministic edit fallback. Structured `EditOperation` của API legacy vẫn được
+hỗ trợ với `planEdit=null`.
+
+Cùng structured call đó trả `tripContextPatch` khi đang chờ Explorer review và
+`sourceAction` khi request có URL/ảnh. Slang, typo, budget level, destination và
+ý định lập lịch/tóm tắt nguồn đều do model phân loại. Backend chỉ validate
+schema, enum và invariant của patch/action; provider lỗi trả clarification an
+toàn, không chạy keyword hoặc regex fallback để đoán intent.
+
+Khi `planEdit` là mutation hợp lệ, Trip Chat gọi lại đúng primitive mà UI sửa
+thủ công sử dụng. PostgreSQL khóa hàng theo optimistic revision, cập nhật
+`currentPlannerOutput` và chèn cặp user/assistant trong cùng transaction; cả
+lượt chỉ tăng revision một lần. `clarify` chỉ lưu câu hỏi làm rõ, không sửa
+snapshot. Message không phải edit tiếp tục theo route Supervisor đã chọn mà
+không phát sinh Gemini preflight thứ hai.
 
 Input của root graph là `RootGraphInput`; output là `RootGraphOutput`.
 Root state nội bộ có `conversation_context` gồm tối đa sáu message trước đó,
@@ -133,63 +220,98 @@ Trong routing, ý định rõ ở `message` hiện tại có ưu tiên hơn cont
 lược bỏ intent, Supervisor kế thừa tác vụ hỏi đáp hoặc lập kế hoạch từ các lượt
 có role gần nhất; nếu không đủ căn cứ phân biệt thì route `finish` hỏi lại.
 
-Mọi agent có thể trả `UserContextRequest` (`field`, `sourceAgent`, `resumeRoute`,
-tùy chọn `reason`) khi cần thêm dữ liệu do người dùng sở hữu. Agent không tạo câu
-hỏi trực tiếp. Root chuyển request cho Supervisor; Supervisor tạo một
-`clarificationQuestion`, lưu request đang chờ trong root state và route `finish`.
-Lượt trả lời mới vẫn đi qua Supervisor trước; nếu không có intent mới,
-Supervisor route lại `resumeRoute` để agent tiếp tục. `contextSummary` đã có chỗ
-truyền vào Explorer; cơ chế tạo summary sẽ được triển khai riêng.
-
 ### Explorer
 
 `ExplorerInput` nhận `rawPrompt` tùy chọn, `urls`, `images` và `forceRefresh`
 tùy chọn. `forceRefresh=true` buộc URL extraction bỏ qua cache. Explorer output
 không có `schemaVersion` và gồm:
 
-- `status`: `ready`, `clarification` hoặc `error`;
+Request có `urls` bắt buộc phải có `rawPrompt` không rỗng để thể hiện action.
+Frontend chỉ điền một trong hai câu “Tạo lịch trình từ liên kết” hoặc “Tóm tắt
+nội dung liên kết” vào composer; không tự gửi và user có thể sửa/viết thêm.
+Action lập lịch chạy source extraction rồi qua destination/default review như
+input thường. Action tóm tắt chạy extraction rồi trả nội dung qua Supervisor,
+kết thúc trước PlaceChecker và Itinerary Planner.
+
 - `intakeId`, `input_ADM`;
 - `days`, `startDate`, `timezone`; nếu prompt không có ngày thì ngày bắt đầu là
   ngày mai, nếu không có duration thì `days=3`. Turn mới có URL/ảnh/địa điểm
   hoặc item mới cũng giữ default này; chỉ follow-up thuần tham chiếu lịch cũ
   mới kế thừa duration từ Conversation Memory;
-- `places`, trong đó mỗi place có `sourcePlaces`, `sourceTimeHint` và
-  `addressHint`; `sourcePlaces` phân biệt nguồn `input` (người dùng chọn trực tiếp),
-  `url` (nguồn URL do người dùng cung cấp) và `system` (gợi ý từ assistant/information-finder
-  hoặc transcript cũ, mang tính tùy chọn, không bắt buộc; chỉ khi lượt người dùng hiện tại
-  tham chiếu rõ ràng qua current-turn explicit reference promotion mới được chuyển sang `input`);
-  mỗi source có thể mang `platform`, `extractorVersion`, `modelVersion`, `cacheStatus` và
-  các field provenance này được Place Checker giữ nguyên; không có `sourceOrder`/`sourceDay`;
-- `inputItems`, chỉ lấy food, drink hoặc activity cụ thể, có thể resolve được và
-  được nêu rõ trong raw prompt; sở thích/chủ đề chung được đưa vào
+- `places`, trong đó mỗi place public có `name` và `sourcePlaces` đã dedupe.
+  `sourcePlaces` trả `evidenceType` cấp cao
+  (`raw_prompt` hoặc `url`), `sourceUrl`, `sourceTimeHint`, `addressHint` và
+  `urlNotes` liên quan; ảnh người dùng gửi trực tiếp thuộc nhóm `raw_prompt`.
+  `tags`, confidence, origin, evidence, observed time, `platform`,
+  extractor/model version và cache status không thuộc public output hoặc
+  PlaceChecker input;
+- `inputItems`, chỉ trả `name`, `itemType` và `relatedPlaceName` cho food, drink
+  hoặc activity cụ thể được nêu rõ trong raw prompt; action, evidence và
+  confidence vẫn là dữ liệu nội bộ; sở thích/chủ đề chung được đưa vào
   `shortPreferences`;
-- `urlNotes`, giữ chi tiết hữu ích có evidence từ URL/ảnh/OCR/STT/metadata,
-  gồm access/timing/price/caution, hoạt động cụ thể tại địa điểm, trải nghiệm
-  đặc trưng và fun fact; loại lời quảng cáo chung chung;
-- `days`, `budget`, `people`, `shortPreferences`, `shortAvoids`;
-- `userContextRequests`, warnings hoặc structured `AgentError` khi phù hợp;
-  `clarificationQuestion` không còn là kênh hỏi trực tiếp của Explorer.
+- `places[].sourcePlaces[].urlNotes` chỉ giữ `summary` cho chi tiết hữu ích từ
+  URL/ảnh/OCR/STT/metadata. Note chỉ được xuất khi `placeName` khớp hoặc summary
+  nhắc đúng tên place; top-level `urlNotes`, `placeName`, `evidenceType` và
+  `sourceUrl` lặp lại trong nested note đã bị bỏ;
+- `days`, `budget={amountPerPerson,currency,level}`, `people`,
+  `shortPreferences`, `shortAvoids`, `specialNotes`; `ExplorerOutput` không có
+  aggregate `completeness`; JSON public cũng không trả budget source,
+  clarification, warnings hoặc structured `AgentError`. Với prompt provider Gemini, taxonomy mới nhất từ
+  `tags-auto.yml` được đưa vào system prompt và JSON Schema enum; output được
+  kiểm tra lại để hai danh sách chỉ chứa exact key trong file. Public boundary
+  chỉ lọc key hợp lệ, không tự map lại semantic value. Public JSON cũng không
+  trả `status`; trạng thái `ready`,
+  `partial`, `clarification` hoặc `error` vẫn được `ExplorerService` và graph
+  dùng nội bộ. Các field chẩn đoán vẫn được graph dùng nội bộ.
 
 Tên place chỉ chứa tên riêng của địa điểm/cơ sở. Khi raw prompt nói một hành
-động hoặc món gắn với cơ sở có tên, hành động/món nằm trong `inputItems` và có
-thể liên kết bằng `relatedPlaceName`; evidence từ source tương tự nằm trong
-`urlNotes`. Explorer không resolve place.
+động hoặc món gắn với cơ sở có tên, hành động/món nằm trong `inputItems`; liên
+kết `relatedPlaceName` và evidence chỉ giữ nội bộ. Evidence từ source tương tự
+nằm trong `sourcePlaces[].urlNotes`. Explorer không resolve place.
 
-Policy mặc định: `days=3` và chỉ raw prompt được ghi đè; `people=2 adults` và
-chỉ raw prompt được ghi đè; budget ưu tiên raw prompt, whole-trip image,
-whole-trip URL, rồi `low`. Giá vé/món riêng không phải whole-trip budget.
-Draft generator có adapter deterministic và structured Gemini; prompt provider
-được chọn bằng `EXPLORER_DRAFT_PROVIDER`, source provider bằng
-`EXPLORER_SOURCE_DRAFT_PROVIDER`.
+Policy mặc định: `days=3`, `people=2 adults`, budget level `low`, currency VND
+và `specialNotes=[]`. Budget handoff luôn là tổng toàn chuyến cho một người;
+group total do user nhập được chia đúng một lần. Khi user không nhập số tiền,
+Explorer tính `amountPerPerson` bằng shared `DestinationDailyBudgetEstimator`
+theo ADM/level/days/people trước khi tạo review và giữ `null` nếu chưa có
+profile. Preference/avoid giữ toàn bộ dữ liệu user hợp lệ trước rồi bổ sung toàn
+bộ `priority-tags` của các nhóm đang áp dụng từ `insight-user.yml`, theo thứ tự
+ổn định, không random và không giới hạn bốn phần tử. Chỉ tag đồng thời được khai
+báo trong `insight-user.yml` và là key của `tags-auto.yml` mới được giữ trong
+output để chuyển tới Supervisor/downstream.
+Giá vé/món riêng không phải whole-trip budget.
+
+`ExplorerReview.tripContext` chỉ đưa cho Supervisor `inputADM`, `days`,
+`budget={amountPerPerson,currency,level}`, `people` và `shortPreferences`, kèm
+`defaultedFields`. Derived `shortAvoids` vẫn nằm trong pending Explorer output
+để project sang PlaceChecker nhưng không được đưa vào review hoặc câu trả lời
+mặc định của Supervisor.
+Draft generator dùng structured Gemini cho cả prompt và source; hai provider
+`EXPLORER_DRAFT_PROVIDER` và `EXPLORER_SOURCE_DRAFT_PROVIDER` chỉ nhận `gemini`.
+Model trả cả `days`, `startDate`, `peopleExplicit` và `preferencesExplicit`.
+Backend không dùng keyword/regex để suy đoán intent từ raw prompt; fallback an
+toàn chỉ bảo toàn evidence đã có cấu trúc và báo lỗi retryable nếu prompt cần
+LLM. `tags-auto.yml` được đọc lại ở mỗi lần tạo prompt draft và mỗi lần
+normalize/output, nên thay đổi taxonomy có hiệu lực mà không restart backend;
+draft lấy từ cache cũng được normalize bằng bản hiện tại.
 
 `SourceArtifact` là contract nội bộ giữa importer và bước synthesis, không phải
 field public của `ExplorerOutput`. Artifact phân biệt `url_metadata`, `caption`,
-`stt`, `frame_ocr`, `web_text` và `image_ocr`, đồng thời giữ URL/time hint. URL
+`transcript`, `stt`, `frame_ocr`, `web_text` và `image_ocr`, đồng thời giữ
+URL/time hint. URL
 cache canonicalize TikTok/Instagram/Facebook bằng cách bỏ toàn bộ query trước
 khi tra `source_documents`, tương thích artifact cache legacy v6. URL và ảnh
-trong cùng request được chạy song song. YouTube ưu tiên full subtitle/automatic
-caption mà không tải video; nếu không có caption mới tải audio-only, chia chunk
-có timestamp và mặc định chỉ transcribe một chunk Gemini tại một thời điểm.
+trong cùng request được chạy song song. URL media đánh giá primary evidence từ
+native transcript/caption, title, description, location và tags bằng structured
+semantic preflight; model cũng trả `exhaustiveRequested`. Policy deterministic
+chỉ kiểm tra các field có cấu trúc, confidence và ngưỡng coverage, không dò từ
+khóa trong raw prompt. Primary chỉ đủ khi có destination hoặc named place và đủ
+travel detail; lỗi preflight vẫn fallback tải media an toàn. YouTube ưu tiên
+full subtitle/automatic caption mà không tải video;
+metadata-only đủ coverage cũng không tải media. Nếu primary thiếu mới tải
+audio-only để STT; transcript vẫn thiếu thì chạy riêng frame OCR, không STT lặp.
+Audio được chia chunk có timestamp và mặc định chỉ transcribe một chunk Gemini
+tại một thời điểm.
 Transcript dài được extract place
 theo từng chunk; mỗi chunk dùng một structured request trả đồng thời place, ADM
 và note thay vì ba request provider riêng. Query `t=` hoặc
@@ -198,9 +320,11 @@ text chunk mặc định 20.000 ký tự với tối đa 8.000 output token đ�
 nhiều request khi transcript dài. Mặc định tối đa năm chunk được xử lý song
 song và toàn bộ synthesis trong một Explorer service bị giới hạn sáu request
 Gemini đang chạy; chunk thành công được giữ khi chỉ chunk khác cần retry.
-TikTok ưu tiên Safari HTML: parse JSON nhúng, kiểm tra CDN allowlist rồi stream
-MP4 có giới hạn; lỗi source không fallback sang `yt-dlp`. Instagram dùng `yt-dlp`
-theo thứ tự standard, Chrome và Chrome Android. ffprobe chỉ chạy OCR/STT cho
+TikTok ưu tiên Safari HTML: parse JSON nhúng và kiểm tra metadata trước; chỉ khi
+primary coverage thiếu mới kiểm tra CDN allowlist rồi stream MP4 có giới hạn.
+Lỗi source không fallback sang `yt-dlp`. Instagram cũng kiểm tra metadata
+`yt-dlp` trước, rồi mới tải media theo thứ tự standard, Chrome và Chrome Android
+nếu cần. ffprobe chỉ chạy OCR/STT cho
 stream video/audio thực sự tồn tại; website dùng
 HTTP, `curl-cffi` Safari, rồi fallback Playwright Chromium trước khi qua
 trafilatura. Frame OCR lấy mẫu mỗi 3 giây, bị giới hạn 48 frame và 10 ảnh mỗi
@@ -212,54 +336,56 @@ công và đưa code nhánh lỗi vào `warnings`. Một source lỗi hoàn toà
 ghi trong `warnings`; batch vẫn đi tiếp nếu còn ít nhất một source dùng được.
 Raw prompt tùy chọn trong source flow được parse song song với source synthesis;
 các tín hiệu rõ từ prompt được merge theo precedence trước normalize.
-Kết quả source nội bộ có `cacheStatus` (`hit`, `miss`, `bypassed`) để quan sát
-luồng cache, nhưng field này không được gửi cho Gemini synthesis và không thuộc
-`ExplorerOutput` public. Cache PostgreSQL dùng canonical URL, TTL và extractor
-version; adapter tương thích đọc artifact version 6 của `old_one` và ghi version
-8 theo `SourceArtifact` hiện tại, kèm metadata coverage. Draft synthesis được cache riêng theo prompt,
+Cache hit/miss/bypass được ghi log theo control flow, không được gắn vào source
+result hoặc JSON handoff. Cache PostgreSQL vẫn dùng canonical URL, TTL và cột
+extractor version để loại artifact không tương thích; adapter đọc artifact
+version 6/8 và ghi version 9 theo `SourceArtifact` hiện tại, kèm
+metadata coverage. Draft synthesis được cache riêng theo prompt,
 artifact evidence, model namespace và policy version; draft cache không thuộc
 public output và bị bypass khi `forceRefresh=true`.
-Source result còn theo dõi duration/coverage transcript, tổng số synthesis
-chunk, số chunk thành công và synthesis coverage. Chunk lỗi làm source
-`partial` nhưng không xóa kết quả chunk thành công.
+Source result nội bộ còn giữ tín hiệu đủ/thiếu evidence để quyết định có cần
+fallback tải media và có source nào dùng được. Tín hiệu này không được tổng hợp
+thành coverage field trong `ExplorerOutput`. Chunk lỗi làm source `partial`
+nhưng không xóa kết quả chunk thành công.
 
 Đây là state machine LangGraph thực, không phải pipeline gọi tuần tự trong API:
 `prepare_intake` dùng conditional edge chọn prompt-only hoặc source-import;
 hai nhánh hội tụ trước normalize, ADM reconciliation, default policy và
 completion gate. `graph.py` chỉ wiring, node chỉ chuyển state, còn validation,
-coverage, retry/error, precedence và persistence policy thuộc `ExplorerService`.
+source-success gate, retry/error, precedence và persistence policy thuộc
+`ExplorerService`.
 Mọi URL/image/media provider được inject qua port; adapter không phụ thuộc
 graph, node hoặc state nội bộ.
 
-`PlaceCheckerInput` nhận trực tiếp `input_ADM`, `places`, `inputItems`,
-`urlNotes`, `days`, `budget`, `people`, `shortPreferences` và `shortAvoids` từ
-Explorer qua root orchestration. Chỉ output `ready` được chuyển tiếp.
+`ExplorerHandoffProjector` vẫn là boundary duy nhất tạo `PlaceCheckerInput`,
+nhưng chỉ được gọi sau Explorer review gate. Current
+Explorer output được ưu tiên, Conversation Memory chỉ bổ sung context còn thiếu;
+places được merge một lần, preferences/avoids được resolve bằng taxonomy hiện
+tại trong `tags-auto.yml`, rồi toàn bộ `ExplorerOutput` và `PlaceCheckerInput`
+được validate lại. Sau memory merge, Explorer final-dedupe theo tên đã chuẩn
+hóa và gộp toàn bộ source evidence của các bản trùng. PlaceChecker nhận
+`inputADM`, `places`, `inputItems`, `days`,
+`budget`, `people`, `shortPreferences`, `shortAvoids` và `specialNotes`; không
+nhận top-level `urlNotes` hoặc status `ready`/`partial` của Explorer.
 
 Rich `PlaceCheckerResult` giữ evaluation, provenance và diagnostic. Sau đó
 `PlaceCheckerPlannerOutputBuilder` tạo compact
 `trip + places + food + entertainment + foodCoverage + accommodations + excludedCandidates`; root
 validate payload này bằng `ItineraryPlannerInput` và giữ tại `planner_input`.
-Retrieval/ranking dùng target `22 TravelPlace/ngày`, `16 Restaurant/ngày` và
-`6 DrinkDessert/Entertainment/ngày`. Core TravelPlace retrieval có query riêng
-cho famous/must-see, historic landmark/museum/temple/old quarter và authentic
-local cultural special experience.
+Retrieval/ranking dùng target `12 TravelPlace/ngày`, `6 Restaurant/ngày`,
+`2 Entertainment/ngày`, `3 DrinkDessert/ngày` và tối đa 3 Accommodation/toàn
+chuyến. Mỗi deficient pool có tối đa một Knowledge Graph query; runtime không
+dùng external discovery để lấp pool.
 Entertainment tự gợi ý phải đạt Bayesian rating điều chỉnh tối thiểu 4,2/5 và
 qua tourist-suitability gate để loại cửa hàng/dịch vụ thương mại;
 DrinkDessert phải có tín hiệu cafe/tea/bakery/dessert/bar/lounge và không được
-là quán món chính gắn sai. Direct-user/URL được giữ. Compact selector
-chỉ dùng `8 TravelPlace/ngày` làm hard handoff minimum; phần thiếu so với target
-22/ngày là reserve shortfall, không tự chặn Planner. Selector chỉ giới hạn
-Entertainment chỉ mở buổi sáng ở tối đa một candidate/ngày; candidate có thể
-xếp chiều/tối vẫn nằm trong quota toàn ngày và làm fallback cho Planner. Ba
-Style breakfast/lunch/dinner active
-mặc định; Style food/drink khác chỉ active khi request resolve tới Style đó.
-Mỗi Style active có target mềm `2 × days`; PlaceChecker chọn Item trước, reverse
-`Offer_Item` sang Restaurant/DrinkDessert và cân bằng
-Item/quán theo anchor region. Food hard minimum vẫn là `days * 3` venue duy nhất.
-Nếu pool từ URL/direct input hoặc special-near food chưa đủ, PlaceChecker vẫn
-chạy targeted retrieval theo cùng cơ chế gap/pool của special experience để bù
-độc lập các nhóm `TravelPlace`, `Restaurant` và `Entertainment` trước khi qua
-Planner; food coverage không bị tắt chỉ vì food-selection adapter đã được bật.
+là quán món chính gắn sai. Direct-user/URL được giữ. Entertainment optional phải
+có window giao buổi tối từ 18:00; DrinkDessert dùng window ban ngày 07:00–18:00.
+Hai quota được chọn riêng rồi gộp vào `entertainment[]` với `entityType`.
+Food anchors là final TravelPlace và Entertainment có tọa độ. Một query food
+trả cả nearby 5 km và city-wide candidates, hard-filter avoid, cân bằng FoodItem
+và anchor, rồi kiểm tra `day × breakfast/lunch/dinner`. Target Restaurant là
+`6 × days`; ba meal slot/ngày là coverage riêng, không phải target count.
 Compact boundary chỉ đưa Restaurant vào `food`; DrinkDessert/Entertainment được
 chuyển sang pool nullable `entertainment` và không chiếm meal slot hay quota Place.
 PlaceChecker dựng slot cho từng
@@ -275,19 +401,14 @@ chọn tối đa ba phương án quanh P25/P50/P80, sau đó xếp lại theo kh
 tâm compact TravelPlace pool. Hybrid dùng candidate rẻ nhất làm accommodation
 anchor khi có budget target, nếu không mới dùng candidate đầu tiên; các phương
 án còn lại không kích hoạt global re-solve.
-Rich PlaceChecker result trả `foodStyleCoverage[]` gồm Style ID/tên, target,
-số quán đã chọn, số Item phân biệt và trạng thái complete. Compact Planner
-contract vẫn nhận food venue cùng `foodCoverage` meal feasibility.
-Output planner giữ các entry không xếp được trong `unscheduled`; với lỗi
-canonical identity, frontend tự search top 1 và đưa match vào ngày ít điểm nhất.
-Nếu không có match, người dùng vẫn có thể search tối đa 5 địa điểm thay thế,
-chọn ngày, rồi gọi mutation xác nhận để đưa match vào `days[].stops` và loại
-entry khỏi `unscheduled` cùng một revision.
-Rich result còn trả `styleCandidateSelections[]` với place/entity type,
-Style/Item ID và tên, `relationshipSource`, cùng
-`styleCandidateCoverage[]` và các input Style/Item không resolve được. Selector
-tổng quát chỉ kích hoạt Style resolve từ `shortPreferences` hoặc `inputItems`,
-dedup toàn pool theo place ID và không ghi bộ đếm diversity xuống database.
+Compact Planner contract nhận food venue cùng `foodCoverage` meal feasibility;
+HasStyle không tạo food diversity coverage.
+Output planner giữ các entry thật sự không xếp được trong `unscheduled`. Với
+URL/direct input có candidate hợp lệ nhưng identity nhập nhằng, Place Checker
+tự chọn một canonical candidate tốt nhất trước khi tạo Planner input; frontend
+không còn mở flow chọn Top-K để resolve identity.
+Runtime pipeline không chạy Style candidate discovery. `Has_Style` chỉ enrich
+time/duration còn thiếu trên entity/item.
 Compact priority chỉ gồm `user_input`, `url`, `special_experience`,
 `special_near`; food có `supportedMeals` và `venueType=restaurant`. Contract
 vẫn nhận `drink_dessert` cho compatibility input cũ.
@@ -296,19 +417,37 @@ Special Experience/Offer Item vẫn được giữ riêng trong source metadata 
 Mỗi place còn có `sourceKind` (`special_experience`, `offer_item`, `both` hoặc
 `generic`), `offeredActivityIds` và `timeSource`. `Offer_Item` chỉ được tính là
 nguồn activity khi target là `ActivityItem`; timing ActivityItem được truyền
-qua relationship evidence, còn `Has_Style` là fallback khi thiếu timing cụ thể
-và được giữ thành tag `style:*` cho diversity coverage. Travel reserve chạy
-thematic query cho culture, nature, shopping, nightlife, workshop, performance,
-outdoor, family và local activity, giữ một candidate mỗi theme/style khả dụng
-trước khi bù theo 8/14 Special Experience có evidence/provenance đã duyệt và
-4/14 popular;
-popular kết hợp Bayesian quality với log review count, bucket thiếu được ranking
-diversity bù và không làm PlaceChecker phân ngày thay Planner. Popular bucket
+qua relationship evidence, còn `Has_Style` chỉ kế thừa timing cụ thể còn thiếu
+và không được giữ thành public tag. Travel reserve dùng một query canonical;
+SpecialExperience, OfferItem và quality cùng tham gia core rank. Preference,
+avoid và diversity chỉ dùng canonical key được resolve runtime từ
+`auto-attach/tags-auto.yml`. Preference bằng số tag khớp chia tổng tag canonical
+của candidate; avoid là hard filter. TravelPlace diversity lấy trung bình
+`1 / (1 + số lần tag đã chọn)` rồi cộng với trọng số 5%, bên cạnh 10%
+preference và 85% core. Quota giữ thứ tự rerank này và không làm PlaceChecker
+phân ngày thay Planner. Popular bucket
 chỉ tính candidate có ít nhất 500 review và popularity score từ 0,70. Semantic
 category guard chuyển music box, karaoke, golf, billiard/bi-a, bowling, studio,
 game center, massage/trị liệu, spa và retail store/souvenir bị gắn `TravelPlace`
 sai sang `Entertainment` trước khi chia pool.
 Candidate có `pool_category=shopping` cũng không được tính là landmark.
+Generic discovery bỏ qua Knowledge Graph entity có property
+`generic_discovery_excluded=true`, nhưng named-place lookup không áp dụng cờ này
+để yêu cầu gọi đúng tên vẫn resolve được. Night market vẫn thuộc `TravelPlace`.
+Generic top-K dùng Bayesian adjusted rating kết hợp review reliability theo prior
+của scoped pool; các bước activity, food, entertainment và scoring downstream
+tiếp tục dùng shared Bayesian policy. Vì vậy rating cao nhưng rất ít review không
+còn đẩy landmark phổ biến ra khỏi cửa sổ retrieval trước khi scoring chạy.
+Khi suy category từ tên, `Phở`/ASCII `Pho` được nhận diện trên Unicode gốc;
+`Phố` không còn bị bỏ dấu thành `pho` rồi làm venue ở Phố Vọng thành Restaurant.
+Named-place search dùng canonical name và alias đã chuẩn hóa không dấu. Batch
+curation Hà Nội giữ alias hiển thị có dấu/ngôn ngữ, xóa chọn lọc alias mojibake
+hoặc sai và thêm các tên gọi phổ biến như `36 phố phường`, `Hồ Gươm`, `Lăng
+Bác`; entity pending trùng chính xác bị `rejected` thay vì xóa khỏi Knowledge
+Graph.
+Migration alias top 60 tiếp tục giữ boundary này: chỉ cập nhật alias theo đúng
+identity hiện hữu, không tự đổi type/status hoặc dùng tên thay thế để che record
+có địa chỉ, tọa độ hay provider identity sai.
 Compact boundary dùng thêm provider note làm semantic context để chuyển source
 category thương mại như art supply store, photo booth, garden center và plant
 service khỏi TravelPlace; đây không thay đổi ontology lưu trữ.
@@ -355,9 +494,9 @@ ghép đúng thứ tự từ các provider batch tối đa 2.500 source-target p
 giữ mười neighbor gần nhất theo safe travel time cho mỗi candidate rồi union
 forced relationship, meal-access, priority và bridge arcs. CP-SAT mặc định dùng
 một search worker trong từng pass do benchmark hiện tại chưa chứng minh
-multi-worker giảm latency. Default không đặt solver timeout; runtime cần SLA
-phải inject giới hạn riêng qua `SolverConfig`. Planner tạo geographic day-domain,
-greedy shortlist và 2-opt/swap, rồi chạy OR-Tools CP-SAT hai pass cho từng
+multi-worker giảm latency. Priority pass giữ exact search; activity-count pass
+và mỗi utility attempt mặc định có 10 giây. Planner tạo geographic day-domain,
+greedy shortlist và 2-opt/swap, rồi chạy OR-Tools CP-SAT ba pass cho từng
 ngày. Greedy và CP-SAT dùng chung Bayesian review quality dựa trên rating,
 review count và prior của pool. Hybrid cố định top accommodation trước khi solve
 từng ngày; endpoint arc phải nối được anchor, về trước 03:00 và giữ tối thiểu 7
@@ -379,9 +518,9 @@ ban ngày/ngày; phần vượt target bị trừ utility thay vì hard-fail đ�
 bắt buộc và
 preflight vẫn khả thi. Mỗi ngày bắt buộc có activity xen giữa breakfast/lunch và lunch/dinner bằng
 hard constraint cấm food-to-food arc. Planner bắt buộc ít nhất hai Place và
-thưởng đến ba Place/ngày; Entertainment optional, tối đa một/ngày,
-được dịch meal trong policy window để chèn activity; nếu shortlist chưa đạt ba
-activity thì mở reserve khả thi và solve refill. Waiting giữa hai stop liên tiếp bị giới hạn tối đa 150 phút ngoài
+thưởng mọi Place khả thi không giới hạn bởi daily activity target;
+Entertainment optional, tối đa một/ngày, được dịch meal trong policy window để
+chèn activity. Waiting giữa hai stop liên tiếp bị giới hạn tối đa 90 phút ngoài
 `safeTravel` đã gồm routing buffer; khi pool/opening
 window không dựng được chuỗi liên tục, solver trả `INFEASIBLE` thay vì xuất
 ngày chỉ có ba bữa ăn.
@@ -392,8 +531,8 @@ target mềm hai popular TravelPlace/ngày, phạt 6.000 cho mỗi suất thiế
 Planner còn cộng 4.000 utility cho mỗi TravelPlace thuộc Special Experience và
 đặt target mềm hai điểm loại này/ngày, phạt 10.000 cho mỗi suất thiếu khả thi.
 Candidate TravelPlace generic dưới 500 review và quán rating dưới 4,0/review
-quá ít chịu cost chất lượng; stop vượt nhịp ngày hợp lý chịu cost 800 để tránh
-lịch dày máy móc.
+quá ít chịu cost chất lượng. Số stop và active minutes không chịu fatigue
+penalty; phần lịch sau 23:00 vẫn chịu late penalty.
 Trong hybrid solve, budget `estimated_daily_cost` có biên mềm 5%, được trừ tổng
 lưu trú của accommodation anchor rồi chia phần còn lại theo số ngày. Overage
 cost là 500 utility cho mỗi 10.000 VND; shortlist giữ tối đa sáu quán mỗi meal
@@ -414,8 +553,8 @@ theo normalized KNN density với tối đa 10 neighbor cùng Bayesian quality;
 candidate cô lập không được chiếm một day center nếu neighborhood quanh nó quá
 thưa. Ngày khả thi ngoài preferred pool
 vẫn được giữ cho full-day fallback. User/URL không bị giới hạn và food liên kết
-đi theo TravelPlace. Pass utility có relative gap 5%, trong khi hai pass
-priority vẫn exact.
+đi theo TravelPlace. Pass utility có relative gap 2%; pass priority khóa
+user/URL và pass activity-count khóa số Place lớn nhất fit được trước utility.
 Projected reserve được tính trên tổng Place + Entertainment. Preflight chỉ
 hard-fail activity khi toàn bộ feasible pool của ngày có dưới hai Place; thiếu
 Place trong preferred pool không chặn full-day fallback.
@@ -449,11 +588,13 @@ contract legacy phục vụ PlanEditor; output mới được trả riêng qua
 `plannerOutput` để biểu diễn overnight, geometry và solver metadata.
 `people` được sao chép từ Planner input để Trip Chat lưu cùng snapshot; frontend
 vì vậy vẫn hiển thị đúng quy mô nhóm sau khi tải lại chat.
-Module ưu tiên factory Beam Search trong runtime Valhalla và dùng graph hybrid
-CP-SAT làm fallback khi Beam thất bại hoặc trả lịch không đầy đủ. Beam áp hard
+Module ưu tiên factory hybrid CP-SAT trong runtime Valhalla và dùng Beam Search
+làm fallback khi CP-SAT solver hoặc route enrichment/repair thất bại. Hai nhánh
+dùng chung preprocessing và Valhalla matrix; fallback không query matrix lại.
+Beam áp hard
 rule không nối restaurant-to-restaurant,
 kiểm tra distance Q3, rating tối thiểu 3.0, review count từ Q2/P50,
-opening window và khoảng chờ tối đa 60 phút.
+opening window và khoảng chờ tối đa 45 phút.
 Khi dùng Beam, output có thêm `evaluation` gồm min/max/median adjusted Bayesian
 rating, reviewCount, distanceMeters; counter tags/styles/items; và các count
 restaurant, drinkDessert, entertainment, travelPlace cùng totalPrice.
@@ -492,7 +633,8 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 | `GeminiLlmClient.generate` / `generate_media` | `shared/llm` | system/user prompt, tùy chọn tools hoặc inline image/audio | Text response; dùng key pool chung, tối đa một request đang chạy trên mỗi key |
 | `UrlSourceRouter` | `explorer` | URL YouTube/TikTok/Instagram/website | `SourceExtractionResult` chứa artifact có provenance |
 | `PostgresUrlSourceCache` | `explorer` | canonical URL, TTL, extractor version | artifact URL chuẩn hóa từ `source_documents` |
-| `GeminiMediaAnalyzer` | `explorer` | video/audio/ảnh | OCR frame và STT chunk chạy song song |
+| `GeminiPrimaryEvidenceEvaluator` | `explorer` | transcript/caption/metadata đã chuẩn hóa | semantic facts; policy local quyết định đủ coverage hay fallback media |
+| `GeminiMediaAnalyzer` | `explorer` | video/audio/ảnh và nhánh tùy chọn | OCR frame, STT chunk hoặc chỉ OCR cho YouTube đã có transcript |
 | `WebsiteSourceExtractor` | `explorer` | URL website public | HTTP, curl-cffi Safari, Playwright, rồi Markdown trafilatura |
 | `SearchPlacesTool.search` | `shared/tools/search_places` | `PlaceSearchRequest` | `PlaceSearchResult` có status, selected, top matches, provider attempts và resolution reason |
 | `GoogleMapsPlaywrightSearch.search` | `shared/tools/search_places` | Query, canonical ADM, type hint và limit | Candidate Google Maps chuẩn hóa, lưu `pending` với provenance trước khi trả |
@@ -500,11 +642,11 @@ Hiện chưa có standalone tool registry. Các tool/adapter đang có:
 
 `SearchPlacesTool` hỗ trợ hai mode: `named_place` để xác minh identity được nêu
 tên và `requirement` để tìm venue phù hợp với món ăn, đồ uống hoặc hoạt động.
-Với named place, policy mặc định chỉ nhận top-1 khi score lớn hơn `0.82` và
-margin với top-2 ít nhất `0.08`. Match mạnh nhưng quá sát nhau trả
-`needs_review` và không dùng external provider để đoán lại branch đã có trong
-Knowledge Graph. KG miss hoặc toàn bộ match yếu mới được fallback khi caller
-cho phép và adapter external đã được cấu hình.
+PlaceChecker named place dùng unified catalog SQL theo name/alias/address/ADM
+trên năm entity type và yêu cầu `topK=1`. Có catalog row thì chọn row đó trước;
+chỉ zero-result mới gọi external khi adapter được cấu hình. Catalog error hoặc
+row conflict không được diễn giải thành zero-result. Caller khác dùng top-K lớn
+hơn vẫn theo policy score/margin chung của shared tool.
 
 Contract dùng chung của tool gồm `AdministrativeArea`, `PlaceSearchRequest`,
 `PlaceProviderCandidate`, `PlaceSearchMatch`, `ProviderAttempt` và
@@ -518,7 +660,7 @@ Google Maps mang note `verification=not_verified` mới bị chiếu thành
 đáng tin. Google provider không tự tạo `Special_Experience`, `Offer_Item` hoặc
 `Has_Style`; nó chỉ tạo `Located_In` pending tới ADM đã resolve. Package vẫn có
 `InMemoryPlaceSearch` cho test/development; runtime có database dùng PostgreSQL
-KG cùng Playwright external fallback.
+KG cùng Playwright external recovery cho named-place zero-result.
 
 Các provider interface bên ngoài hiện có:
 
@@ -529,6 +671,7 @@ Các provider interface bên ngoài hiện có:
 - `AnswerGenerator`
 - `PlaceResolver`
 - `PlaceDiscovery`
+- `SourceNoteTranslator`
 - `RoutingProvider`
 - `LlmClient`
 
@@ -578,9 +721,21 @@ Các schema dùng chung chính:
 
 Mỗi `currentPlannerOutput.days[].stops[]` có `itemId` ổn định, source-owned
 `notes={text,sourceType,sourceUrl}` và user-owned `personalNotes`. Place Checker
-chọn URL note trước; nếu không có thì dùng mô tả Google Maps/Knowledge Graph.
+đưa note đã liên kết từ raw prompt vào `personalNotes`. `notes` không chứa raw
+prompt: module chọn URL note trước, nếu không có mới dùng mô tả Google
+Maps/Knowledge Graph. Google Maps/Knowledge Graph note đã chọn được Việt hóa
+trong Place Checker trước compact handoff; `sourceType` và `sourceUrl` không đổi.
+Nếu provider dịch lỗi hoặc output không đạt guard tiếng Việt, field note nguồn
+đó bị bỏ thay vì trả nội dung tiếng Anh. Frontend áp cùng nguyên tắc ẩn source
+note chưa Việt hóa; `personalNotes` không đi qua bước dịch này.
 Endpoint personal-notes chỉ cập nhật `personalNotes` với revision check, không
 được sửa source note.
+
+Sau khi FinalItineraryPlanner tạo output đủ ngày, route giữ response
+deterministic do module tạo trong `InvokeResponse.response`. Node `finish` chỉ
+ánh xạ response có sẵn và không gọi Gemini hoặc đọc raw prompt/provider payload.
+JSON plan vẫn giữ nguyên structured note để frontend hiển thị tại card, map
+popup và màn sửa note; response text không thay thế dữ liệu note trong plan.
 Transport selection endpoint cập nhật nguyên tử `selectedTransport` trên đúng
 leg và tăng revision. UI áp policy hậu xử lý: khoảng cách dưới 1,5 km chỉ hiện
 đi bộ; các option khác chỉ hiện khi chặng không thuộc ngưỡng này và provider
@@ -624,5 +779,11 @@ answer public dùng `contentBlocks` với discriminated union cho paragraph,
 factList, verse, quote, recommendations, steps, comparison và notice. Entity
 interaction trong block dùng `inlineSpans`; chỉ span có `entityId` do backend
 resolve mới được frontend render thành Knowledge Graph preview.
+`InformationFinderOutput.metadata` công bố `generationMode`,
+`validationStatus`, `confidence`, `fallbackUsed`, `claimCount` và
+`citedSourceCount`. Các giá trị được suy ra deterministic sau citation
+validation; không chứa prompt hoặc raw provider payload. Root route trả trực
+tiếp `answer`, blocks, sources và warnings của Finder, không gọi response
+composer tại `finish`.
 
 Information Finder đã có repository nguồn riêng. Module `conversation_memory` dùng `MemoryRepository` port, PostgreSQL asyncpg adapter, migration `009_conversation_memory.sql`, optimistic concurrency control và atomic `save_memory_and_facts`. Fact extraction giữ rule deterministic; reference resolution mặc định dùng hybrid Gemini với transcript/memory có cấu trúc và `RuleBasedReferenceResolver` fallback. Target do LLM trả về chỉ hợp lệ khi trùng active fact ID, vì vậy provider không thể tự tạo địa điểm. Fact insert idempotent theo `fact_id` giúp retry cùng message không làm hỏng lượt chat. `MergePolicyEvaluator` bảo vệ confirmed facts và giữ lịch sử superseded.

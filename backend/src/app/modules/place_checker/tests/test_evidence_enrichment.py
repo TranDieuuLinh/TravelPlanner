@@ -11,9 +11,9 @@ from app.modules.place_checker.enums import (
     SimilarityMethod,
     SourceTier,
 )
-from app.modules.place_checker.evidence import EvidenceEnrichmentService
+from app.modules.place_checker.resolution.enrichment import EvidenceEnrichmentService
 from app.modules.place_checker.errors import PlaceCatalogUnavailableError
-from app.modules.place_checker.resolution_contract import (
+from app.modules.place_checker.resolution.contract import (
     CatalogPlace,
     IdentityResolutionBatch,
     PlaceMatchOption,

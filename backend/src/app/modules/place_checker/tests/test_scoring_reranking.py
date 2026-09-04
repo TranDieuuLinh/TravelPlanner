@@ -8,15 +8,15 @@ from app.modules.place_checker.enums import (
     RetrievalSourceKind,
     VerificationStatus,
 )
-from app.modules.place_checker.resolution_contract import PlaceMetadata
-from app.modules.place_checker.retrieval_contract import (
+from app.modules.place_checker.resolution.contract import PlaceMetadata
+from app.modules.place_checker.retrieval.contract import (
     GapRetrievalResult,
     RetrievalBatch,
     RetrievalEvidence,
     RetrievedCandidate,
     TargetedRetrievalQuery,
 )
-from app.modules.place_checker.scoring import WEIGHTS, CandidateScoringService
+from app.modules.place_checker.scoring.service import WEIGHTS, CandidateScoringService
 from app.modules.place_checker.tests.analysis_fixtures import (
     analysis_context,
     evaluated_place,
@@ -170,15 +170,18 @@ def test_reputation_is_benchmarked_per_category_and_travel_has_highest_weight() 
     )
     by_category = {item.candidate.category: item for item in result.ranked}
 
-    assert by_category["travel_place"].components.rating_quality > by_category[
-        "restaurant"
-    ].components.rating_quality
-    assert by_category["restaurant"].components.rating_quality > by_category[
-        "drink_dessert"
-    ].components.rating_quality
-    assert by_category["travel_place"].components.review_quality > by_category[
-        "restaurant"
-    ].components.review_quality
+    assert (
+        by_category["travel_place"].components.rating_quality
+        > by_category["restaurant"].components.rating_quality
+    )
+    assert (
+        by_category["restaurant"].components.rating_quality
+        > by_category["drink_dessert"].components.rating_quality
+    )
+    assert (
+        by_category["travel_place"].components.review_quality
+        > by_category["restaurant"].components.review_quality
+    )
 
 
 def test_penalty_is_bounded() -> None:
@@ -209,12 +212,12 @@ def test_penalty_is_bounded() -> None:
     assert "geographic_outlier" in result.penalties
 
 
-def test_retrieved_alcohol_candidate_is_hard_filtered_via_alias() -> None:
+def test_retrieved_candidate_is_hard_filtered_by_canonical_avoid_tag() -> None:
     context = analysis_context()
-    context.avoids.append("alcohol")
+    context.avoids.append("rượu bia")
 
     batch = CandidateScoringService(now=NOW).rank(
-        retrieval(candidate("cocktail", tags=["item:Cocktail"])),
+        retrieval(candidate("cocktail", tags=["rượu bia"])),
         context,
         empty_places(),
     )
@@ -223,8 +226,8 @@ def test_retrieved_alcohol_candidate_is_hard_filtered_via_alias() -> None:
     assert batch.excluded[0].exclusion_reasons == ["avoid_conflict"]
 
 
-def test_keyword_fallback_receives_real_ranking_penalty() -> None:
-    fallback = candidate("fallback", tags=["museum", "retrieval:keyword_fallback"])
+def test_catalog_tags_do_not_need_a_keyword_fallback_marker() -> None:
+    fallback = candidate("catalog", tags=["museum"])
 
     result = (
         CandidateScoringService(now=NOW)
@@ -236,7 +239,7 @@ def test_keyword_fallback_receives_real_ranking_penalty() -> None:
         .ranked[0]
     )
 
-    assert result.penalties["keyword_fallback"] == 0.08
+    assert "keyword_fallback" not in result.penalties
 
 
 def test_low_budget_prefers_low_cost_candidate() -> None:
@@ -275,9 +278,7 @@ def test_general_place_without_usable_cost_defaults_to_free() -> None:
         empty_places(),
     )
 
-    assert [item.candidate.candidate_key for item in result.ranked] == [
-        "unknown-price"
-    ]
+    assert [item.candidate.candidate_key for item in result.ranked] == ["unknown-price"]
     assert result.ranked[0].components.budget_fit == 1
 
 
@@ -308,25 +309,41 @@ def test_permanently_closed_candidate_is_filtered_before_ranking() -> None:
     assert "permanently_closed" in result.excluded[0].exclusion_reasons
 
 
-def test_diversity_reranking_moves_different_category_forward() -> None:
+def test_diversity_reranking_moves_new_canonical_tag_forward() -> None:
     result = CandidateScoringService(now=NOW).rank(
         retrieval(
-            candidate("museum_a", category="museum", confidence=0.99),
-            candidate("museum_b", category="museum", confidence=0.97),
-            candidate("garden", category="garden", confidence=0.90),
+            candidate(
+                "culture_a",
+                category="travel_place",
+                confidence=0.99,
+                tags=["Văn hóa"],
+            ),
+            candidate(
+                "culture_b",
+                category="travel_place",
+                confidence=0.97,
+                tags=["Văn hóa"],
+            ),
+            candidate(
+                "nature",
+                category="travel_place",
+                confidence=0.90,
+                tags=["thiên nhiên"],
+            ),
         ),
         analysis_context(),
         empty_places(),
     )
 
-    keys = [item.candidate.candidate_key for item in result.ranked]
-    first_two_categories = {
-        result.ranked[0].candidate.category,
-        result.ranked[1].candidate.category,
+    assert {item.selection_tags[0] for item in result.ranked[:2]} == {
+        "Văn hóa",
+        "thiên nhiên",
     }
-    assert first_two_categories == {"museum", "garden"}
-    assert keys[2] in {"museum_a", "museum_b"}
-    assert "repeated_category" in result.ranked[2].rerank_reasons
+    assert result.ranked[2].candidate.candidate_key == "culture_b"
+    assert result.ranked[0].tag_diversity_score == 1
+    assert result.ranked[1].tag_diversity_score == 1
+    assert result.ranked[2].tag_diversity_score == 0.5
+    assert "repeated_canonical_tag" in result.ranked[2].rerank_reasons
 
 
 def test_same_geographic_cluster_is_kept_without_a_penalty() -> None:
@@ -344,13 +361,7 @@ def test_same_geographic_cluster_is_kept_without_a_penalty() -> None:
     )
 
     assert "same_geographic_cluster" in result.ranked[1].rerank_reasons
-    assert (
-        round(
-            result.ranked[1].final_score - result.ranked[1].rerank_score,
-            6,
-        )
-        == 0.08
-    )
+    assert result.ranked[1].final_score == result.ranked[1].rerank_score
 
 
 def test_distant_geographic_cluster_is_penalized() -> None:

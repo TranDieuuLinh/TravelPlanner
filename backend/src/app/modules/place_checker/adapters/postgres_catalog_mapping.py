@@ -5,7 +5,7 @@ from typing import Any
 
 from app.modules.place_checker.enums import CostTier, OperationalStatus
 from app.modules.place_checker.relationship_contract import PlaceRelationshipEvidence
-from app.modules.place_checker.resolution_contract import PlaceMetadata
+from app.modules.place_checker.resolution.contract import PlaceMetadata
 from app.shared.contracts.place import Coordinates
 from app.shared.contracts.source_note import SourceNote
 from app.shared.tools.search_places import AdministrativeArea, PlaceProviderCandidate
@@ -261,13 +261,21 @@ class PostgresCatalogMappingMixin:
             key=lambda relationship: relationship.priority or 0,
             reverse=True,
         )
-        style_durations: list[int] = []
+        style_duration: int | None = None
+        style_window: Any = None
         for relationship in styles:
             properties = relationship.properties
-            if duration := cls._duration(properties.get("time_duration")):
-                style_durations.append(duration)
-        if not merged.get("time_duration") and style_durations:
-            merged["time_duration"] = f"PT{max(style_durations)}M"
+            if style_duration is None:
+                style_duration = cls._duration(properties.get("time_duration"))
+            if style_window is None and properties.get("time_windows") not in (
+                None,
+                "",
+            ):
+                style_window = properties["time_windows"]
+        if not merged.get("time_duration") and style_duration is not None:
+            merged["time_duration"] = f"PT{style_duration}M"
+        if not merged.get("time_windows") and style_window is not None:
+            merged["time_windows"] = style_window
         return merged
 
     @staticmethod
@@ -302,10 +310,13 @@ class PostgresCatalogMappingMixin:
     def _opening_hours(values: dict[str, Any]) -> list[str] | None:
         if values.get("time_windows"):
             try:
-                result = [
-                    f"{item['start']}-{item['end']}"
-                    for item in json.loads(values["time_windows"])
-                ]
+                raw_windows = values["time_windows"]
+                windows = (
+                    json.loads(raw_windows)
+                    if isinstance(raw_windows, str)
+                    else raw_windows
+                )
+                result = [f"{item['start']}-{item['end']}" for item in windows]
                 if result:
                     return result
             except (TypeError, ValueError, KeyError):

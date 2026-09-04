@@ -1,5 +1,7 @@
 from typing import Any, Protocol
 
+from app.modules.plan_editor.public import NaturalLanguagePlanEdit
+
 from app.modules.trip_chat.contract import (
     AccommodationUpdateStatus,
     PlanNoteUpdateStatus,
@@ -8,6 +10,17 @@ from app.modules.trip_chat.contract import (
     TripChat,
     TripChatSummary,
 )
+
+
+class DayPlanRepairer(Protocol):
+    async def repair(
+        self,
+        output: dict[str, Any] | None,
+        *,
+        day: int,
+        item_id: str,
+        replacement: dict[str, Any],
+    ) -> dict[str, Any]: ...
 
 
 class TripChatRepository(Protocol):
@@ -28,6 +41,17 @@ class TripChatRepository(Protocol):
         itinerary: dict[str, Any] | None,
         planner_output: dict[str, Any] | None,
     ) -> TripChat | None: ...
+
+    async def append_plan_edit_exchange(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        user_content: str,
+        assistant: dict[str, Any],
+        edit: NaturalLanguagePlanEdit,
+    ) -> PlanItemMutationStatus: ...
 
     async def update_personal_notes(
         self,
@@ -64,6 +88,25 @@ class TripChatRepository(Protocol):
     async def add_plan_item(
         self, user_id: int, chat_id: str, *, expected_revision: int,
         day: int, item: dict[str, Any], position: int | None = None,
+    ) -> PlanItemMutationStatus: ...
+
+    async def update_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str, changes: dict[str, Any],
+    ) -> PlanItemMutationStatus: ...
+
+    async def replace_plan_output(
+        self,
+        user_id: int,
+        chat_id: str,
+        *,
+        expected_revision: int,
+        output: dict[str, Any],
+    ) -> PlanItemMutationStatus: ...
+
+    async def delete_plan_item(
+        self, user_id: int, chat_id: str, *, expected_revision: int,
+        day: int, item_id: str,
     ) -> PlanItemMutationStatus: ...
 
     async def confirm_unscheduled_place(

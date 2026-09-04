@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { apiFetch } from "@/shared/api/client";
@@ -48,6 +48,11 @@ const entityPreviewLoader = createEntityPreviewLoader((entityId) =>
   apiFetch<EntityPreview>(entityPreviewPath(entityId)),
 );
 
+function markdownUrlTransform(url: string): string {
+  if (url.startsWith("travel-entity://entity/")) return url;
+  return defaultUrlTransform(url);
+}
+
 function labelFromChildren(children: ReactNode): string {
   return String(children ?? "").replace(/\s+/g, " ").trim();
 }
@@ -85,11 +90,7 @@ function EntityPreviewCard({
       {data.imageUrl ? (
         <img alt={data.name} className="entityHoverImage" src={data.imageUrl} />
       ) : null}
-      <span className="entityHoverBody">
-        <strong>{data.name}</strong>
-        <small>{data.description || "Xem thông tin chi tiết"}</small>
-      </span>
-      <span className="entityHoverHint">Nhấn để xem thêm</span>
+      {!data.imageUrl ? <span className="entityHoverEmpty">Chưa có ảnh</span> : null}
     </button>
   );
 }
@@ -137,15 +138,23 @@ function EntityDetailDialog({
 
 function MarkdownAnchor({ children, href, ...props }: EntityLinkProps) {
   const isExternalSource = typeof href === "string" && /^https?:\/\//i.test(href);
+  const sourceLabel = labelFromChildren(children);
   return (
     <a
       {...props}
+      aria-label={isExternalSource ? `Mở nguồn tham khảo ${sourceLabel}` : props["aria-label"]}
       className={`${props.className ?? ""}${isExternalSource ? " citationSource" : ""}`.trim()}
       href={href}
       rel="noreferrer"
       target="_blank"
+      title={isExternalSource ? `Nguồn tham khảo ${sourceLabel}` : props.title}
     >
-      {children}
+      {isExternalSource ? (
+        <>
+          <span aria-hidden="true" className="citationSourceIcon">🔗</span>
+          <span className="srOnly">{sourceLabel}</span>
+        </>
+      ) : children}
     </a>
   );
 }
@@ -275,21 +284,36 @@ export function MarkdownMessage({
     return () => window.clearInterval(timer);
   }, [content, streaming]);
 
-  const citationContent = visibleContent.replace(
-    /\[(\d+)\](?!\()/g,
-    (match, number: string) => {
-      const source = sources[Number(number) - 1];
-      const sourceUrl = source?.url?.trim();
-      if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return match;
-      return `[${number}](<${sourceUrl}>)`;
-    },
-  );
+  const citationContent = visibleContent
+    .replace(
+      /\[([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?:\s*,\s*[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})*)\]/gi,
+      (match, ids: string) => {
+        const links = ids.split(/\s*,\s*/).flatMap((sourceId) => {
+          const source = sources.find((item) => item.sourceId === sourceId);
+          const sourceUrl = source?.url?.trim();
+          if (!source || !sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return [];
+          const number = sources.findIndex((item) => item.sourceId === sourceId) + 1;
+          return [`[${number}](<${sourceUrl}>)`];
+        });
+        return links.length ? links.join(", ") : match;
+      },
+    )
+    .replace(
+      /\[(\d+)\](?!\()/g,
+      (match, number: string) => {
+        const source = sources[Number(number) - 1];
+        const sourceUrl = source?.url?.trim();
+        if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) return match;
+        return `[${number}](<${sourceUrl}>)`;
+      },
+    );
   return (
     <div className="markdownMessage">
       <ReactMarkdown
         components={{ a: (props) => <EntityLink {...props} /> }}
         rehypePlugins={[[rehypeSanitize, markdownSchema]]}
         remarkPlugins={[remarkGfm]}
+        urlTransform={markdownUrlTransform}
       >
         {citationContent}
       </ReactMarkdown>

@@ -30,18 +30,19 @@ import {
   addTripChatItem,
   calculateDayDirections,
   bootstrapTripChats,
-  confirmTripChatUnscheduledPlace,
   createTripChat,
   deleteAllTripChats,
   deleteTripChat,
   enrichTripChatRoutes,
   getTripChat,
   listTripChats,
+  listSubplaces,
   listUrlImportJobs,
   removeTripChatItem,
   removeTripChatAccommodation,
   removeTripChatUnscheduledPlace,
   reorderTripChatItem,
+  replaceTripChatItem,
   searchPlaces,
   selectTripChatTransportOption,
   updateTripChatIntent,
@@ -49,6 +50,8 @@ import {
   updateTripChatItemPersonalNotes,
   updateTripChatAccommodation,
   type PlaceSuggestion,
+  type SubplaceGroup,
+  type SubplaceSummary,
   type ExplorerContext,
   type ExploreResponse,
   type TransportOption,
@@ -91,6 +94,14 @@ import {
 import { formatPlannerMoney } from "@/features/planner/lib/planner-budget";
 import { planItemMapKey } from "@/features/planner/lib/plan-map-key";
 import { rebaseItineraryItemOrder } from "@/features/planner/lib/itinerary-order";
+import {
+  dayRouteTopologyKey,
+  diffDayRoutes,
+  mergeDayRouteLegs,
+  normalizeLegForEdge,
+  withDayTransportLegs,
+  type DayRouteEndpoint,
+} from "@/features/planner/lib/incremental-day-routes";
 import {
   itinerarySearchResultKey,
   searchItineraryPlaces,
@@ -171,6 +182,11 @@ import { TripProjectSidebar } from "@/features/planner/components/TripProjectSid
 import { GuidedIntakeDialog } from "@/features/planner/components/GuidedIntakeDialog";
 import { TransportFareInline } from "@/features/planner/components/TransportFareInline";
 import {
+  PlannerSubplaceFocus,
+  PlannerSubplacePreview,
+  subplaceMapKey,
+} from "@/features/planner/components/PlannerSubplaces";
+import {
   ChevronDownIcon,
   HistoryMenuButton,
   MapPinIcon,
@@ -249,6 +265,12 @@ type DirectionStop = {
   latitude: number;
   longitude: number;
   mapKey: string | null;
+};
+
+type ActiveSubplaceView = {
+  parentPlaceId: string;
+  parentName: string;
+  day: number;
 };
 
 const ACCOMMODATION_MAP_KEY = "plan-accommodation";
@@ -492,6 +514,11 @@ function Planner() {
   >(null);
   const orientationTrackingRef = useRef(false);
   const [plan, setPlan] = useState<TravelPlan | null>(null);
+  const [subplaceGroups, setSubplaceGroups] = useState<
+    Record<string, SubplaceGroup>
+  >({});
+  const [activeSubplaceView, setActiveSubplaceView] =
+    useState<ActiveSubplaceView | null>(null);
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>("idle");
   const [loading, setLoading] = useState(false);
   const [backgroundPlanning, setBackgroundPlanning] = useState(false);
@@ -1289,8 +1316,6 @@ function Planner() {
   const [editSearchCompleted, setEditSearchCompleted] = useState(false);
   const [editSearchFailed, setEditSearchFailed] = useState(false);
   const [mutatingItem, setMutatingItem] = useState(false);
-  const autoResolvedUnscheduledKeysRef = useRef(new Set<string>());
-  const autoResolvingUnscheduledRef = useRef(false);
   const [noteEditor, setNoteEditor] = useState<{
     target?: "item" | "accommodation";
     day: number;
@@ -1638,7 +1663,7 @@ function Planner() {
     const deletedItem = plan.days
       .find((planDay) => planDay.day === day)
       ?.items.find((item) => item.itemId === itemId);
-    setPlan({
+    const optimisticPlan: TravelPlan = {
       ...plan,
       days: plan.days.map((planDay) =>
         planDay.day !== day
@@ -1656,7 +1681,8 @@ function Planner() {
               ),
             }
       ),
-    });
+    };
+    setPlan(optimisticPlan);
     setMutatingItem(true);
     setError("");
     try {
@@ -1667,7 +1693,14 @@ function Planner() {
         itemId,
       });
       setChatRevision(updatedChat.revision);
-      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+      if (updatedChat.currentPlan) {
+        setPlan(updatedChat.currentPlan);
+        void refreshAffectedPlanDayRoutes(
+          previousPlan,
+          updatedChat.currentPlan,
+          day,
+        );
+      }
       showPlannerToast("Đã xóa địa điểm");
     } catch (err: any) {
       setPlan(previousPlan);
@@ -1710,6 +1743,7 @@ function Planner() {
       return;
     setMutatingItem(true);
     setError("");
+    const previousPlan = plan;
     try {
       if (editingItem.target === "accommodation") {
         const updatedChat = await updateTripChatAccommodation({
@@ -1724,7 +1758,18 @@ function Planner() {
           },
         });
         setChatRevision(updatedChat.revision);
-        if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
+        if (updatedChat.currentPlan) {
+          setPlan(updatedChat.currentPlan);
+          if (previousPlan) {
+            for (const planDay of updatedChat.currentPlan.days) {
+              void refreshAffectedPlanDayRoutes(
+                previousPlan,
+                updatedChat.currentPlan,
+                planDay.day,
+              );
+            }
+          }
+        }
         showPlannerToast("Đã lưu nơi lưu trú");
         setEditingItem(null);
         setSelectedEditSuggestion(null);
@@ -1732,22 +1777,55 @@ function Planner() {
         return;
       }
       if (editingItem.day == null || !editingItem.itemId) return;
-      const updatedChat = await updateTripChatItem({
-        chatId: activeChatId,
-        expectedRevision: chatRevision,
-        day: editingItem.day,
-        itemId: editingItem.itemId,
-        item: {
-          placeId: selectedEditSuggestion?.placeId,
-          name: editingItem.name.trim(),
-          address: selectedEditSuggestion?.address,
-          latitude: selectedEditSuggestion?.latitude,
-          longitude: selectedEditSuggestion?.longitude,
-        },
-      });
+      const originalItem = previousPlan?.days
+        .find((candidate) => candidate.day === editingItem.day)
+        ?.items.find((candidate) => candidate.itemId === editingItem.itemId);
+      const replacesIdentity = Boolean(
+        selectedEditSuggestion
+        && originalItem
+        && (
+          selectedEditSuggestion.placeId !== originalItem.placeId
+          || selectedEditSuggestion.latitude !== originalItem.latitude
+          || selectedEditSuggestion.longitude !== originalItem.longitude
+        )
+      );
+      const updatedChat = replacesIdentity && selectedEditSuggestion
+        ? await replaceTripChatItem({
+            chatId: activeChatId,
+            expectedRevision: chatRevision,
+            day: editingItem.day,
+            itemId: editingItem.itemId,
+            place: selectedEditSuggestion,
+          })
+        : await updateTripChatItem({
+            chatId: activeChatId,
+            expectedRevision: chatRevision,
+            day: editingItem.day,
+            itemId: editingItem.itemId,
+            item: {
+              placeId: selectedEditSuggestion?.placeId,
+              name: editingItem.name.trim(),
+              address: selectedEditSuggestion?.address,
+              latitude: selectedEditSuggestion?.latitude,
+              longitude: selectedEditSuggestion?.longitude,
+            },
+          });
       setChatRevision(updatedChat.revision);
-      if (updatedChat.currentPlan) setPlan(updatedChat.currentPlan);
-      showPlannerToast("Đã lưu thay đổi");
+      if (updatedChat.currentPlan) {
+        setPlan(updatedChat.currentPlan);
+        if (previousPlan && !replacesIdentity) {
+          void refreshAffectedPlanDayRoutes(
+            previousPlan,
+            updatedChat.currentPlan,
+            editingItem.day,
+          );
+        }
+      }
+      showPlannerToast(
+        replacesIdentity
+          ? `Đã thay địa điểm và tính lại Ngày ${editingItem.day}`
+          : "Đã lưu thay đổi",
+      );
       setEditingItem(null);
       setSelectedEditSuggestion(null);
       setEditPlaceSuggestions([]);
@@ -1820,6 +1898,7 @@ function Planner() {
     if (addingDay == null || !activeChatId || !selectedSuggestion) return;
     setMutatingItem(true);
     setError("");
+    const previousPlan = plan;
     try {
       const updatedChat = await addTripChatItem({
         chatId: activeChatId,
@@ -1844,7 +1923,13 @@ function Planner() {
       setChatRevision(updatedChat.revision);
       if (updatedChat.currentPlan) {
         setPlan(updatedChat.currentPlan);
-        void refreshPlanDayRoutes(updatedChat.currentPlan, addingDay);
+        if (previousPlan) {
+          void refreshAffectedPlanDayRoutes(
+            previousPlan,
+            updatedChat.currentPlan,
+            addingDay,
+          );
+        }
       }
       showPlannerToast("Đã thêm địa điểm");
       setAddingDay(null);
@@ -1857,6 +1942,151 @@ function Planner() {
     } finally {
       setMutatingItem(false);
     }
+  }
+
+  async function refreshAffectedPlanDayRoutes(
+    previousPlan: TravelPlan,
+    nextPlan: TravelPlan,
+    dayNumber: number,
+  ): Promise<boolean> {
+    const routeDiff = diffDayRoutes(previousPlan, nextPlan, dayNumber);
+    const targetTopology = dayRouteTopologyKey(nextPlan, dayNumber);
+    const applyLegsIfCurrent = (transportLegs: TransportLeg[]) => {
+      setPlan((current) => {
+        if (
+          !current
+          || dayRouteTopologyKey(current, dayNumber) !== targetTopology
+        ) {
+          return current;
+        }
+        return withDayTransportLegs(current, dayNumber, transportLegs);
+      });
+    };
+
+    // Remove stale edges immediately while keeping every still-valid route,
+    // including a transport option the user selected on that route.
+    applyLegsIfCurrent(mergeDayRouteLegs(routeDiff, new Map()));
+    if (routeDiff.affectedEdges.length === 0) return true;
+
+    const hasCoordinates = (
+      point: DayRouteEndpoint,
+    ): point is DayRouteEndpoint & { latitude: number; longitude: number } =>
+      Number.isFinite(point.latitude) && Number.isFinite(point.longitude);
+    const resolvedPoints = new Map<
+      string,
+      Promise<DayRouteEndpoint>
+    >();
+    const resolvePoint = (point: DayRouteEndpoint): Promise<DayRouteEndpoint> => {
+      const cached = resolvedPoints.get(point.identityKey);
+      if (cached) return cached;
+      const pending = (async () => {
+        if (hasCoordinates(point)) return point;
+        try {
+          const matches = await searchPlaces(point.name, nextPlan.destination, 3);
+          const match = matches.find(
+            (candidate) =>
+              Number.isFinite(candidate.latitude)
+              && Number.isFinite(candidate.longitude),
+          );
+          if (match) {
+            return {
+              ...point,
+              address: match.address ?? point.address,
+              latitude: match.latitude ?? null,
+              longitude: match.longitude ?? null,
+            };
+          }
+        } catch {
+          // The edge remains absent if neither saved nor searched coordinates exist.
+        }
+        return point;
+      })();
+      resolvedPoints.set(point.identityKey, pending);
+      return pending;
+    };
+    const estimatedDistanceMeters = (
+      from: { latitude: number; longitude: number },
+      to: { latitude: number; longitude: number },
+    ) => {
+      const earthRadius = 6_371_000;
+      const radians = (value: number) => (value * Math.PI) / 180;
+      const dLat = radians(to.latitude - from.latitude);
+      const dLon = radians(to.longitude - from.longitude);
+      const value = Math.sin(dLat / 2) ** 2
+        + Math.cos(radians(from.latitude))
+        * Math.cos(radians(to.latitude))
+        * Math.sin(dLon / 2) ** 2;
+      return Math.max(
+        0,
+        Math.round(2 * earthRadius * Math.asin(Math.sqrt(value))),
+      );
+    };
+    const departureTime = new Date().toISOString();
+    const calculated = await Promise.all(
+      routeDiff.affectedEdges.map(async (edge) => {
+        const [from, to] = await Promise.all([
+          resolvePoint(edge.from),
+          resolvePoint(edge.to),
+        ]);
+        if (!hasCoordinates(from) || !hasCoordinates(to)) return null;
+        let routeLeg: TransportLeg | null = null;
+        try {
+          const legs = await calculateDayDirections({
+            origin: {
+              latitude: from.latitude,
+              longitude: from.longitude,
+              name: from.name,
+            },
+            destinations: [{
+              itemId: to.itemId,
+              name: to.name,
+              address: to.address,
+              latitude: to.latitude,
+              longitude: to.longitude,
+            }],
+            departureTime,
+          });
+          const candidate = legs[0];
+          if (
+            legs.length === 1
+            && candidate.geometryCoordinates.length >= 2
+            && candidate.geometryCoordinates.every((coordinate) =>
+              Number.isFinite(coordinate[0]) && Number.isFinite(coordinate[1])
+            )
+          ) {
+            routeLeg = normalizeLegForEdge(candidate, edge);
+          }
+        } catch {
+          // A clearly marked local estimate keeps only this edge drawable.
+        }
+        if (!routeLeg) {
+          const distanceMeters = estimatedDistanceMeters(from, to);
+          routeLeg = normalizeLegForEdge({
+            mode: "car",
+            distanceMeters,
+            estimatedDurationMinutes: Math.max(1, Math.ceil(distanceMeters / 350)),
+            geometryCoordinates: [
+              [from.latitude, from.longitude],
+              [to.latitude, to.longitude],
+            ],
+            source: "geodesic_estimate",
+            verified: false,
+            fromItemId: from.itemId,
+            toItemId: to.itemId,
+            fromPlace: from.name,
+            toPlace: to.name,
+          }, edge);
+        }
+        return [edge.key, routeLeg] as const;
+      }),
+    );
+    const recalculatedLegs = new Map(
+      calculated.filter(
+        (entry): entry is readonly [string, TransportLeg] => entry !== null,
+      ),
+    );
+    applyLegsIfCurrent(mergeDayRouteLegs(routeDiff, recalculatedLegs));
+    return recalculatedLegs.size === routeDiff.affectedEdges.length;
   }
 
   async function refreshPlanDayRoutes(
@@ -2111,31 +2341,40 @@ function Planner() {
     setReorderingDay(day);
     setError("");
     let rollbackPlan = plan;
+    let routeSourcePlan = plan;
     let expectedRevision = chatRevision;
     let requestedItemIds = newOrderedItemIds;
 
     const reorderPlan = (
       sourcePlan: TravelPlan,
       itemIds: string[]
-    ): TravelPlan => ({
-      ...sourcePlan,
-      days: sourcePlan.days.map((planDay) => {
-        if (planDay.day !== day) return planDay;
-        const itemsMap = new Map(
-          planDay.items.map((item) => [item.itemId, item])
-        );
-        const reorderedItems = itemIds
-          .map((itemId) => itemsMap.get(itemId))
-          .filter((item): item is (typeof planDay.items)[number] =>
-            Boolean(item)
+    ): TravelPlan => {
+      const reorderedPlan = {
+        ...sourcePlan,
+        days: sourcePlan.days.map((planDay) => {
+          if (planDay.day !== day) return planDay;
+          const itemsMap = new Map(
+            planDay.items.map((item) => [item.itemId, item])
           );
-        planDay.items.forEach((item) => {
-          if (item.itemId && !itemIds.includes(item.itemId))
-            reorderedItems.push(item);
-        });
-        return { ...planDay, items: reorderedItems, transportLegs: [] };
-      }),
-    });
+          const reorderedItems = itemIds
+            .map((itemId) => itemsMap.get(itemId))
+            .filter((item): item is (typeof planDay.items)[number] =>
+              Boolean(item)
+            );
+          planDay.items.forEach((item) => {
+            if (item.itemId && !itemIds.includes(item.itemId))
+              reorderedItems.push(item);
+          });
+          return { ...planDay, items: reorderedItems };
+        }),
+      };
+      const routeDiff = diffDayRoutes(sourcePlan, reorderedPlan, day);
+      return withDayTransportLegs(
+        reorderedPlan,
+        day,
+        mergeDayRouteLegs(routeDiff, new Map()),
+      );
+    };
 
     setPlan(reorderPlan(plan, requestedItemIds));
 
@@ -2150,7 +2389,11 @@ function Planner() {
           });
           applyTripChat(updatedChat);
           if (updatedChat.currentPlan) {
-            void refreshPlanDayRoutes(updatedChat.currentPlan, day);
+            void refreshAffectedPlanDayRoutes(
+              routeSourcePlan,
+              updatedChat.currentPlan,
+              day,
+            );
           }
           showPlannerToast(`Đã cập nhật thứ tự Ngày ${day}`);
           return;
@@ -2169,6 +2412,7 @@ function Planner() {
           if (!latestChat.currentPlan) return;
 
           rollbackPlan = latestChat.currentPlan;
+          routeSourcePlan = latestChat.currentPlan;
           expectedRevision = latestChat.revision;
           const latestDay = latestChat.currentPlan.days.find(
             (planDay) => planDay.day === day
@@ -2349,6 +2593,64 @@ function Planner() {
         : null,
     [plan]
   );
+  const subplaceParentIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (displayedPlan?.days ?? []).flatMap((day) =>
+            day.items.flatMap((item) =>
+              item.placeId &&
+              (item.ontologyType === "TravelPlace" || item.ontologyType == null)
+                ? [item.placeId]
+                : []
+            )
+          )
+        )
+      ),
+    [displayedPlan]
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (!user || subplaceParentIds.length === 0) {
+      setSubplaceGroups({});
+      setActiveSubplaceView(null);
+      return () => controller.abort();
+    }
+
+    void listSubplaces(subplaceParentIds, { signal: controller.signal })
+      .then((groups) => {
+        if (controller.signal.aborted) return;
+        const nextGroups = Object.fromEntries(
+          groups.map((group) => [group.parentPlaceId, group])
+        );
+        setSubplaceGroups(nextGroups);
+        setActiveSubplaceView((current) =>
+          current && nextGroups[current.parentPlaceId] ? current : null
+        );
+      })
+      .catch((caught) => {
+        if (controller.signal.aborted) return;
+        setSubplaceGroups({});
+        setActiveSubplaceView(null);
+        if (caught instanceof APIError && caught.status === 401) return;
+      });
+
+    return () => controller.abort();
+  }, [subplaceParentIds, user]);
+
+  const activeSubplaceGroup = activeSubplaceView
+    ? subplaceGroups[activeSubplaceView.parentPlaceId] ?? null
+    : null;
+  const displayedUnscheduledPlaces = useMemo(
+    () =>
+      (displayedPlan?.unscheduledPlaces ?? []).filter(
+        (place) =>
+          place.reasonCode !== "missing_canonical_identity" &&
+          place.reasonCode !== "identity_needs_review",
+      ),
+    [displayedPlan],
+  );
   const awaitingInitialPlan =
     !displayedPlan && (initialPlanningActive || backgroundPlanning || loading);
 
@@ -2388,16 +2690,26 @@ function Planner() {
   useEffect(() => {
     setActivePlanDay((current) => {
       if (current == null) return displayedPlan?.days[0]?.day ?? null;
-      if (current === UNSCHEDULED_PLAN_DAY) return current;
+      if (current === UNSCHEDULED_PLAN_DAY) {
+        return displayedUnscheduledPlaces.length > 0
+          ? current
+          : displayedPlan?.days[0]?.day ?? null;
+      }
       if (displayedPlan?.days.some((day) => day.day === current))
         return current;
       return displayedPlan?.days[0]?.day ?? null;
     });
-  }, [displayedPlan]);
+  }, [displayedPlan, displayedUnscheduledPlaces]);
 
   useEffect(() => {
     setSelectedMapRouteKey(null);
   }, [activePlanDay, directionsActive]);
+
+  useEffect(() => {
+    setActiveSubplaceView((current) =>
+      current && current.day !== activePlanDay ? null : current
+    );
+  }, [activePlanDay]);
 
   useEffect(() => {
     directionsPendingLocationRef.current = false;
@@ -2477,6 +2789,35 @@ function Planner() {
   const mapPlaces = useMemo<PlannerMapPlace[]>(() => {
     const startDate =
       displayedExploreResult?.explorer.tripIntent.timing.startDate;
+    if (activeSubplaceView && activeSubplaceGroup) {
+      return activeSubplaceGroup.items.flatMap((subplace, index) =>
+        typeof subplace.latitude === "number" &&
+        typeof subplace.longitude === "number"
+          ? [
+              {
+                destination: `Bên trong ${activeSubplaceView.parentName}`,
+                name: subplace.name,
+                category: "attraction" as const,
+                placeId: subplace.placeId,
+                address: subplace.address,
+                latitude: subplace.latitude,
+                longitude: subplace.longitude,
+                imageUrl: subplace.imageUrl,
+                source: "knowledge_graph",
+                mapKey: subplaceMapKey(subplace.placeId),
+                mapOrder: index + 1,
+                mapKind: "subplace" as const,
+                dayColorKey: dateKeyForTripDay(
+                  startDate,
+                  activeSubplaceView.day
+                ),
+                dayLabel: "Điểm bên trong",
+                timeWindow: "Vị trí tham khảo",
+              },
+            ]
+          : []
+      );
+    }
     const stopPlaces = tripPlaces
       .filter((item) => activePlanDay == null || item.day === activePlanDay)
       .flatMap((item) =>
@@ -2552,6 +2893,8 @@ function Planner() {
     ];
   }, [
     activePlanDay,
+    activeSubplaceGroup,
+    activeSubplaceView,
     accommodationRoutePositionsByDay,
     displayedPlan,
     displayedExploreResult?.explorer.tripIntent.timing.startDate,
@@ -2663,7 +3006,7 @@ function Planner() {
     [dayDirectionLegs, selectedDirectionOptionKeys]
   );
   const mapRoutes = useMemo<PlannerMapRoute[]>(() => {
-    if (!displayedPlan) return [];
+    if (!displayedPlan || activeSubplaceView) return [];
     const startDate =
       displayedExploreResult?.explorer.tripIntent.timing.startDate;
     const itineraryRoutes: PlannerMapRoute[] = displayedPlan.days
@@ -2735,6 +3078,7 @@ function Planner() {
     return itineraryRoutes;
   }, [
     activePlanDay,
+    activeSubplaceView,
     directionsActive,
     directionsSearchOpen,
     directionsStatus,
@@ -3483,6 +3827,31 @@ function Planner() {
     setPlaceFocusRequest((current) => current + 1);
   }
 
+  function openSubplaceView(
+    day: number,
+    parentPlaceId: string,
+    parentName: string
+  ) {
+    setActivePlanDay(day);
+    setActiveSubplaceView({
+      parentPlaceId,
+      parentName,
+      day,
+    });
+    setSelectedMapPlaceKey(null);
+    setSelectedMapRouteKey(null);
+    clearDayDirections();
+  }
+
+  function closeSubplaceView() {
+    setActiveSubplaceView(null);
+    setSelectedMapPlaceKey(null);
+  }
+
+  function focusSubplaceOnMap(subplace: SubplaceSummary) {
+    zoomPlaceOnMap(subplaceMapKey(subplace.placeId));
+  }
+
   function selectItinerarySearchResult(result: ItinerarySearchResult) {
     const item = displayedPlan?.days.find((day) => day.day === result.day)
       ?.items[result.itemIndex];
@@ -3954,6 +4323,9 @@ function Planner() {
           id: Date.now() + 1,
           role: "assistant",
           text: generation.response.response,
+          contentBlocks: generation.response.contentBlocks,
+          sources: generation.response.sources,
+          suggestions: generation.response.suggestions,
         },
       ]);
     } catch (caught) {
@@ -4278,7 +4650,7 @@ function Planner() {
       !event.nativeEvent.isComposing
     ) {
       event.preventDefault();
-      if (!loading && !queueingUrls && (prompt.trim() || urlInput.trim())) {
+      if (!loading && !queueingUrls && prompt.trim()) {
         sendPlannerEntry();
       }
     }
@@ -4350,127 +4722,6 @@ function Planner() {
     }
   }
 
-  async function handleSelectUnscheduledPlace(
-    place: UnscheduledPlace,
-    match: {
-      placeId?: string | null;
-      name: string;
-      address?: string | null;
-      latitude?: number | null;
-      longitude?: number | null;
-      rating?: number | null;
-      reviewCount?: number | null;
-      imageUrl?: string | null;
-      placeType?: string | null;
-    },
-    day: number,
-  ) {
-    if (!activeChatId || mutatingItem) return;
-    setMutatingItem(true);
-    setError("");
-    try {
-      const updated = await confirmTripChatUnscheduledPlace({
-        chatId: activeChatId,
-        expectedRevision: chatRevision,
-        place,
-        day,
-        match,
-      });
-      // Keep the last drawable plan on screen if an incomplete backend
-      // snapshot slips through. The mutation itself succeeded, so the user
-      // can retry after the server returns a complete projection instead of
-      // being dropped into a blank planner.
-      if (!updated.currentPlan) {
-        setChatRevision(updated.revision);
-        setError("Địa điểm đã được thêm nhưng bản kế hoạch chưa hoàn chỉnh. Vui lòng thử tải lại lịch trình.");
-        return;
-      }
-      applyTripChat(updated);
-      setActivePlanDay(day);
-      void refreshPlanDayRoutes(updated.currentPlan, day);
-      showPlannerToast(`Đã thêm ${itineraryDisplayName(match.name)} vào Ngày ${day}`);
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Không thể thêm địa điểm vào lịch trình.",
-      );
-    } finally {
-      setMutatingItem(false);
-    }
-  }
-
-  function unscheduledPlaceKey(place: UnscheduledPlace): string {
-    return `${place.candidateId ?? place.placeId ?? place.name}`;
-  }
-
-  function defaultDayForUnscheduledPlace(currentPlan: TravelPlan): number | null {
-    if (currentPlan.days.length === 0) return null;
-    return [...currentPlan.days].sort(
-      (left, right) => left.items.length - right.items.length || left.day - right.day,
-    )[0]?.day ?? null;
-  }
-
-  async function autoResolveUnscheduledTopOne(place: UnscheduledPlace) {
-    if (
-      !activeChatId ||
-      !plan ||
-      autoResolvingUnscheduledRef.current ||
-      !["missing_canonical_identity", "identity_needs_review"].includes(
-        place.reasonCode,
-      )
-    ) {
-      return;
-    }
-    const key = unscheduledPlaceKey(place);
-    if (autoResolvedUnscheduledKeysRef.current.has(key)) return;
-    autoResolvedUnscheduledKeysRef.current.add(key);
-    autoResolvingUnscheduledRef.current = true;
-    setMutatingItem(true);
-    try {
-      const [match] = await searchPlaces(place.name, plan.destination, 1);
-      const day = defaultDayForUnscheduledPlace(plan);
-      if (!match || !day) return;
-      const updated = await confirmTripChatUnscheduledPlace({
-        chatId: activeChatId,
-        expectedRevision: chatRevision,
-        place,
-        day,
-        match,
-      });
-      if (!updated.currentPlan) {
-        setError("Không thể tự động thêm địa điểm vì bản kế hoạch chưa hoàn chỉnh.");
-        return;
-      }
-      applyTripChat(updated);
-      setActivePlanDay(day);
-      void refreshPlanDayRoutes(updated.currentPlan, day);
-      showPlannerToast(`Đã tự động thêm ${itineraryDisplayName(match.name)} vào Ngày ${day}`);
-    } catch {
-      autoResolvedUnscheduledKeysRef.current.delete(key);
-      // Keep the fallback card visible so the user can search again manually.
-    } finally {
-      autoResolvingUnscheduledRef.current = false;
-      setMutatingItem(false);
-    }
-  }
-
-  useEffect(() => {
-    if (!plan || !activeChatId || mutatingItem) return;
-    const routeStillEnriching =
-      plan.routeEnrichmentStatus === "pending" ||
-      plan.days.some((day) =>
-        day.transportLegs.some((leg) => leg.source === "geodesic_estimate"),
-      );
-    if (routeStillEnriching) return;
-    const place = plan.unscheduledPlaces?.find(
-      (candidate) =>
-        candidate.reasonCode === "missing_canonical_identity" ||
-        candidate.reasonCode === "identity_needs_review",
-    );
-    if (place) void autoResolveUnscheduledTopOne(place);
-  }, [activeChatId, mutatingItem, plan]);
-
   function handleUrlPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
     const pastedText = event.clipboardData.getData("text");
     const pastedUrls = extractMessageUrls(pastedText).filter((url) => {
@@ -4517,6 +4768,11 @@ function Planner() {
     const tripRequest = prompt.trim();
     if (!urlInput.trim()) return tripRequest || null;
 
+    if (!tripRequest) {
+      setError("Chọn một hành động cho liên kết hoặc nhập yêu cầu trước khi gửi.");
+      return null;
+    }
+
     const result = parseUrlOnlyInput(urlInput);
     if (!result.ok) {
       setError(result.message);
@@ -4530,7 +4786,7 @@ function Planner() {
     if (submittingEntryRef.current || loading || queueingUrls) return;
     const request = buildEntryRequest();
     if (!request) {
-      setError("Nhập yêu cầu hoặc dán URL trước khi gửi.");
+      setError("Nhập yêu cầu hoặc chọn một hành động cho liên kết trước khi gửi.");
       return;
     }
 
@@ -4835,6 +5091,7 @@ function Planner() {
                 <div className="plannerChatContent" id="planner-chat-content">
                   <PlannerChatMessages
                     messages={messages}
+                    onSuggestionSelect={(value) => void sendMessage(value)}
                     ref={messageListRef}
                   />
                   {awaitingInitialPlan ? (
@@ -5076,7 +5333,23 @@ function Planner() {
                       </section>
                     ) : null}
 
-                    <section className="tripPlanSection">
+                    <section
+                      className={`tripPlanSection ${
+                        activeSubplaceView && activeSubplaceGroup
+                          ? "tripPlanSection--subplaces"
+                          : ""
+                      }`}
+                    >
+                      {activeSubplaceView && activeSubplaceGroup ? (
+                        <PlannerSubplaceFocus
+                          group={activeSubplaceGroup}
+                          onBack={closeSubplaceView}
+                          onSelect={focusSubplaceOnMap}
+                          parentName={activeSubplaceView.parentName}
+                          selectedMapKey={selectedMapPlaceKey}
+                        />
+                      ) : (
+                        <>
                       <div
                         aria-label="Chọn chế độ xem lịch trình"
                         className="dayTabList"
@@ -5140,7 +5413,7 @@ function Planner() {
                             </button>
                           );
                         })}
-                        {(displayedPlan.unscheduledPlaces?.length ?? 0) > 0 ? (
+                        {displayedUnscheduledPlaces.length > 0 ? (
                           <button
                           aria-controls="plan-days-panel"
                           aria-selected={activePlanDay === UNSCHEDULED_PLAN_DAY}
@@ -5166,10 +5439,9 @@ function Planner() {
                             <span className="dayTabDot" aria-hidden="true" />
                             Chưa xếp
                           </span>
-                          {(displayedPlan.unscheduledPlaces?.length ?? 0) >
-                          0 ? (
+                          {displayedUnscheduledPlaces.length > 0 ? (
                             <small>
-                              {displayedPlan.unscheduledPlaces?.length} địa điểm
+                              {displayedUnscheduledPlaces.length} địa điểm
                             </small>
                           ) : null}
                           </button>
@@ -5562,7 +5834,7 @@ function Planner() {
                                   `${displayedPlanDay.day}-start`
                                 )
                               ) : null}
-                              {accommodationStartRouteByDay.get(
+                              {!activeSubplaceView && accommodationStartRouteByDay.get(
                                 displayedPlanDay.day
                               ) ? (
                                 <AccommodationRouteStrip
@@ -5611,6 +5883,9 @@ function Planner() {
                                 const quickActionKey = `${
                                   displayedPlanDay.day
                                 }:${item.itemId ?? itemIndex}`;
+                                const subplaceGroup = item.placeId
+                                  ? subplaceGroups[item.placeId] ?? null
+                                  : null;
                                 const displayItemName = itineraryDisplayName(
                                   item.name
                                 );
@@ -5992,6 +6267,7 @@ function Planner() {
                                           {canReorder ? null : null}
                                         </div>
                                       ) : (
+                                        <Fragment>
                                         <article
                                           className={`itineraryStop ${
                                             isFoodStop
@@ -6343,9 +6619,23 @@ function Planner() {
                                           </div>
                                           {itemNotePanel}
                                         </article>
+                                        {subplaceGroup ? (
+                                          <PlannerSubplacePreview
+                                            group={subplaceGroup}
+                                            onOpen={() =>
+                                              openSubplaceView(
+                                                displayedPlanDay.day,
+                                                subplaceGroup.parentPlaceId,
+                                                displayItemName
+                                              )
+                                            }
+                                            parentName={displayItemName}
+                                          />
+                                        ) : null}
+                                        </Fragment>
                                       )}
                                     </div>
-                                    {transportLeg &&
+                                    {!activeSubplaceView && transportLeg &&
                                     transportLegOptions.length > 0 ? (
                                       <div
                                         className={`itineraryRoute ${
@@ -6518,7 +6808,7 @@ function Planner() {
                                           </div>
                                         ) : null}
                                       </div>
-                                    ) : transportLeg &&
+                                    ) : !activeSubplaceView && transportLeg &&
                                       transportLegIndex >= 0 ? (
                                       <div
                                         className="itineraryRouteRetry"
@@ -6609,17 +6899,13 @@ function Planner() {
                             ) : null}
                           </article>
                         ))}
-                        {activePlanDay === UNSCHEDULED_PLAN_DAY ||
-                        (activePlanDay == null &&
-                          (displayedPlan.unscheduledPlaces?.length ?? 0) >
-                            0) ? (
+                        {displayedUnscheduledPlaces.length > 0 &&
+                        (activePlanDay === UNSCHEDULED_PLAN_DAY ||
+                          activePlanDay == null) ? (
                           <UnscheduledPlacesSection
-                            dayOptions={displayedPlan.days.map((day) => day.day)}
-                            destination={displayedPlan.destination}
                             disabled={mutatingItem}
                             onDismissPlace={handleDismissUnscheduledPlace}
-                            onSelectMatch={handleSelectUnscheduledPlace}
-                            places={displayedPlan.unscheduledPlaces ?? []}
+                            places={displayedUnscheduledPlaces}
                           />
                         ) : null}
                         {activePlanDay === GROUP_PLAN_DAY ? (
@@ -6630,6 +6916,8 @@ function Planner() {
                           />
                         ) : null}
                       </div>
+                        </>
+                      )}
                     </section>
                   </div>
                 ) : (
@@ -6683,11 +6971,12 @@ function Planner() {
                 <span aria-hidden="true" />
               </button>
 
-              <div
-                aria-label="Lọc địa điểm trên bản đồ theo ngày"
-                className="mobileMapDayTabs"
-                role="tablist"
-              >
+              {!activeSubplaceView ? (
+                <div
+                  aria-label="Lọc địa điểm trên bản đồ theo ngày"
+                  className="mobileMapDayTabs"
+                  role="tablist"
+                >
                 <button
                   aria-selected={activePlanDay == null}
                   className={activePlanDay == null ? "active" : ""}
@@ -6726,7 +7015,7 @@ function Planner() {
                     </button>
                   );
                 })}
-                {(displayedPlan?.unscheduledPlaces?.length ?? 0) > 0 ? (
+                {displayedUnscheduledPlaces.length > 0 ? (
                   <button
                   aria-selected={activePlanDay === UNSCHEDULED_PLAN_DAY}
                   className={
@@ -6745,22 +7034,24 @@ function Planner() {
                   Chưa xếp
                   </button>
                 ) : null}
-              </div>
+                </div>
+              ) : null}
 
               <PlannerMap
-                currentLocation={mapDirectionOrigin}
+                compactPlacesMode={Boolean(activeSubplaceView)}
+                currentLocation={activeSubplaceView ? null : mapDirectionOrigin}
                 navigationMode={
-                  directionsActive
+                  !activeSubplaceView && directionsActive
                     ? selectedDayDirectionLegs[0]?.mode ?? null
                     : null
                 }
                 dayColorKeys={planDayColorKeys}
-                directionsActive={directionsActive}
-                directionsBusy={directionsStatus === "routing"}
-                directionsReady={directionsStatus === "ready"}
-                directionsDay={activePlanDay}
-                directionsEnabled={activeDayDirectionStops.length > 0}
-                directionsSearchOpen={directionsSearchOpen}
+                directionsActive={!activeSubplaceView && directionsActive}
+                directionsBusy={!activeSubplaceView && directionsStatus === "routing"}
+                directionsReady={!activeSubplaceView && directionsStatus === "ready"}
+                directionsDay={activeSubplaceView ? null : activePlanDay}
+                directionsEnabled={!activeSubplaceView && activeDayDirectionStops.length > 0}
+                directionsSearchOpen={!activeSubplaceView && directionsSearchOpen}
                 destinationOptions={directionDestinationOptions}
                 destinationQuery={destinationQuery}
                 destinationSearchBusy={false}
@@ -6788,7 +7079,7 @@ function Planner() {
                 places={mapPlaces}
                 routes={mapRoutes}
                 selectedDirectionDestination={
-                  selectedNavigationDestination
+                  !activeSubplaceView && selectedNavigationDestination
                     ? {
                         key:
                           selectedNavigationDestination.mapKey ??

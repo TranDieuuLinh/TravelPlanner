@@ -1,7 +1,7 @@
 from app.modules.explorer.adapters.development import (
     InMemoryExplorerSnapshotRepository,
     InlineImageSourceExtractor,
-    RuleBasedExplorerDraftGenerator,
+    NonSemanticExplorerFallback,
     UnconfiguredUrlSourceExtractor,
 )
 from app.modules.explorer.adapters.draft_cache import (
@@ -12,13 +12,14 @@ from app.modules.explorer.adapters.source_extraction_cache import (
     InMemorySourceExtractionCache,
     PostgresSourceExtractionCache,
 )
-from app.modules.explorer.adapters.gemini import (
-    GeminiExplorerDraftGenerator,
-    RoutedExplorerDraftGenerator,
-)
+from app.modules.explorer.adapters.draft_routing import RoutedExplorerDraftGenerator
+from app.modules.explorer.adapters.gemini import GeminiExplorerDraftGenerator
 from app.modules.explorer.adapters.image_source import GeminiImageSourceExtractor
 from app.modules.explorer.adapters.image_cache import InMemoryImageOcrCache
 from app.modules.explorer.adapters.media_analysis import GeminiMediaAnalyzer
+from app.modules.explorer.adapters.primary_coverage import (
+    GeminiPrimaryEvidenceEvaluator,
+)
 from app.modules.explorer.adapters.tiktok_html import (
     FallbackUrlMediaClient,
     TikTokHtmlMediaClient,
@@ -39,16 +40,20 @@ from app.modules.explorer.adapters.url_sources import (
 )
 from app.modules.explorer.adapters.youtube_transcript import (
     GeminiAudioTranscriber,
-    YouTubeTranscriptSourceExtractor,
     YtDlpAudioClient,
     YtDlpCaptionClient,
 )
+from app.modules.explorer.adapters.youtube_source import (
+    YouTubeTranscriptSourceExtractor,
+)
+from app.modules.explorer.adapters.user_insights import YamlInsightCatalog
 __all__ = [
     "GeminiExplorerDraftGenerator",
     "CurlCffiWebsiteFetcher",
     "GeminiImageSourceExtractor",
     "InMemoryImageOcrCache",
     "GeminiMediaAnalyzer",
+    "GeminiPrimaryEvidenceEvaluator",
     "InMemoryExplorerSnapshotRepository",
     "InMemoryExplorerDraftCache",
     "InMemorySourceExtractionCache",
@@ -61,7 +66,7 @@ __all__ = [
     "PostgresUrlSourceCache",
     "PostgresExplorerDraftCache",
     "PostgresSourceExtractionCache",
-    "RuleBasedExplorerDraftGenerator",
+    "NonSemanticExplorerFallback",
     "RoutedExplorerDraftGenerator",
     "TikTokHtmlMediaClient",
     "UnconfiguredUrlSourceExtractor",
@@ -73,4 +78,5 @@ __all__ = [
     "YouTubeTranscriptSourceExtractor",
     "YtDlpAudioClient",
     "YtDlpCaptionClient",
+    "YamlInsightCatalog",
 ]

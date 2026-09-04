@@ -1,4 +1,4 @@
-from app.modules.place_checker.analysis_contract import TripAggregateAnalysis
+from app.modules.place_checker.analysis.contract import TripAggregateAnalysis
 from app.modules.place_checker.checked_output_contract import (
     CheckedCost,
     CheckedDestination,
@@ -25,9 +25,9 @@ from app.modules.place_checker.enums import (
     UnresolvedEntityType,
     VerificationStatus,
 )
-from app.modules.place_checker.evaluation_contract import PlaceEvaluationBatch
-from app.modules.place_checker.item_contract import ItemResolutionBatch
-from app.modules.place_checker.food_selection_contract import (
+from app.modules.place_checker.evaluation.contract import PlaceEvaluationBatch
+from app.modules.place_checker.resolution.item_contract import ItemResolutionBatch
+from app.modules.place_checker.selection.food.contract import (
     FoodMealCoverage,
     FoodSelectionBatch,
 )
@@ -37,12 +37,12 @@ from app.modules.place_checker.output_contract import (
     PlaceCheckerResult,
     UnresolvedEntity,
 )
-from app.modules.place_checker.retrieval_contract import RetrievalBatch
-from app.modules.place_checker.scoring_contract import (
+from app.modules.place_checker.retrieval.contract import RetrievalBatch
+from app.modules.place_checker.scoring.contract import (
     CandidateRankingBatch,
     ScoredCandidate,
 )
-from app.modules.place_checker.style_candidate_contract import (
+from app.modules.place_checker.selection.style_contract import (
     StyleCandidateSelectionBatch,
 )
 

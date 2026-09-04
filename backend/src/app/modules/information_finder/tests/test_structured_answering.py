@@ -58,7 +58,8 @@ def test_structured_blocks_render_to_compatibility_text_and_preserve_order():
 
     answer, blocks, cited_sources = validate_and_render_answer(generated, [source()])
 
-    assert blocks == generated.blocks
+    assert [block.type for block in blocks] == ["factList", "verse"]
+    assert [block.bubble_id for block in blocks] == ["bubble-1", "bubble-2"]
     assert "Xếp hạng" in answer
     assert "Dòng một\nDòng hai" in answer
     assert [item.source_id for item in cited_sources] == ["source-1"]

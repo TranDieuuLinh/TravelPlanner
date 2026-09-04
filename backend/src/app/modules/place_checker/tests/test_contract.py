@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 import pytest
 from pydantic import ValidationError
 
@@ -16,40 +14,36 @@ def sample_payload() -> dict:
         "places": [
             {
                 "name": "Ho Chi Minh Mausoleum",
-                "address_hint": None,
-                "confidence": 0.98,
                 "source_places": [
                     {
-                        "origin": "input",
                         "evidence_type": "raw_prompt",
                         "source_url": None,
-                        "evidence": "I want to visit Ho Chi Minh Mausoleum",
                         "source_time_hint": None,
                         "address_hint": None,
+                        "url_notes": [],
                     }
                 ],
+                "latitude": None,
+                "longitude": None,
             }
         ],
         "input_items": [
             {
                 "name": "pho",
                 "item_type": "food",
-                "action": "eat",
-                "evidence": "eat pho",
-                "confidence": 0.97,
+                "related_place_name": None,
             }
         ],
-        "url_notes": None,
         "days": 4,
         "budget": {
-            "level": "low",
-            "target_amount": None,
+            "amount_per_person": None,
             "currency": "VND",
-            "source": "raw_prompt",
+            "level": "low",
         },
         "people": {"adults": 1, "children": 0, "infants": 0},
         "short_preferences": [],
         "short_avoids": ["nightlife"],
+        "special_notes": [],
     }
 
 
@@ -67,7 +61,7 @@ def test_parses_current_explorer_payload() -> None:
     assert payload.input_items[0].name == "pho"
 
 
-def test_preserves_explorer_source_provenance_metadata() -> None:
+def test_rejects_removed_explorer_source_runtime_metadata() -> None:
     raw = sample_payload()
     source = raw["places"][0]["source_places"][0]
     source.update(
@@ -81,13 +75,8 @@ def test_preserves_explorer_source_provenance_metadata() -> None:
 
     payload = PlaceCheckerInput.model_validate(raw)
 
-    assert payload.validation_issues == []
-    assert len(payload.places) == 1
-    evidence = payload.places[0].source_places[0]
-    assert evidence.platform == "youtube"
-    assert evidence.extractor_version == "youtube-transcript-v7"
-    assert evidence.model_version == "gemini-2.5-flash"
-    assert evidence.cache_status == "bypassed"
+    assert payload.places == []
+    assert payload.validation_issues[0].code == "INVALID_PLACE_CANDIDATE"
 
 
 @pytest.mark.parametrize(
@@ -116,10 +105,10 @@ def test_rejects_invalid_request_level_data(
         PlaceCheckerInput.model_validate(raw)
 
 
-def test_target_amount_requires_currency() -> None:
+def test_rejects_invalid_currency() -> None:
     raw = sample_payload()
-    raw["budget"]["target_amount"] = Decimal("1000000")
-    raw["budget"]["currency"] = None
+    raw["budget"]["amount_per_person"] = 1_000_000
+    raw["budget"]["currency"] = "VN"
 
     with pytest.raises(ValidationError):
         PlaceCheckerInput.model_validate(raw)
@@ -127,7 +116,7 @@ def test_target_amount_requires_currency() -> None:
 
 def test_malformed_candidate_becomes_validation_issue() -> None:
     raw = sample_payload()
-    raw["places"].append({"name": "Broken", "confidence": 2})
+    raw["places"].append({"name": "Broken"})
 
     payload = PlaceCheckerInput.model_validate(raw)
 
@@ -161,54 +150,36 @@ def test_parses_locked_camel_case_explorer_contract() -> None:
         "places": [
             {
                 "name": "Phở Gia Truyền Bát Đàn",
-                "addressHint": "49 Bát Đàn, Hoàn Kiếm, Hà Nội",
-                "confidence": 0.97,
                 "sourcePlaces": [
                     {
-                        "origin": "url",
-                        "evidenceType": "frame_ocr",
+                        "evidenceType": "url",
                         "sourceUrl": "https://www.example.com/video",
-                        "evidence": "49 Bát Đàn, Hoàn Kiếm, Hà Nội",
                         "sourceTimeHint": None,
                         "addressHint": "49 Bát Đàn, Hoàn Kiếm, Hà Nội",
-                        "observedAt": "2026-08-11T10:00:00Z",
-                        "platform": "tiktok",
-                        "extractorVersion": "explorer-source-v9",
-                        "modelVersion": "gemini-3.1-flash-lite",
-                        "cacheStatus": "hit",
+                        "urlNotes": [{"summary": "Nguồn giới thiệu phở bò."}],
                     }
                 ],
+                "latitude": None,
+                "longitude": None,
             }
         ],
         "inputItems": [
             {
                 "name": "phở",
                 "itemType": "food",
-                "action": "eat",
                 "relatedPlaceName": "Phở Gia Truyền Bát Đàn",
-                "evidence": "ăn phở tại Phở Gia Truyền Bát Đàn",
-                "confidence": 0.98,
-            }
-        ],
-        "urlNotes": [
-            {
-                "summary": "Nguồn giới thiệu phở bò.",
-                "placeName": "Phở Gia Truyền Bát Đàn",
-                "evidenceType": "transcript",
-                "sourceUrl": "https://www.example.com/video",
-                "observedAt": "2026-08-11T10:00:00Z",
             }
         ],
         "days": 4,
         "budget": {
-            "level": "low",
-            "targetAmount": 6000000,
+            "amountPerPerson": 3_000_000,
             "currency": "VND",
-            "source": "raw_prompt",
+            "level": "low",
         },
         "people": {"adults": 2, "children": 0, "infants": 0},
         "shortPreferences": ["local_food"],
         "shortAvoids": ["nightlife"],
+        "specialNotes": [],
     }
 
     payload = PlaceCheckerInput.model_validate(raw)
@@ -216,12 +187,14 @@ def test_parses_locked_camel_case_explorer_contract() -> None:
 
     assert payload.input_adm == "Hanoi"
     assert payload.input_items[0].related_place_name == "Phở Gia Truyền Bát Đàn"
-    assert payload.places[0].source_places[0].observed_at is not None
-    assert payload.places[0].source_places[0].platform == "tiktok"
-    assert payload.places[0].source_places[0].extractor_version == "explorer-source-v9"
-    assert payload.places[0].source_places[0].model_version == "gemini-3.1-flash-lite"
-    assert payload.places[0].source_places[0].cache_status == "hit"
-    assert payload.url_notes[0].observed_at is not None
-    assert payload.budget.target_amount == Decimal("6000000")
+    assert payload.url_notes[0].summary == "Nguồn giới thiệu phở bò."
+    assert payload.budget.amount_per_person == 3_000_000
     assert serialized["inputADM"] == "Hanoi"
     assert serialized["inputItems"][0]["relatedPlaceName"] == "Phở Gia Truyền Bát Đàn"
+    assert serialized["places"][0]["sourcePlaces"][0]["urlNotes"] == [
+        {"summary": "Nguồn giới thiệu phở bò."}
+    ]
+    assert "tags" not in serialized["places"][0]
+    assert "confidence" not in serialized["places"][0]
+    assert "urlNotes" not in serialized
+    assert set(serialized["budget"]) == {"amountPerPerson", "currency", "level"}

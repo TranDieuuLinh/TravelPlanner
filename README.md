@@ -1,6 +1,6 @@
 # TravelPlanner
 
-Cập nhật lần cuối: 2026-08-13.
+Cập nhật lần cuối: 2026-08-20.
 
 TravelPlanner is a travel-planning product with a Next.js user frontend, a
 separate admin frontend, and a modular FastAPI/LangGraph backend.
@@ -52,7 +52,7 @@ travelplanner/
 │   └── api-client/    # Shared API errors and request helpers
 ├── docs/              # Current codebase documentation
 ├── routing-data/      # Optional routing engine data
-└── docker-compose.yml # Backend and optional routing service orchestration
+└── docker-compose.yml # Backend and routing service orchestration
 ```
 
 See [docs/codebase-structure.md](docs/codebase-structure.md) for the
@@ -97,6 +97,22 @@ Docker Compose loads all service environment variables from `backend/.env`.
 The `--env-file backend/.env` flag also makes Compose port interpolation use the
 same file. There are no service-level environment overrides; change values in
 that file and restart the affected service.
+
+PostgreSQL is an external dependency and Compose does not download or start a
+database image. Select either a local or cloud database only by changing
+`DATABASE_URL` in `backend/.env`:
+
+```dotenv
+# Backend running in Docker, PostgreSQL running locally on the host
+DATABASE_URL=postgresql://USER:PASSWORD@host.docker.internal:5432/DBNAME
+
+# Or use a cloud PostgreSQL endpoint
+DATABASE_URL=postgresql://USER:PASSWORD@CLOUD_HOST:5432/DBNAME?sslmode=require
+```
+
+When the backend itself runs directly on the host, use `localhost` instead of
+`host.docker.internal` for a local PostgreSQL server. The selected database must
+already exist and have the required extensions and migrations applied.
 
 Run the backend directly:
 

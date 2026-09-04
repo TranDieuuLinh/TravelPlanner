@@ -1,12 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-from math import ceil
-from typing import Any
+from collections import OrderedDict
+from time import monotonic
 
 import httpx
 
 from app.shared.observability import traced_call
+from app.modules.itinerary_planner.adapters.in_memory_matrix_cell import (
+    InMemoryMatrixCellCache,
+)
+from app.modules.itinerary_planner.adapters.valhalla_matrix_batches import (
+    full_matrix_batches,
+    missing_matrix_batches,
+    parse_matrix_cells,
+)
+from app.modules.itinerary_planner.ports import MatrixCellCache, MatrixCellCacheKey
 
 from app.modules.itinerary_planner.routing_models import (
     MatrixCell,
@@ -20,6 +29,10 @@ from app.modules.itinerary_planner.routing_models import (
 
 DEFAULT_MAX_MATRIX_PAIRS = 2_500
 DEFAULT_MATRIX_CONCURRENCY = 6
+DEFAULT_MATRIX_BATCH_CACHE_ENTRIES = 128
+DEFAULT_MATRIX_BATCH_CACHE_TTL_SECONDS = 600
+DEFAULT_TIMEOUT_SECONDS = 180.0
+TARGETED_PAIR_CACHE_HIT_RATIO = 0.20
 
 
 class ValhallaAdapter:
@@ -28,21 +41,35 @@ class ValhallaAdapter:
         base_url: str,
         *,
         client: httpx.AsyncClient | None = None,
-        timeout_seconds: float | None = None,
+        timeout_seconds: float | None = DEFAULT_TIMEOUT_SECONDS,
         provider_version: str = "unknown",
         max_matrix_pairs: int = DEFAULT_MAX_MATRIX_PAIRS,
         matrix_concurrency: int = DEFAULT_MATRIX_CONCURRENCY,
+        matrix_batch_cache_entries: int = DEFAULT_MATRIX_BATCH_CACHE_ENTRIES,
+        matrix_batch_cache_ttl_seconds: float = DEFAULT_MATRIX_BATCH_CACHE_TTL_SECONDS,
+        matrix_cell_cache: MatrixCellCache | None = None,
     ) -> None:
         if max_matrix_pairs < 1:
             raise ValueError("max_matrix_pairs must be positive")
         if matrix_concurrency < 1:
             raise ValueError("matrix_concurrency must be positive")
+        if matrix_batch_cache_entries < 1:
+            raise ValueError("matrix_batch_cache_entries must be positive")
+        if matrix_batch_cache_ttl_seconds <= 0:
+            raise ValueError("matrix_batch_cache_ttl_seconds must be positive")
         self.base_url = base_url.rstrip("/")
         self.client = client
         self.timeout_seconds = timeout_seconds
         self.provider_version = provider_version
         self.max_matrix_pairs = max_matrix_pairs
         self.matrix_concurrency = matrix_concurrency
+        self.matrix_batch_cache_entries = matrix_batch_cache_entries
+        self.matrix_batch_cache_ttl_seconds = matrix_batch_cache_ttl_seconds
+        self.matrix_cell_cache = matrix_cell_cache or InMemoryMatrixCellCache()
+        self._matrix_batch_cache: OrderedDict[
+            tuple[str, tuple[str, ...], tuple[str, ...]],
+            tuple[float, tuple[tuple[MatrixCell, ...], ...]],
+        ] = OrderedDict()
 
     async def matrix(
         self,
@@ -61,6 +88,10 @@ class ValhallaAdapter:
                 "nodeCount": len(value.node_ids),
                 "provider": value.provider,
                 "providerVersion": value.provider_version,
+                "logicalPairCount": value.logical_pair_count,
+                "pairCacheHitCount": value.pair_cache_hit_count,
+                "providerPairCount": value.provider_pair_count,
+                "batchCount": value.batch_count,
             },
             metadata={"provider": "valhalla"},
         )
@@ -75,12 +106,24 @@ class ValhallaAdapter:
         semaphore = asyncio.Semaphore(self.matrix_concurrency)
 
         async def fetch(
-            source_start: int,
+            source_indexes: tuple[int, ...],
             sources: tuple[MatrixLocation, ...],
-            target_start: int,
+            target_indexes: tuple[int, ...],
             targets: tuple[MatrixLocation, ...],
-        ) -> tuple[int, int, tuple[tuple[MatrixCell, ...], ...]]:
+        ) -> tuple[
+            tuple[int, ...],
+            tuple[int, ...],
+            tuple[tuple[MatrixCell, ...], ...],
+            bool,
+        ]:
+            cache_key = self._matrix_batch_cache_key(profile, sources, targets)
+            cached = self._get_matrix_batch(cache_key)
+            if cached is not None:
+                return source_indexes, target_indexes, cached, False
             async with semaphore:
+                cached = self._get_matrix_batch(cache_key)
+                if cached is not None:
+                    return source_indexes, target_indexes, cached, False
                 response = await client.post(
                     f"{self.base_url}/sources_to_targets",
                     json={
@@ -92,28 +135,73 @@ class ValhallaAdapter:
                     timeout=self.timeout_seconds,
                 )
             response.raise_for_status()
+            cells = parse_matrix_cells(
+                response.json(), len(sources), len(targets)
+            )
+            self._put_matrix_batch(cache_key, cells)
+            await self.matrix_cell_cache.put_many(
+                {
+                    self._matrix_cell_cache_key(profile, source, target): cell
+                    for source, row in zip(sources, cells)
+                    for target, cell in zip(targets, row)
+                    if source.canonical_key != target.canonical_key
+                }
+            )
             return (
-                source_start,
-                target_start,
-                self._parse_matrix_cells(response.json(), len(sources), len(targets)),
+                source_indexes,
+                target_indexes,
+                cells,
+                True,
             )
 
         try:
-            batches = self._matrix_batches(locations)
-            results = await asyncio.gather(
-                *(
-                    fetch(source_start, sources, target_start, targets)
-                    for source_start, sources, target_start, targets in batches
-                )
-            )
             rows: list[list[MatrixCell | None]] = [
                 [None] * len(locations) for _ in locations
             ]
-            for source_start, target_start, cells in results:
+            for index in range(len(locations)):
+                rows[index][index] = MatrixCell(0.0, 0.0, True)
+            cell_key_by_pair = {
+                (source_index, target_index): self._matrix_cell_cache_key(
+                    profile, source, target
+                )
+                for source_index, source in enumerate(locations)
+                for target_index, target in enumerate(locations)
+                if source_index != target_index
+            }
+            cached_cells = await self.matrix_cell_cache.get_many(
+                tuple(cell_key_by_pair.values())
+            )
+            for pair, key in cell_key_by_pair.items():
+                if key in cached_cells:
+                    rows[pair[0]][pair[1]] = cached_cells[key]
+            logical_pair_count = len(cell_key_by_pair)
+            pair_cache_hit_count = len(cached_cells)
+            batches = missing_matrix_batches(
+                locations,
+                rows,
+                max_pairs=self.max_matrix_pairs,
+                targeted=(
+                    logical_pair_count > 0
+                    and pair_cache_hit_count / logical_pair_count
+                    >= TARGETED_PAIR_CACHE_HIT_RATIO
+                ),
+            )
+            results = await asyncio.gather(
+                *(
+                    fetch(source_indexes, sources, target_indexes, targets)
+                    for source_indexes, sources, target_indexes, targets in batches
+                )
+            )
+            provider_pair_count = 0
+            provider_batch_count = 0
+            for source_indexes, target_indexes, cells, provider_called in results:
+                if provider_called:
+                    provider_pair_count += len(source_indexes) * len(target_indexes)
+                    provider_batch_count += 1
                 for source_offset, row in enumerate(cells):
                     for target_offset, cell in enumerate(row):
-                        rows[source_start + source_offset][
-                            target_start + target_offset
+                        rows[source_indexes[source_offset]][
+                            target_indexes[target_offset]
                         ] = cell
             if any(cell is None for row in rows for cell in row):
                 raise ValueError("matrix batches did not cover every source-target pair")
@@ -125,6 +213,10 @@ class ValhallaAdapter:
                 profile=profile,
                 provider="valhalla",
                 provider_version=self.provider_version,
+                logical_pair_count=logical_pair_count,
+                pair_cache_hit_count=pair_cache_hit_count,
+                provider_pair_count=provider_pair_count,
+                batch_count=provider_batch_count,
             )
         except httpx.TimeoutException as exc:
             raise RoutingPhaseError(
@@ -157,22 +249,59 @@ class ValhallaAdapter:
         ],
         ...,
     ]:
-        size = len(locations)
-        if size == 0:
-            return ()
-        source_chunk, target_chunk = _matrix_batch_shape(
-            size, self.max_matrix_pairs
+        return full_matrix_batches(locations, self.max_matrix_pairs)
+
+    def _matrix_cell_cache_key(
+        self,
+        profile: str,
+        source: MatrixLocation,
+        target: MatrixLocation,
+    ) -> MatrixCellCacheKey:
+        return (
+            self.provider_version,
+            profile,
+            source.canonical_key,
+            target.canonical_key,
         )
-        return tuple(
-            (
-                source_start,
-                locations[source_start : source_start + source_chunk],
-                target_start,
-                locations[target_start : target_start + target_chunk],
-            )
-            for source_start in range(0, size, source_chunk)
-            for target_start in range(0, size, target_chunk)
+
+    @staticmethod
+    def _matrix_batch_cache_key(
+        profile: str,
+        sources: tuple[MatrixLocation, ...],
+        targets: tuple[MatrixLocation, ...],
+    ) -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+        return (
+            profile,
+            tuple(item.canonical_key for item in sources),
+            tuple(item.canonical_key for item in targets),
         )
+
+    def _get_matrix_batch(
+        self,
+        key: tuple[str, tuple[str, ...], tuple[str, ...]],
+    ) -> tuple[tuple[MatrixCell, ...], ...] | None:
+        entry = self._matrix_batch_cache.get(key)
+        if entry is None:
+            return None
+        expires_at, cells = entry
+        if expires_at <= monotonic():
+            self._matrix_batch_cache.pop(key, None)
+            return None
+        self._matrix_batch_cache.move_to_end(key)
+        return cells
+
+    def _put_matrix_batch(
+        self,
+        key: tuple[str, tuple[str, ...], tuple[str, ...]],
+        cells: tuple[tuple[MatrixCell, ...], ...],
+    ) -> None:
+        self._matrix_batch_cache[key] = (
+            monotonic() + self.matrix_batch_cache_ttl_seconds,
+            cells,
+        )
+        self._matrix_batch_cache.move_to_end(key)
+        while len(self._matrix_batch_cache) > self.matrix_batch_cache_entries:
+            self._matrix_batch_cache.popitem(last=False)
 
     async def route(
         self,
@@ -248,36 +377,6 @@ class ValhallaAdapter:
                 await client.aclose()
 
     @staticmethod
-    def _parse_matrix_cells(
-        payload: dict[str, Any],
-        source_count: int,
-        target_count: int,
-    ) -> tuple[tuple[MatrixCell, ...], ...]:
-        rows = payload["sources_to_targets"]
-        if len(rows) != source_count:
-            raise ValueError("matrix row count mismatch")
-        parsed_rows: list[tuple[MatrixCell, ...]] = []
-        for row in rows:
-            if len(row) != target_count:
-                raise ValueError("matrix column count mismatch")
-            parsed: list[MatrixCell] = []
-            for cell in row:
-                duration = cell.get("time")
-                distance = cell.get("distance")
-                reachable = duration is not None and distance is not None
-                if reachable and (float(duration) < 0 or float(distance) < 0):
-                    raise ValueError("negative matrix value")
-                parsed.append(
-                    MatrixCell(
-                        duration_seconds=float(duration) if reachable else None,
-                        distance_meters=float(distance) * 1000 if reachable else None,
-                        reachable=reachable,
-                    )
-                )
-            parsed_rows.append(tuple(parsed))
-        return tuple(parsed_rows)
-
-    @staticmethod
     def _coordinate(location: MatrixLocation) -> dict[str, float]:
         return {"lat": location.latitude, "lon": location.longitude}
 
@@ -286,17 +385,3 @@ class ValhallaAdapter:
         if profile not in {"auto", "bicycle", "pedestrian"}:
             raise ValueError(f"Unsupported Valhalla profile: {profile}")
         return profile
-
-
-def _matrix_batch_shape(size: int, max_pairs: int) -> tuple[int, int]:
-    """Choose chunks that minimize request count without exceeding max_pairs."""
-    best: tuple[int, int, int, int] | None = None
-    for target_chunk in range(1, min(size, max_pairs) + 1):
-        source_chunk = min(size, max_pairs // target_chunk)
-        request_count = ceil(size / source_chunk) * ceil(size / target_chunk)
-        covered_pairs = source_chunk * target_chunk
-        candidate = (request_count, -covered_pairs, -target_chunk, source_chunk)
-        if best is None or candidate < best:
-            best = candidate
-    assert best is not None
-    return best[3], -best[2]

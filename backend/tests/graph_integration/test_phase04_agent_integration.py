@@ -85,16 +85,18 @@ def test_information_finder_receives_compact_memory_context():
         async def ainvoke(self, payload):
             calls.append(payload)
             return {
-                "output": SimpleNamespace(answer="ok", warnings=[]),
+                "output": SimpleNamespace(
+                    answer="ok", facts=[], sources=[], suggestions=[], warnings=[]
+                ),
             }
 
     nodes.information_finder = InformationGraph()
     asyncio.run(
         nodes.run_information_finder(
-            {
-                "message": "có gì chơi?",
-                "conversation_memory": memory_with_places(),
-                "resolved_references": [],
+                {
+                    "message": "có gì chơi?",
+                    "explorer_output": explorer_output(),
+                    "resolved_references": [],
                 "warnings": [],
             }
         )
@@ -116,11 +118,13 @@ def test_place_checker_fallback_receives_memory_candidates():
             return {"output": SimpleNamespace(warnings=[])}
 
     nodes.place_checker = PlaceGraph()
+    current = explorer_output().model_copy(
+        update={"places": merge_memory_places([], memory_with_places())}
+    )
     asyncio.run(
         nodes.run_place_checker(
             {
-                "explorer_output": explorer_output(),
-                "conversation_memory": memory_with_places(),
+                "explorer_output": current,
                 "warnings": [],
             }
         )
@@ -129,12 +133,33 @@ def test_place_checker_fallback_receives_memory_candidates():
     assert [place.name for place in calls[0]["places"]] == ["Hồ Tây", "Lăng Bác"]
 
 
+def test_place_checker_exception_becomes_structured_error():
+    nodes = RootNodes()
+
+    class FailingPlaceGraph:
+        async def ainvoke(self, payload):
+            raise RuntimeError("catalog unavailable")
+
+    nodes.place_checker = FailingPlaceGraph()
+    update = asyncio.run(
+        nodes.run_place_checker({"explorer_output": explorer_output(), "warnings": []})
+    )
+
+    assert update["place_output"].status == "error"
+    assert update["place_output"].error.code == "PLACE_CHECKER_FAILED"
+    assert update["response"] == "Không thể kiểm tra địa điểm cho chuyến đi."
+
+
 def test_new_url_input_does_not_inherit_stale_memory_duration():
     nodes = RootNodes()
 
     class ExplorerGraph:
         async def ainvoke(self, payload):
-            return {"output": explorer_output()}
+            return {
+                "output": explorer_output().model_copy(
+                    update={"defaulted_fields": ["days"]}
+                )
+            }
 
     nodes.explorer = ExplorerGraph()
     memory = memory_with_places().model_copy(update={"duration_days": 20})
@@ -158,7 +183,11 @@ def test_follow_up_without_new_input_inherits_memory_duration():
 
     class ExplorerGraph:
         async def ainvoke(self, payload):
-            return {"output": explorer_output()}
+            return {
+                "output": explorer_output().model_copy(
+                    update={"defaulted_fields": ["days"]}
+                )
+            }
 
     nodes.explorer = ExplorerGraph()
     memory = memory_with_places().model_copy(update={"duration_days": 20})
@@ -172,5 +201,34 @@ def test_follow_up_without_new_input_inherits_memory_duration():
             }
         )
     )
+    handoff = nodes.explorer_handoff.project(
+        update["explorer_output"],
+        raw_prompt="Lên plan các điểm bên trên",
+        memory=memory,
+    )
 
-    assert update["explorer_output"].days == 20
+    assert handoff.explorer_output.days == 20
+
+
+def test_follow_up_without_destination_reuses_memory_destination():
+    nodes = RootNodes()
+
+    class ExplorerGraph:
+        async def ainvoke(self, payload):
+            return {"output": explorer_output().model_copy(update={"input_adm": None})}
+
+    nodes.explorer = ExplorerGraph()
+    memory = memory_with_places()
+
+    update = asyncio.run(
+        nodes.run_explorer(
+                {
+                    "message": "Tôi muốn đi 4 ngày",
+                    "explorer_output": explorer_output(),
+                    "conversation_memory": memory,
+                "warnings": [],
+            }
+        )
+    )
+
+    assert update["explorer_output"].input_adm == "Hà Nội"

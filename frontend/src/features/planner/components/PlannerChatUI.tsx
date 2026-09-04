@@ -21,6 +21,7 @@ import {
   sourceProviderKind,
   type SourceProviderKind,
 } from "@/features/planner/lib/source-provider";
+import { URL_SOURCE_ACTION_PROMPTS } from "@/features/planner/lib/url-only-input";
 
 function sourceProviderKindForUrl(url: string): SourceProviderKind {
   return sourceProviderKind(url, undefined) ?? "url";
@@ -41,6 +42,7 @@ export type PlannerChatMessage = {
   sources?: TripChatSource[];
   contentBlocks?: AnswerBlock[];
   streaming?: boolean;
+  suggestions?: Array<{ field: string; label: string; value: string | number; currency?: string }>;
 };
 
 type PlannerChatHeaderProps = {
@@ -134,7 +136,7 @@ export function PlannerChatHeader({
 }
 
 export const PlannerChatMessages = forwardRef(function PlannerChatMessages(
-  { messages }: { messages: PlannerChatMessage[] },
+  { messages, onSuggestionSelect }: { messages: PlannerChatMessage[]; onSuggestionSelect?: (value: string) => void },
   ref: Ref<HTMLDivElement>
 ) {
   return (
@@ -146,7 +148,7 @@ export const PlannerChatMessages = forwardRef(function PlannerChatMessages(
               <PenguinMascot size={44} variant="curious" />
             </span>
           ) : null}
-          <div className={`chatBubble ${message.role}`}>
+          <div className={`chatBubble ${message.role}${message.contentBlocks?.some((block) => block.bubbleId) ? " hasAnswerBubbleGroups" : ""}`}>
             {message.role === "assistant" ? (
               message.contentBlocks?.length ? (
                 <AnswerBlockRenderer
@@ -163,6 +165,20 @@ export const PlannerChatMessages = forwardRef(function PlannerChatMessages(
             ) : (
               message.text
             )}
+            {message.role === "assistant" && message.suggestions?.length ? (
+              <div className="chatSuggestionList" role="group" aria-label="Gợi ý lựa chọn">
+                {message.suggestions.map((suggestion) => (
+                  <button
+                    className="chatSuggestionButton"
+                    key={`${suggestion.field}:${suggestion.value}`}
+                    onClick={() => onSuggestionSelect?.(String(suggestion.value))}
+                    type="button"
+                  >
+                    {suggestion.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
       ))}
@@ -260,6 +276,25 @@ export function PlannerChatComposer({
             value={prompt}
           />
           <div className="composerToolbar">
+            {urls.length > 0 && !prompt.trim() ? (
+              <div
+                aria-label="Chọn việc cần làm với liên kết"
+                className="composerSourceActions"
+                role="group"
+              >
+                {URL_SOURCE_ACTION_PROMPTS.map((action) => (
+                  <button
+                    className="sourceActionButton"
+                    disabled={busy}
+                    key={action.value}
+                    onClick={() => onPromptChange(action.value)}
+                    type="button"
+                  >
+                    <span>{action.label}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <button
               aria-label={
                 disabled
@@ -271,7 +306,7 @@ export function PlannerChatComposer({
                       : "Gửi yêu cầu"
               }
               className="sendButton"
-              disabled={busy || (!prompt.trim() && urls.length === 0)}
+              disabled={busy || !prompt.trim()}
               type="submit"
             >
               <svg aria-hidden="true" viewBox="0 0 24 24">

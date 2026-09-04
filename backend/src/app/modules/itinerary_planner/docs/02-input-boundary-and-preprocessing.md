@@ -92,8 +92,10 @@ Input legacy `preferences: string[]` vẫn được đọc như `preferences.tag
 
 Candidate có thể mang source-owned
 `notes={text,sourceType,sourceUrl}`. Planner truyền object này nguyên vẹn sang
-stop output, gắn `itemId` ổn định và khởi tạo `personalNotes=null`; Trip Chat
-quản lý mutation ghi chú cá nhân sau khi snapshot đã được tạo.
+stop output. Candidate cũng có thể nhận user-owned `personalNotes` đã được
+Explorer/Place Checker liên kết từ raw prompt; Planner truyền nguyên vẹn field
+này, gắn `itemId` ổn định và không trộn nó vào `notes`. Trip Chat quản lý các
+mutation ghi chú cá nhân sau khi snapshot đã được tạo.
 
 ## Pydantic models đã triển khai
 

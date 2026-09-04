@@ -20,8 +20,8 @@ from app.modules.place_checker.enums import (
     SimilarityMethod,
     SourceTier,
 )
-from app.modules.place_checker.evaluation import PlaceEvaluationService
-from app.modules.place_checker.resolution_contract import (
+from app.modules.place_checker.evaluation.service import PlaceEvaluationService
+from app.modules.place_checker.resolution.contract import (
     CatalogPlace,
     EnrichedIdentityPlace,
     PlaceMatchOption,

@@ -3,7 +3,7 @@ from app.modules.place_checker.adapters.postgres_style_candidate_query import (
     STYLE_INTENT_RESOLUTION_SQL,
 )
 from app.modules.place_checker.adapters.postgres_retry import fetch_catalog_rows
-from app.modules.place_checker.style_candidate_contract import (
+from app.modules.place_checker.selection.style_contract import (
     ResolvedStyleIntent,
     StyleCandidate,
     StyleCandidateSourceBatch,

@@ -13,8 +13,10 @@ Task 03.
 
 - Bảo toàn mọi source record và raw evidence excerpt.
 - Nhận diện URL provenance qua `source_places[].origin == "url"`.
-- Chỉ gắn URL note vào place khi tên place match với candidate đã resolve hoặc
-  đủ mạnh; nếu không thì giữ dưới dạng unattached note.
+- Chỉ gắn source note vào place khi tên place match với candidate đã resolve
+  hoặc đủ mạnh; nếu không thì giữ dưới dạng unattached note. Ở compact Planner
+  boundary, note `raw_prompt` đi vào user-owned `personalNotes`; source-owned
+  `notes` chọn URL trước Google Maps/Knowledge Graph.
 - Giữ các assertion STT/OCR xung đột và expose conflict.
 - Source protection mạnh nhất thắng: direct user trên URL, rồi item/system.
 

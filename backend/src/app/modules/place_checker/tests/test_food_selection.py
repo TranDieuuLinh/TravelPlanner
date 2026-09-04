@@ -1,12 +1,12 @@
 import asyncio
 
-from app.modules.place_checker.food_selection import FoodRestaurantSelectionService
-from app.modules.place_checker.food_candidate_policy import FoodCandidatePolicy
-from app.modules.place_checker.food_selection_contract import (
+from app.modules.place_checker.selection.food.service import FoodRestaurantSelectionService
+from app.modules.place_checker.selection.food.candidate_policy import FoodCandidatePolicy
+from app.modules.place_checker.selection.food.contract import (
     FoodRestaurantCandidate,
     FoodSelectionAnchor,
 )
-from app.modules.place_checker.resolution_contract import PlaceMetadata
+from app.modules.place_checker.resolution.contract import PlaceMetadata
 from app.modules.place_checker.tests.analysis_fixtures import analysis_context
 from app.shared.tools.bayesian_rating import bayesian_rating
 from app.shared.contracts.place import Coordinates
@@ -37,9 +37,7 @@ class FakeFoodSource:
             }
         )
         excluded = set(excluded_restaurant_ids or [])
-        return [
-            item for item in self.candidates if item.restaurant_id not in excluded
-        ]
+        return [item for item in self.candidates if item.restaurant_id not in excluded]
 
 
 def candidate(
@@ -51,7 +49,7 @@ def candidate(
     reviews: int | None = 100,
     priority: float = 0.9,
     distance: float = 0.5,
-    match_type: str = "direct_id",
+    match_type: str = "special_experience",
     match_confidence: float = 1.0,
     style_id: str | None = None,
     style_name: str | None = None,
@@ -126,13 +124,13 @@ def test_one_restaurant_is_selected_for_each_anchor() -> None:
     assert len(result.selections) == 2
     assert result.unmatched_anchor_place_ids == []
     assert all(
-        item.selection_reason == "sole_candidate_for_food"
-        for item in result.selections
+        item.selection_reason == "sole_candidate_for_food" for item in result.selections
     )
-    assert all(item.food_match_type == "direct_id" for item in result.selections)
+    assert all(
+        item.food_match_type == "special_experience" for item in result.selections
+    )
     assert all(item.food_match_confidence == 1 for item in result.selections)
-    assert source.calls[0]["radius_km"] == 5.0
-    assert source.calls[1]["radius_km"] is None
+    assert [call["radius_km"] for call in source.calls] == [None]
 
 
 def test_reliable_restaurant_beats_five_star_candidate_with_one_review() -> None:
@@ -204,14 +202,14 @@ def test_restaurant_reuse_is_only_a_fallback_when_no_unused_option_exists() -> N
     ]
 
 
-def test_special_exact_id_match_beats_offer_item_fallback() -> None:
+def test_special_experience_signal_beats_offer_item_signal() -> None:
     source = FakeFoodSource(
         [
             candidate(
                 "place:lake",
                 "restaurant:fallback",
                 priority=0.35,
-                match_type="offer_item_fallback",
+                match_type="offer_item",
             ),
             candidate("place:lake", "restaurant:direct"),
         ]
@@ -225,16 +223,16 @@ def test_special_exact_id_match_beats_offer_item_fallback() -> None:
     )
 
     assert result.selections[0].restaurant_id == "restaurant:direct"
-    assert result.selections[0].food_match_type == "direct_id"
+    assert result.selections[0].food_match_type == "special_experience"
 
 
-def test_offer_item_fallback_is_preserved_in_selection_provenance() -> None:
+def test_offer_item_is_preserved_in_selection_provenance() -> None:
     source = FakeFoodSource(
         [
             candidate(
                 "place:lake",
                 "restaurant:fallback",
-                match_type="offer_item_fallback",
+                match_type="offer_item",
             )
         ]
     )
@@ -246,7 +244,7 @@ def test_offer_item_fallback_is_preserved_in_selection_provenance() -> None:
         )
     )
 
-    assert result.selections[0].food_match_type == "offer_item_fallback"
+    assert result.selections[0].food_match_type == "offer_item"
     assert result.selections[0].offered_food_item_id == "food:pho"
 
 
@@ -257,7 +255,7 @@ def test_deduplicates_same_restaurant_per_anchor_before_selection() -> None:
                 "place:lake",
                 "restaurant:shared",
                 priority=0.35,
-                match_type="offer_item_fallback",
+                match_type="offer_item",
             ),
             candidate("place:lake", "restaurant:shared", priority=0.9),
         ]
@@ -271,7 +269,7 @@ def test_deduplicates_same_restaurant_per_anchor_before_selection() -> None:
     )
 
     assert len(result.selections) == 1
-    assert result.selections[0].food_match_type == "direct_id"
+    assert result.selections[0].food_match_type == "special_experience"
 
 
 def test_merges_relationships_when_restaurant_is_near_multiple_anchors() -> None:
@@ -299,7 +297,7 @@ def test_merges_relationships_when_restaurant_is_near_multiple_anchors() -> None
     ]
 
 
-def test_general_adm_is_not_queried_when_soft_reserve_is_complete() -> None:
+def test_food_candidates_are_queried_once_for_the_whole_adm() -> None:
     source = FakeFoodSource(
         [candidate("place:lake", f"restaurant:{index}") for index in range(12)]
     )
@@ -311,10 +309,10 @@ def test_general_adm_is_not_queried_when_soft_reserve_is_complete() -> None:
         )
     )
 
-    assert [call["radius_km"] for call in source.calls] == [5.0]
+    assert [call["radius_km"] for call in source.calls] == [None]
 
 
-def test_general_adm_fills_only_the_soft_reserve_deficit() -> None:
+def test_one_query_can_return_nearby_and_city_wide_candidates() -> None:
     near = [candidate("place:lake", f"restaurant:near:{index}") for index in range(7)]
     general = [
         candidate("place:lake", f"restaurant:general:{index}").model_copy(
@@ -326,7 +324,7 @@ def test_general_adm_fills_only_the_soft_reserve_deficit() -> None:
     class ReserveFoodSource(FakeFoodSource):
         async def find_food_restaurants(self, **kwargs):
             self.calls.append(kwargs)
-            return near if kwargs["radius_km"] is not None else general
+            return [*near, *general]
 
     source = ReserveFoodSource([])
     result = asyncio.run(
@@ -337,16 +335,10 @@ def test_general_adm_fills_only_the_soft_reserve_deficit() -> None:
     )
 
     assert len(result.selections) == 12
-    assert sum(
-        item.proximity_source == "general_adm" for item in result.selections
-    ) == 5
-    assert [call["radius_km"] for call in source.calls] == [5.0, None]
-    assert source.calls[1]["per_anchor_limit"] == 7
-    assert set(source.calls[1]["required_meals"]) == {
-        "breakfast",
-        "lunch",
-        "dinner",
-    }
+    assert (
+        sum(item.proximity_source == "general_adm" for item in result.selections) == 5
+    )
+    assert [call["radius_km"] for call in source.calls] == [None]
 
 
 def test_filters_incomplete_restaurant_before_selection() -> None:
@@ -371,8 +363,7 @@ def test_filters_incomplete_restaurant_before_selection() -> None:
     assert result.selections[0].restaurant_id == "restaurant:complete"
     assert result.warnings == [
         "Đã loại candidate quán không đủ dữ liệu trước selection: missing_duration=1.",
-        "Food meal matching không đủ hard coverage: "
-        "hard_missing=5, reserve_missing=6.",
+        "Food meal matching không đủ hard coverage: hard_missing=5, reserve_missing=6.",
     ]
 
 
@@ -397,6 +388,5 @@ def test_incomplete_restaurant_leaves_anchor_unmatched() -> None:
         "Không tìm thấy quán phù hợp gần 1 điểm tham quan.",
         "Đã loại candidate quán không đủ dữ liệu trước selection: "
         "missing_meal_window=1.",
-        "Food meal matching không đủ hard coverage: "
-        "hard_missing=6, reserve_missing=6.",
+        "Food meal matching không đủ hard coverage: hard_missing=6, reserve_missing=6.",
     ]

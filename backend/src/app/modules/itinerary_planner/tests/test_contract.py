@@ -171,6 +171,7 @@ def test_candidate_accepts_structured_source_note() -> None:
         "sourceType": "url",
         "sourceUrl": "https://example.test/video",
     }
+    place["personalNotes"] = "Người dùng muốn ghé sau bữa sáng."
 
     parsed = ItineraryPlannerInput.model_validate(payload(places=[place]))
     dumped = parsed.model_dump(mode="json", by_alias=True)
@@ -178,6 +179,7 @@ def test_candidate_accepts_structured_source_note() -> None:
     assert parsed.places[0].notes is not None
     assert parsed.places[0].notes.source_type == "url"
     assert dumped["places"][0]["notes"] == place["notes"]
+    assert dumped["places"][0]["personalNotes"] == place["personalNotes"]
 
 
 @pytest.mark.parametrize(

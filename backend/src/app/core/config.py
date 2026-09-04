@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     conversation_memory_reference_provider: Literal["rules", "gemini"] = "gemini"
     conversation_memory_reference_confidence: float = Field(default=0.72, ge=0, le=1)
     conversation_memory_reference_max_output_tokens: int = Field(default=320, ge=128, le=1024)
-    conversation_graph_checkpointer_enabled: bool = False
+    conversation_graph_checkpointer_enabled: bool = True
     auth_dev_seed_users: str = (
         "creator@example.com|Creator Demo|Password123!|creator,"
         "admin@travelplanner.local|TravelPlanner Admin|Password123!|admin"
@@ -81,17 +81,17 @@ class Settings(BaseSettings):
     gemini_timeout_seconds: float = 30.0
     gemini_key_cooldown_seconds: float = 60.0
     supervisor_classifier_provider: Literal["gemini"] = "gemini"
-    supervisor_llm_max_output_tokens: int = 256
+    supervisor_llm_max_output_tokens: int = 2048
     supervisor_llm_fallback_enabled: bool = True
     supervisor_llm_confidence_threshold: float = 0.65
-    explorer_draft_provider: Literal["rules", "gemini"] = "rules"
-    explorer_source_draft_provider: Literal["rules", "gemini"] = "gemini"
+    finisher_llm_max_output_tokens: int = Field(default=320, ge=128, le=1024)
+    explorer_draft_provider: Literal["gemini"] = "gemini"
+    explorer_source_draft_provider: Literal["gemini"] = "gemini"
     explorer_llm_max_output_tokens: int = Field(default=4000, ge=256)
     explorer_source_chunk_characters: int = Field(default=20_000, ge=2_000, le=60_000)
     explorer_source_max_output_tokens: int = Field(default=8_000, ge=1_000)
     explorer_source_max_concurrency: int = Field(default=5, ge=1, le=20)
     explorer_synthesis_max_concurrency: int = Field(default=6, ge=1, le=20)
-    explorer_minimum_synthesis_coverage: float = Field(default=0.8, gt=0, le=1)
     explorer_dedupe_provider: Literal["rules", "gemini"] = "gemini"
     explorer_note_provider: Literal["rules", "gemini"] = "gemini"
     explorer_url_timeout_seconds: float = Field(default=30.0, gt=0)
@@ -132,9 +132,19 @@ class Settings(BaseSettings):
     google_maps_scraper_timeout_seconds: float = Field(default=90.0, gt=0)
     google_maps_scraper_max_alias_queries: int = Field(default=2, ge=0, le=5)
     google_maps_scraper_max_concurrency: int = Field(default=2, ge=1, le=5)
+    place_checker_note_localization_max_output_tokens: int = Field(
+        default=2048,
+        ge=256,
+        le=8192,
+    )
+    place_checker_subplace_note_max_output_tokens: int = Field(
+        default=2048,
+        ge=256,
+        le=8192,
+    )
     route_provider: Literal["valhalla", "disabled"] = "valhalla"
     valhalla_base_url: str = "http://localhost:8002"
-    valhalla_timeout_seconds: float = Field(default=60.0, gt=0)
+    valhalla_timeout_seconds: float = Field(default=180.0, gt=0)
     valhalla_graph_version: str = "local"
     itinerary_log_search_progress: bool = False
 

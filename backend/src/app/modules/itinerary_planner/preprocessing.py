@@ -72,13 +72,7 @@ def _exclusion(
     reason_code: str,
     message: str,
 ) -> CandidateExclusion:
-    return CandidateExclusion(
-        place_id=candidate.place_id,
-        name=candidate.name,
-        priority=candidate.priority,
-        reason_code=reason_code,
-        message=message,
-    )
+    return CandidateExclusion.from_candidate(candidate, reason_code, message)
 
 
 def _store_exclusion(
@@ -236,6 +230,7 @@ def prepare_planning_problem(payload: ItineraryPlannerInput) -> PreparedPlanning
             reason_code=item.reason_code,
             message=item.message,
             notes=item.notes,
+            personal_notes=item.personal_notes,
             source_refs=tuple(item.source_refs),
         )
         for item in payload.excluded_candidates

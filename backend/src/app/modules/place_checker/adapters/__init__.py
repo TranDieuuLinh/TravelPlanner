@@ -10,6 +10,9 @@ from app.modules.place_checker.adapters.in_memory_promotion_outbox import (
 from app.modules.place_checker.adapters.in_memory_metrics import (
     InMemoryPlaceCheckerMetrics,
 )
+from app.modules.place_checker.adapters.gemini_source_note_translator import (
+    GeminiSourceNoteTranslator,
+)
 from app.modules.place_checker.adapters.search_places_gap_source import (
     SearchPlacesGapSource,
 )
@@ -20,6 +23,7 @@ __all__ = [
     "CachingNamedPlaceSearchTool",
     "CachingPlaceMetadataRepository",
     "DevelopmentCatalog",
+    "GeminiSourceNoteTranslator",
     "InMemoryPlaceCheckerMetrics",
     "InMemoryPromotionOutbox",
     "SearchPlacesGapSource",
